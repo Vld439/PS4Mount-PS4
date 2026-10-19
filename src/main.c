@@ -41,6 +41,7 @@
 #include "crypto.h"
 #include "db.h"
 #include "fw.h"
+#include "install.h"
 #include "logts.h"
 #include "mem.h"
 #include "origin.h"
@@ -61,6 +62,10 @@
 #define MAX_DLC 64
 #define BATCH_QUIET 10 /* seconds without writes to the system databases between groups */
 #define MAX_DLC_TIDS 8
+/* Add-ons up to this size are installed with BGFT, not mounted: only the system
+ * may write their record in addcont.db, which the game and its information page
+ * read. Most are 1-2 MB licenses (some with a little data); copying them costs nothing. */
+#define DLC_INSTALL_MAX (256ull << 20)
 
 #define MAX_SCAN_PATHS 8
 #define CONFIG_PATH STATE_DIR "/config.txt"
@@ -84,6 +89,7 @@ static config_t g_cfg = {1, 5, 0, {""}, 1, 5, 1};
 
 typedef struct { char useless[45]; char message[3075]; } notify_request_t;
 int sceUserServiceInitialize(void *);
+int sceUserServiceGetForegroundUser(int32_t *);
 int sceAppInstUtilInitialize(void);
 int sceAppInstUtilAppInstallAll(void *);
 int sceAppInstUtilAppUnInstall(const char *);
@@ -243,7 +249,8 @@ typedef struct {
     char path[PATH_MAX];
     pkg_t pkg;
     sfo_t sfo;
-    int data; /* 1: has data (mounted by the game), 0: only unlocks content */
+    int data;    /* 1: has data (mounted by the game), 0: only unlocks content */
+    int install; /* 1: installed with BGFT (small), 0: mounted */
 } dlc_src_t;
 
 /* One library folder: <root>/ps4/<TID>/app.pkg plus an optional patch.pkg and add-ons. */
@@ -331,7 +338,10 @@ static void dlc_open(title_src_t *t) {
                 continue;
             }
             a->data = a->pkg.header[0x77] == 0x1b; /* content type: 0x1b with data, 0x1c license only */
+            a->install = a->pkg.pkg_size <= DLC_INSTALL_MAX;
             t->ndlc++;
+            if (a->install)
+                continue; /* not mounted: no /user/addcont folder of PS4Mount's */
             int known = 0;
             for (int i = 0; i < t->ndlc_tids; i++)
                 known |= !strcmp(t->dlc_tids[i], e->d_name);
@@ -582,12 +592,24 @@ static int place_dlc(dlc_src_t *a) {
 }
 
 /* The ac.pkg link of every add-on exists and reaches its pkg. */
+/* 1 when the add-on is installed the system's way: its own pkg in /user/addcont, not
+ * PS4Mount's mount there. */
+static int dlc_installed(const dlc_src_t *a) {
+    char p[96];
+    struct stat st;
+    snprintf(p, sizeof(p), "/user/addcont/%s", a->pkg.title_id);
+    if (mounted_from(p, NULL, 0))
+        return 0;
+    snprintf(p, sizeof(p), "/user/addcont/%s/%s/ac.pkg", a->pkg.title_id, a->pkg.content_id + 20);
+    return !lstat(p, &st) && S_ISREG(st.st_mode);
+}
+
 static int dlc_ready(const title_src_t *t) {
     char p[PATH_MAX];
     for (int i = 0; i < t->ndlc; i++) {
         snprintf(p, sizeof(p), HOLD_DIR "/addcont/%s/%s/ac.pkg", t->dlc[i].pkg.title_id,
                  t->dlc[i].pkg.content_id + 20);
-        if (!exists(p))
+        if (t->dlc[i].install ? !dlc_installed(&t->dlc[i]) : !exists(p))
             return 0;
     }
     return 1;
@@ -761,6 +783,37 @@ static int place_bgft(title_src_t *t, const buf_t *json, const patch_ref_t *pr) 
     return rc ? -1 : 0;
 }
 
+static void unmount_all_layers(const char *target, int force);
+static void pump_events(int ms);
+
+/* Installs a small add-on with the system's installer and waits for it (a minute at
+ * most): the system copies the pkg into /user/addcont and writes its addcont.db record. */
+static int dlc_install(dlc_src_t *a) {
+    if (dlc_installed(a))
+        return 0;
+    char target[64], url[PATH_MAX + 8], msg[PATH_MAX + 64];
+    snprintf(target, sizeof(target), "/user/addcont/%s", a->pkg.title_id);
+    /* a folder mounted here by an older PS4Mount: the install must reach the real one */
+    if (mounted_from(target, NULL, 0))
+        unmount_all_layers(target, 1);
+    const sfo_item_t *n = sfo_get(&a->sfo, "TITLE");
+    int32_t user = 0;
+    sceUserServiceGetForegroundUser(&user);
+    int task = install_pkg(sys_path(a->path, url, sizeof(url)), n && !n->is_int ? n->sval : a->pkg.content_id,
+                           user, msg, sizeof(msg));
+    printf("[dlc] %s: %s\n", a->pkg.content_id, msg);
+    if (task < 0)
+        return -1;
+    for (int i = 0; i < 120 && !dlc_installed(a); i++)
+        pump_events(500);
+    if (!dlc_installed(a)) {
+        printf("[dlc] %s: not installed after a minute\n", a->pkg.content_id);
+        return -1;
+    }
+    printf("[dlc] %s installed\n", a->pkg.content_id);
+    return 0;
+}
+
 static int place_files(title_src_t *t) {
     pkg_t *app = &t->app, *pat = t->has_patch ? &t->patch : NULL;
     const char *tid = app->title_id;
@@ -785,7 +838,7 @@ static int place_files(title_src_t *t) {
     if (place_license(app))
         return -1;
     for (int i = 0; i < t->ndlc; i++)
-        rc |= place_dlc(&t->dlc[i]);
+        rc |= t->dlc[i].install ? dlc_install(&t->dlc[i]) : place_dlc(&t->dlc[i]);
 
     size_t pl = 0, ppl = 0;
     uint8_t *pg = pkg_entry(app, 0x1001, &pl), *ppg = pat ? pkg_entry(pat, 0x1001, &ppl) : NULL;
