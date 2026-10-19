@@ -360,7 +360,7 @@ static void test_check(void) {
     CHECK(pkg_check(p, 0x13520001, &c) == 0 && !c.ok && !c.fake && strstr(c.problem, "fake"));
 
     make_pkg(p, "UP0000-NPXS00001_00-TESTGAME00000000", "gd", 0, 1, 0x4000, 0x4000);
-    CHECK(pkg_check(p, 0x13520001, &c) == 0 && !c.ok && strstr(c.problem, "not a PS4 title"));
+    CHECK(pkg_check(p, 0x13520001, &c) == 0 && !c.ok && strstr(c.problem, "not a game") && strstr(c.problem, "NPXS00001"));
 
     make_pkg(p, cid, "gdc", 0, 1, 0x4000, 0x4000);
     CHECK(pkg_check(p, 0x13520001, &c) == 0 && !c.ok && c.kind == PKG_KIND_OTHER);

@@ -67,7 +67,9 @@ int pkg_check(const char *path, uint32_t fw, pkg_check_t *out) {
     if (out->kind == PKG_KIND_OTHER)
         snprintf(out->problem, sizeof(out->problem), "not a game, an update or an add-on (category \"%s\")", cat);
     else if (strncmp(out->title_id, "CUSA", 4))
-        snprintf(out->problem, sizeof(out->problem), "%s is not a PS4 title", out->title_id);
+        snprintf(out->problem, sizeof(out->problem),
+                 "%s is an app (homebrew), not a game: PS4Mount plays CUSA games; install it the usual way",
+                 out->title_id);
     else if (!out->fake)
         snprintf(out->problem, sizeof(out->problem), "not a fake pkg: only fake pkgs can be used");
     else if (fw && out->system_ver && !fw_runs(out->system_ver, fw)) {
