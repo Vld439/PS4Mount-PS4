@@ -159,14 +159,14 @@ static int layers_on(const char *path) {
     int n = getfsstat(NULL, 0, MNT_NOWAIT), count = 0;
     if (n <= 0)
         return 0;
-    struct statfs *list = malloc(sizeof(*list) * (size_t)(n + 16));
+    struct statfs *list = mem_alloc(sizeof(*list) * (size_t)(n + 16));
     if (!list)
         return 0;
     n = getfsstat(list, (long)(sizeof(*list) * (size_t)(n + 16)), MNT_NOWAIT);
     for (int i = 0; i < n; i++)
         if (!strcmp(list[i].f_mntonname, path))
             count++;
-    free(list);
+    mem_free(list);
     return count;
 }
 
@@ -281,7 +281,7 @@ static void src_close(title_src_t *t) {
         pkg_close(&t->patch);
     for (int i = 0; i < t->ndlc; i++)
         pkg_close(&t->dlc[i].pkg);
-    free(t->dlc);
+    mem_free(t->dlc);
     t->dlc = NULL;
     t->ndlc = 0;
 }
@@ -310,8 +310,12 @@ static void dlc_open(title_src_t *t) {
         while ((f = readdir(l))) {
             if (f->d_name[0] == '.' || strlen(f->d_name) != 16)
                 continue;
-            if (!t->dlc && !(t->dlc = calloc(MAX_DLC, sizeof(*t->dlc))))
+            /* 6 MB: from mapped pages (zeroed), never the host's few MB of heap. A list that
+             * could not be had would read as "no add-ons" and register the game again */
+            if (!t->dlc && !(t->dlc = mem_alloc(MAX_DLC * sizeof(*t->dlc)))) {
+                printf("[scan] %s: no memory for its add-ons\n", t->dir);
                 break;
+            }
             if (t->ndlc == MAX_DLC)
                 break;
             dlc_src_t *a = &t->dlc[t->ndlc];
@@ -963,12 +967,12 @@ static void refresh_sandboxes(void) {
     int n = getfsstat(NULL, 0, MNT_NOWAIT);
     if (n <= 0)
         return;
-    struct statfs *list = malloc(sizeof(*list) * (size_t)(n + 16));
+    struct statfs *list = mem_alloc(sizeof(*list) * (size_t)(n + 16));
     char (*ids)[10] = realloc(g_sandboxes, sizeof(*ids) * (size_t)(n + 16));
     if (ids)
         g_sandboxes = ids;
     if (!list || !ids) {
-        free(list);
+        mem_free(list);
         return;
     }
     n = getfsstat(list, (long)(sizeof(*list) * (size_t)(n + 16)), MNT_NOWAIT);
@@ -980,7 +984,7 @@ static void refresh_sandboxes(void) {
             continue;
         snprintf(g_sandboxes[g_nsandboxes++], 10, "%.9s", on + sizeof(prefix) - 1);
     }
-    free(list);
+    mem_free(list);
 }
 
 static int title_running(const char *tid) {
@@ -1567,6 +1571,14 @@ static int find_dlc_game(const char *root, const pkg_t *dlc, char *tid) {
 
 /* Add-ons left in place during one adoption run, reported in one notification. */
 static int g_dlc_orphans, g_dlc_dupes;
+static uint32_t g_orphans_sig; /* the add-ons waiting in this scan of a drive */
+
+static uint32_t str_hash(const char *s) {
+    uint32_t h = 2166136261u;
+    while (*s)
+        h = (h ^ (uint8_t)*s++) * 16777619u;
+    return h;
+}
 
 /* Add-ons waiting for their game: checked again only when the games of the drive
  * change (the check opens the pkg of every game). */
@@ -1669,6 +1681,7 @@ static int adopt_dlc(const char *root, const char *name, const char *path, pkg_t
                    installed_internally(pkg->title_id) ? " (that title is installed on the console)" : "");
             g_dlc_orphans++;
         }
+        g_orphans_sig += str_hash(path);
         waiting_set(path, g_lib_sig);
         return 0;
     }
@@ -1922,14 +1935,26 @@ static int adopt_root_pkgs(const char *root) {
     char dir[PATH_MAX];
     int moved = 0;
     g_dlc_orphans = g_dlc_dupes = 0;
+    g_orphans_sig = 0;
     g_lib_sig = lib_signature(root);
     for (int i = 0; i < g_cfg.npaths; i++) {
         scan_dir(dir, sizeof(dir), root, i);
         moved += adopt_dir_pkgs(root, dir);
     }
-    if (g_dlc_orphans)
+    /* said again only when the waiting add-ons change, not each time the payload starts:
+     * add-ons of a game that is never on the drive (themes, for one) would repeat it */
+    char seen[64], sig[16];
+    snprintf(seen, sizeof(seen), STATE_DIR "/waiting.%08x", str_hash(root));
+    snprintf(sig, sizeof(sig), "%08x", g_orphans_sig);
+    size_t sl = 0;
+    uint8_t *old = read_all(seen, &sl);
+    int same = old && sl == strlen(sig) && !memcmp(old, sig, sl);
+    mem_free(old);
+    if (g_dlc_orphans && !same)
         notify("%s: %d add-on(s) wait for their game, which is not on this drive (see the log)", root_label(root),
                waiting_count(root));
+    if (g_dlc_orphans && !same)
+        write_file(seen, sig, strlen(sig), 0666);
     if (g_dlc_dupes)
         notify("%s: %d add-on copy(ies) were left in place because the game already has them", root_label(root),
                g_dlc_dupes);
