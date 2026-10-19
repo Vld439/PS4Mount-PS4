@@ -30,7 +30,7 @@ SQ="$B/sqlite3-$(echo "$CC $FLAGS" | md5sum | cut -c1-8).o"
     -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAULT_MEMSTATUS=0
 
 echo "== unit"
-$CC $FLAGS -o "$B/unit" test/unit.c src/build.c src/crypto.c src/pkg.c src/origin.c
+$CC $FLAGS -o "$B/unit" test/unit.c src/build.c src/check.c src/crypto.c src/pkg.c src/origin.c
 "$B/unit"
 
 echo "== firmware simulation"

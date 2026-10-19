@@ -36,6 +36,7 @@
 #include <ps4/kernel.h>
 
 #include "build.h"
+#include "check.h"
 #include "crypto.h"
 #include "db.h"
 #include "fw.h"
@@ -1588,10 +1589,25 @@ static int adopt_dir_pkgs(const char *root, const char *dir) {
                 printf("[scan] skip %s (cannot read the pkg header: not a PS4 pkg, or unreadable)\n", path);
             continue;
         }
+        if (!stat(path, &rs) && (uint64_t)rs.st_size < pkg.pkg_size) {
+            /* still being copied (an internal folder lets the copy be moved midway) */
+            pkg_close(&pkg);
+            continue;
+        }
         sfo_t sfo;
         const sfo_item_t *cat = NULL;
         if (!read_sfo(&pkg, &sfo))
             cat = sfo_get(&sfo, "CATEGORY");
+        const sfo_item_t *sysver = cat ? sfo_get(&sfo, "SYSTEM_VER") : NULL;
+        if (sysver && sysver->is_int && g_fw && !fw_runs(sysver->ival, g_fw)) {
+            char need[16], have[16];
+            ver_text(sysver->ival, need, sizeof(need));
+            ver_text(g_fw, have, sizeof(have));
+            if (first_time(path))
+                notify("%s needs firmware %s or newer (this console has %s): left where it is", e->d_name, need, have);
+            pkg_close(&pkg);
+            continue;
+        }
         int is_app = cat && !strcmp(cat->sval, "gd"), is_patch = cat && !strcmp(cat->sval, "gp");
         int is_dlc = cat && !strcmp(cat->sval, "ac");
         if (is_dlc || pass == 1) {

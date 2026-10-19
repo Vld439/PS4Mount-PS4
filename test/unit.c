@@ -9,7 +9,9 @@
 #include <unistd.h>
 
 #include "build.h"
+#include "check.h"
 #include "crypto.h"
+#include "keys.h"
 #include "origin.h"
 #include "pkg.h"
 #include "pdb_template.h"
@@ -323,6 +325,149 @@ static void touch(const char *path) {
         fclose(f);
 }
 
+/* --- synthetic pkgs for pkg_check --- */
+
+static void put_be32(uint8_t *p, uint32_t v) {
+    for (int i = 0; i < 4; i++)
+        p[i] = (uint8_t)(v >> (24 - 8 * i));
+}
+
+static void put_be64(uint8_t *p, uint64_t v) {
+    put_be32(p, (uint32_t)(v >> 32));
+    put_be32(p + 4, (uint32_t)v);
+}
+
+/* param.sfo with CATEGORY, TITLE, APP_VER, VERSION (strings) and SYSTEM_VER (int). */
+static size_t make_check_sfo(uint8_t *d, const char *cat, uint32_t sysver) {
+    static const char *keys[] = {"APP_VER", "CATEGORY", "SYSTEM_VER", "TITLE", "VERSION"};
+    const char *vals[] = {"01.04", cat, NULL, "Test Game", "01.00"};
+    enum { N = 5 };
+    memset(d, 0, 1024);
+    uint32_t ko = 20 + N * 16, kl = 0;
+    for (int i = 0; i < N; i++)
+        kl += (uint32_t)strlen(keys[i]) + 1;
+    uint32_t dof = (ko + kl + 3) & ~3u, koff = 0, voff = 0;
+    memcpy(d, "\0PSF", 4);
+    d[4] = 1, d[5] = 1;
+    memcpy(d + 8, &ko, 4);
+    memcpy(d + 12, &dof, 4);
+    d[16] = N;
+    for (int i = 0; i < N; i++) {
+        uint8_t *e = d + 20 + i * 16;
+        uint16_t k16 = (uint16_t)koff, fmt = vals[i] ? 0x0204 : 0x0404;
+        uint32_t len = vals[i] ? (uint32_t)strlen(vals[i]) + 1 : 4, max = vals[i] ? 16 : 4;
+        memcpy(e, &k16, 2);
+        memcpy(e + 2, &fmt, 2);
+        memcpy(e + 4, &len, 4);
+        memcpy(e + 8, &max, 4);
+        memcpy(e + 12, &voff, 4);
+        strcpy((char *)d + ko + koff, keys[i]);
+        koff += (uint32_t)strlen(keys[i]) + 1;
+        if (vals[i])
+            strcpy((char *)d + dof + voff, vals[i]);
+        else
+            memcpy(d + dof + voff, &sysver, 4);
+        voff += max;
+    }
+    return dof + voff;
+}
+
+/* A pkg with what pkg_check reads: header, entry table, the keys entry (with entry key 3
+ * wrapped with the public fake key when fake) and param.sfo. The header declares size
+ * bytes; the file holds the first written bytes (all of it when written >= size). */
+static void make_pkg(const char *path, const char *cid, const char *cat, uint32_t sysver, int fake, uint64_t size,
+                     uint64_t written) {
+    static uint8_t f[0x4000];
+    memset(f, 0, sizeof(f));
+    put_be32(f, 0x7f434e54);
+    put_be32(f + 0x10, 2);      /* entries */
+    put_be32(f + 0x18, 0x1000); /* entry table */
+    memcpy(f + 0x40, cid, 36);
+    put_be64(f + 0x430, size);
+    /* keys entry 0x10 at 0x1100 (0x520 bytes), param.sfo 0x1000 at 0x2000 */
+    put_be32(f + 0x1000, 0x10);
+    put_be32(f + 0x1000 + 16, 0x1100);
+    put_be32(f + 0x1000 + 20, 0x20 + 7 * 0x20 + 4 * 0x100);
+    put_be32(f + 0x1020, 0x1000);
+    put_be32(f + 0x1020 + 16, 0x2000);
+    put_be32(f + 0x1020 + 20, (uint32_t)make_check_sfo(f + 0x2000, cat, sysver));
+    uint8_t block[256], e[256] = {0};
+    memset(block, 0x5a, sizeof(block)); /* PKCS#1 v1.5 type 2 padding (no zero bytes) */
+    block[0] = 0, block[1] = 2;
+    block[256 - 33] = 0;
+    for (int i = 0; i < 32; i++)
+        block[256 - 32 + i] = (uint8_t)i;
+    e[253] = 1, e[255] = 1; /* 65537 */
+    if (fake)
+        rsa2048_modexp(block, e, k_pkg_key3_n, f + 0x1100 + 0x20 + 7 * 0x20 + 3 * 0x100);
+    FILE *o = fopen(path, "wb");
+    uint64_t n = written < size ? written : size;
+    fwrite(f, 1, n < sizeof(f) ? (size_t)n : sizeof(f), o);
+    for (uint64_t i = sizeof(f); i < n; i++)
+        fputc(0, o);
+    fclose(o);
+}
+
+static void test_check(void) {
+    printf("pkg check\n");
+    char root[] = "/tmp/ps4mount-test-XXXXXX", p[256];
+    if (!mkdtemp(root)) {
+        CHECK(0);
+        return;
+    }
+    snprintf(p, sizeof(p), "%s/x.pkg", root);
+    const char *cid = "UP0000-CUSA00001_00-TESTGAME00000000";
+    pkg_check_t c;
+
+    make_pkg(p, cid, "gd", 0x09008000, 1, 0x100000, 0x100000);
+    CHECK(pkg_check(p, 0x13520001, &c) == 0 && c.ok && c.fake && c.kind == PKG_KIND_GAME && !c.problem[0]);
+    CHECK(!strcmp(c.content_id, cid) && !strcmp(c.title_id, "CUSA00001") && !strcmp(c.title, "Test Game"));
+    CHECK(!strcmp(c.app_ver, "01.04") && !strcmp(c.version, "01.00") && c.system_ver == 0x09008000);
+    CHECK(c.pkg_size == 0x100000);
+
+    /* only the start of a big pkg: everything is known already */
+    make_pkg(p, cid, "gp", 0x09008000, 1, 30ull << 30, 0x4000);
+    CHECK(pkg_check(p, 0x13520001, &c) == 0 && c.ok && c.kind == PKG_KIND_UPDATE && c.pkg_size == 30ull << 30);
+
+    make_pkg(p, cid, "ac", 0, 1, 0x4000, 0x4000);
+    CHECK(pkg_check(p, 0x13520001, &c) == 0 && c.ok && c.kind == PKG_KIND_ADDON);
+
+    /* built for a newer firmware than the console's */
+    make_pkg(p, cid, "gd", 0x13500000, 1, 0x4000, 0x4000);
+    CHECK(pkg_check(p, 0x12520001, &c) == 0 && !c.ok && strstr(c.problem, "needs firmware 13.50") &&
+          strstr(c.problem, "12.52"));
+    CHECK(pkg_check(p, 0x13500001, &c) == 0 && c.ok); /* same firmware */
+    CHECK(pkg_check(p, 0, &c) == 0 && c.ok);          /* no firmware check */
+
+    make_pkg(p, cid, "gd", 0x09008000, 0, 0x4000, 0x4000);
+    CHECK(pkg_check(p, 0x13520001, &c) == 0 && !c.ok && !c.fake && strstr(c.problem, "fake"));
+
+    make_pkg(p, "UP0000-NPXS00001_00-TESTGAME00000000", "gd", 0, 1, 0x4000, 0x4000);
+    CHECK(pkg_check(p, 0x13520001, &c) == 0 && !c.ok && strstr(c.problem, "not a PS4 title"));
+
+    make_pkg(p, cid, "gdc", 0, 1, 0x4000, 0x4000);
+    CHECK(pkg_check(p, 0x13520001, &c) == 0 && !c.ok && c.kind == PKG_KIND_OTHER);
+
+    /* cut before param.sfo */
+    make_pkg(p, cid, "gd", 0, 1, 0x100000, 0x1800);
+    CHECK(pkg_check(p, 0x13520001, &c) == 0 && !c.ok && strstr(c.problem, "param.sfo"));
+
+    FILE *o = fopen(p, "wb");
+    fputs("not a pkg at all", o);
+    fclose(o);
+    CHECK(pkg_check(p, 0x13520001, &c) == -1);
+
+    char v[16];
+    ver_text(0x13520001, v, sizeof(v));
+    CHECK(!strcmp(v, "13.52"));
+    ver_text(0x05050000, v, sizeof(v));
+    CHECK(!strcmp(v, "5.05"));
+    CHECK(fw_runs(0x09008000, 0x13520001) && !fw_runs(0x13500000, 0x13020001) && fw_runs(0x13500000, 0x13520001));
+
+    unlink(p);
+    rmdir(root);
+}
+
 static void test_origin(void) {
     printf("origin records and restored list\n");
     char root[] = "/tmp/ps4mount-test-XXXXXX", game[128], list[128], out[256], p[256];
@@ -384,6 +529,7 @@ int main(void) {
     test_pbm();
     test_ac_pdb();
     test_bgft_task();
+    test_check();
     test_license();
     test_sfo();
     test_origin();
