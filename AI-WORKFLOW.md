@@ -15,7 +15,7 @@ A chat in a web browser cannot reach your console: the assistant must be an agen
 ## 2. Rules that are not negotiable
 
 1. **Never write to the system databases** (`/system_data/priv/mms/*.db`). ShellCore keeps them open with its own cache and flags a database written from outside as corrupted. PS4Mount only reads them (`mode=ro&nolock=1`); what has to be in them is written by the system (`sceAppInstUtilAppInstallAll` for games, a BGFT install for add-ons). `bash test/policy.sh` enforces it.
-2. **The system must never reach a pkg for writing.** Deleting a game made the system follow the `app.pkg` link and empty the user's pkg. Links point into the read-only views (`/system_data/ps4mount/ro/<drive>`); keep it that way. PS4Mount deletes files itself, and only `<root>/ps4/<TID>` of a game the user deleted on the console's delete screens.
+2. **The system's delete must never reach a pkg.** Deleting a game made the system follow the `app.pkg` link and empty the user's pkg. The game folders are unmounted while the console's delete screens are open, and PS4Mount deletes the files itself, only `<root>/ps4/<TID>` of a game the user deleted there. A read-only view of the pkgs is no answer: BGFT opens a game's pkg for writing when the game starts, records EROFS in the game task (record `0x68`) and refuses the game. **After any change to how games are mounted or linked, restart the console and start a game before calling it done.**
 3. **No kernel patches, no reverse engineering of ShellCore or other system processes.** Use the system's own interfaces (AppInstUtil, BGFT, the klog). The one restart a new game needs comes from BGFT loading its tasks at boot: it is documented, not worked around.
 4. **One change per version, and test it on the console before the next.** If something gets worse, go back to the last version that worked.
 5. **Run the checks before every commit:** `bash test/run.sh`, `bash test/policy.sh` and `cd test/web && npm test`. `SANITIZE=1 bash test/run.sh` and `bash test/fuzz/run.sh 30 pkg http` for changes to pkg reading, uploads or the panel server.
@@ -55,7 +55,6 @@ GoldHEN's FTP reports the size of files over 4 GB modulo 4 GiB; the console itse
 | `[scan] <TID>: to register (<why>)` | Why a game is registered again: `not registered`, `no game task naming its pkg`, `its pkgs changed`, `game link`, `update link`, `add-ons` |
 | `[reg] <TID>: BGFT game task 0000fXXX written` / `updated` | The game task was written: a restart is needed before it plays |
 | `[reg] AppInstallAll=0x00000000: …` | The system registered the title |
-| `[mount] /system_data/ps4mount/ro/<drive>: read-only view of …` | A library's read-only view was mounted |
 | `[dlc] <content id>: installing …`, `installed` | An add-on installed through BGFT |
 | `[delete] delete screen open …`, `<TID> deleted on the console`, `… deleted (N bytes)` | A delete on the console and the files it removed |
 | `[upload] receiving …`, `received`, `the transfer stopped after …` | A pkg sent from the panel |
@@ -63,14 +62,14 @@ GoldHEN's FTP reports the size of files over 4 GB modulo 4 GiB; the console itse
 
 ## 5. How PS4Mount is organised
 
-`src/main.c` (scan, registration, mounts, read-only views, BGFT game tasks, klog events, deletes, panel actions), `src/install.c` (BGFT installs, for add-ons), `src/check.c` (what a pkg is and whether this console can use it), `src/upload.c` (pkgs sent from the panel), `src/pkg.c` (pkg reader), `src/build.c` (install files, BGFT task records), `src/db.c` (read-only lookups in `app.db`), `src/lang.c` (languages), `src/mem.c` (mapped buffers), `src/web.c` with `web/index.html`, `web/legacy.html` (the PS4's browser: ES5, no `<dialog>`) and `web/lang.js` (the panel's translations).
+`src/main.c` (scan, registration, mounts, BGFT game tasks, klog events, deletes, panel actions), `src/install.c` (BGFT installs, for add-ons), `src/check.c` (what a pkg is and whether this console can use it), `src/upload.c` (pkgs sent from the panel), `src/pkg.c` (pkg reader), `src/build.c` (install files, BGFT task records), `src/db.c` (read-only lookups in `app.db`), `src/lang.c` (languages), `src/mem.c` (mapped buffers), `src/web.c` with `web/index.html`, `web/legacy.html` (the PS4's browser: ES5, no `<dialog>`) and `web/lang.js` (the panel's translations).
 
 Facts that cost time to learn:
 
 - The SDK's runtime must know the firmware's kernel offsets: with an older SDK the payload ends before `main` with no trace.
 - A game starts only when BGFT has its game task (`/user/bgft/task/<id>/d0.pdb`, `d1.pdb`), and BGFT reads them at boot only. Logging out and finishing a real install do not reload them.
 - BGFT accepts `/mnt/usb…` and `/user/data/…` paths in a task, not `/data/…` (`invalid content_url`).
-- `/user/app/<TID>` is a nullfs mount of `/system_data/ps4mount/app/<TID>`, whose `app.pkg` links into the read-only view. `readlink` fails for payloads here (`0xffffffd1`), and `statfs` on nullfs does not show `MNT_RDONLY`: links are checked by the filesystem they end on.
+- `/user/app/<TID>` is a nullfs mount of `/system_data/ps4mount/app/<TID>`, whose `app.pkg` links to the pkg. `readlink` fails for payloads here (`0xffffffd1`): links are checked by following them (`stat`).
 - The delete screens are `ConfirmContentDeleteScene` / `Parent_ContentDeleteScene` (Options > Delete) and `storage_data#application…` / `Parent_NormalStack` (Settings > Storage). `GameWillDelete(<TID>)` names the game; a delete that works logs nothing after it.
 - Add-ons are listed from `addcont.db`, which only an install fills: PS4Mount installs add-ons up to 256 MB with BGFT (`sceBgftServiceIntDownloadRegisterTaskByStorageEx`). The content type byte cannot tell a small add-on from one with data.
 - GoldHEN runs payloads in ScePartyDaemon, or SceSpZeroConf when that one is gone. A service another payload left open there (BGFT) answers `0x80990001`: close it and open it again.

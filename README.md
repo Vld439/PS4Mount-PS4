@@ -126,7 +126,7 @@ Se guardan en `/data/ps4mount/config.txt`. Los ajustes también tienen **Devolve
 - **Borrar desde la consola** (Options → Eliminar, o Ajustes → Almacenamiento): borra el juego **y sus pkgs** (juego, actualización y DLC), y libera el espacio, como con un juego instalado. Solo cuando confirmas el borrado en esas pantallas, y solo la carpeta de ese juego.
 - **Quitar de la biblioteca** en el panel: quita el juego de la consola y **conserva sus pkgs**, para volver a añadirlo con **Añadir a la biblioteca**.
 
-El sistema nunca puede escribir ni vaciar los pkgs: los juegos los leen a través de una vista de solo lectura.
+Mientras están abiertas las pantallas de borrado, PS4Mount desmonta las carpetas de los juegos, así que el borrado del sistema nunca llega a los pkgs: los borra PS4Mount, y solo la carpeta de ese juego.
 
 ### Bueno saber
 
@@ -157,7 +157,7 @@ Para informar de un problema, abre un [issue](https://github.com/Vld439/PS4Mount
 | `/data/ps4mount/config.txt` | Los ajustes |
 | `/data/ps4mount/stop` | Vacío: para PS4Mount |
 | `/data/ps4mount/klog_all` | Vacío: copia todo el log del sistema en el log de PS4Mount (diagnóstico) |
-| `/system_data/ps4mount/` | Las carpetas internas de los juegos y las vistas de solo lectura |
+| `/system_data/ps4mount/` | Las carpetas internas de los juegos |
 
 ## Compilar
 
@@ -296,7 +296,7 @@ They are saved in `/data/ps4mount/config.txt`. The settings also have **Move all
 - **Deleting on the console** (Options → Delete, or Settings → Storage): deletes the game **and its pkgs** (game, update and add-ons) and frees the space, as with an installed game. Only when the delete is confirmed on those screens, and only that game's folder.
 - **Remove from library** in the panel: takes the game off the console and **keeps its pkgs**, to add it again with **Add to library**.
 
-The system can never write to or empty the pkgs: games read them through a read-only view.
+While the delete screens are open, PS4Mount unmounts the game folders, so the system's delete never reaches the pkgs: PS4Mount deletes them, and only that game's folder.
 
 ### Good to know
 
@@ -327,7 +327,7 @@ To report a problem, open an [issue](https://github.com/Vld439/PS4Mount-PS4/issu
 | `/data/ps4mount/config.txt` | The settings |
 | `/data/ps4mount/stop` | Empty: stops PS4Mount |
 | `/data/ps4mount/klog_all` | Empty: copies the whole system log into PS4Mount's log (diagnosis) |
-| `/system_data/ps4mount/` | The games' internal folders and the read-only views |
+| `/system_data/ps4mount/` | The games' internal folders |
 
 ## Building
 

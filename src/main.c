@@ -492,38 +492,38 @@ static void hold_path(char *out, size_t n, const char *kind, const char *tid) {
     snprintf(out, n, HOLD_DIR "/%s/%s", kind, tid);
 }
 
-static int ro_path(const char *path, char *out, size_t n);
+/* Folder where 0.1.0-beta builds before the release mounted read-only views of the
+ * libraries for the links: BGFT opens a game's pkg for writing when the game starts, and
+ * through a read-only view it records EROFS in the game task and refuses the game. Links
+ * ending there are written again. */
+#define RO_DIR HOLD_DIR "/ro"
 
-/* Fresh internal folder for kind ("app"/"patch") with name -> pkg_path, as seen in the
- * read-only view of its library (see ro_view). */
+/* Fresh internal folder for kind ("app"/"patch") with name -> pkg_path. */
 static int hold_prepare(const char *kind, const char *tid, const char *name, const char *pkg_path) {
-    char dir[PATH_MAX], link[PATH_MAX], ro[PATH_MAX];
-    if (ro_path(pkg_path, ro, sizeof(ro)))
-        return -1;
+    char dir[PATH_MAX], link[PATH_MAX];
     hold_path(dir, sizeof(dir), kind, tid);
     mkdirs(dir, 0777);
     snprintf(link, sizeof(link), "%s/%s", dir, name);
     unlink(link);
-    if (symlink(ro, link)) {
+    if (symlink(pkg_path, link)) {
         printf("[reg] symlink %s: %s\n", link, strerror(errno));
         return -1;
     }
     return 0;
 }
 
-/* The link of kind reaches its pkg through the read-only view (links of older versions
- * point at the pkg itself: they are written again). readlink fails for payloads here
- * (0xffffffd1), so the link is followed instead: it must end on the read-only view. */
+/* The link of kind reaches its pkg, not through a read-only view (see RO_DIR). readlink
+ * fails for payloads here (0xffffffd1), so the link is followed instead: it must end on
+ * the pkg itself. */
 static int hold_ready(const char *kind, const char *tid, const char *name, const char *pkg_path) {
-    char p[PATH_MAX], ro[PATH_MAX];
+    char p[PATH_MAX];
+    struct stat a, b;
     struct statfs sf;
     hold_path(p, sizeof(p), kind, tid);
     snprintf(p + strlen(p), sizeof(p) - strlen(p), "/%s", name);
-    if (ro_path(pkg_path, ro, sizeof(ro)) || !exists(p) || statfs(p, &sf))
+    if (stat(p, &a) || stat(pkg_path, &b) || statfs(p, &sf))
         return 0;
-    /* nullfs does not report MNT_RDONLY in statfs; the view is only ever mounted read-only */
-    size_t l = strlen(sf.f_mntonname);
-    return !strncmp(ro, sf.f_mntonname, l) && ro[l] == '/';
+    return a.st_ino == b.st_ino && strncmp(sf.f_mntonname, RO_DIR "/", sizeof(RO_DIR));
 }
 
 static uint8_t *read_all(const char *path, size_t *len) {
@@ -585,8 +585,7 @@ static int place_dlc(dlc_src_t *a) {
     snprintf(q, sizeof(q), "%s/ac.pkg", dir);
     unlink(q);
     int rc = 0;
-    char ro[PATH_MAX];
-    if (ro_path(a->path, ro, sizeof(ro)) || symlink(ro, q)) {
+    if (symlink(a->path, q)) {
         printf("[reg] symlink %s: %s\n", q, strerror(errno));
         rc = -1;
     }
@@ -749,9 +748,50 @@ static int bgft_names(const char *tid, const char *path) {
     return ok;
 }
 
+/* The error BGFT recorded in the game task of tid (record 0x68), 0 when none: a task
+ * BGFT gave up on (it refuses the game until a restart with a clean task). */
+static uint32_t bgft_task_error(const char *tid) {
+    uint32_t id = bgft_find(tid), err = 0;
+    char p[64];
+    size_t len;
+    snprintf(p, sizeof(p), BGFT_DIR "/%08x/d0.pdb", id);
+    uint8_t *d = id ? read_all(p, &len) : NULL;
+    /* a u32, then records: key, length, length again, data */
+    for (size_t o = 4; d && o + 12 <= len;) {
+        uint32_t key, l;
+        memcpy(&key, d + o, 4);
+        memcpy(&l, d + o + 4, 4);
+        o += 12;
+        if (l > len - o)
+            break;
+        if (key == 0x68 && l == 4)
+            memcpy(&err, d + o, 4);
+        o += l;
+    }
+    mem_free(d);
+    return err;
+}
+
 /* A free odd id whose install task id (one below) is free too. */
 static uint32_t bgft_free_id(void) {
     char p[64];
+    /* above every task there, as BGFT gives its own: an id whose task was deleted in this
+     * boot is never used again (a game given one could not start: BGFT still had the
+     * deleted task's state); the lowest free one only once the ids run out */
+    uint32_t top = BGFT_FIRST - 2;
+    DIR *d = opendir(BGFT_DIR);
+    struct dirent *e;
+    while (d && (e = readdir(d))) {
+        char *end;
+        unsigned long id = strtoul(e->d_name, &end, 16);
+        if (!*end && id >= BGFT_FIRST - 1 && id <= BGFT_LAST && id > top)
+            top = (uint32_t)id;
+    }
+    if (d)
+        closedir(d);
+    uint32_t next = (top + 2) | 1;
+    if (next <= BGFT_LAST)
+        return next;
     for (uint32_t id = BGFT_FIRST; id <= BGFT_LAST; id += 2) {
         snprintf(p, sizeof(p), BGFT_DIR "/%08x", id);
         if (exists(p))
@@ -972,62 +1012,16 @@ static int top_layer(const char *target, const char *dir) {
     return strcmp(sf.f_fstypename, "nullfs") || strcmp(sf.f_mntfromname, dir) ? -1 : 1;
 }
 
-static int nullfs_mount_flags(const char *dir, const char *target, int flags) {
+static int nullfs_mount(const char *dir, const char *target) {
     struct iovec iov[] = {IOV("fstype"), IOV("nullfs"), IOV("from"), IOV(dir), IOV("fspath"), IOV(target)};
-    if (nmount(iov, 6, flags)) {
+    if (nmount(iov, 6, 0)) {
         printf("[mount] %s -> %s: %s\n", dir, target, strerror(errno));
         return -1;
     }
     return 0;
 }
 
-static int nullfs_mount(const char *dir, const char *target) { return nullfs_mount_flags(dir, target, 0); }
 
-/* --- read-only views of the libraries ---
- * Deleting a game on the PS4 empties /user/app/<TID>, and the system follows the app.pkg
- * link there and truncates the pkg it reaches: a pkg on the USB drive was left at 0
- * bytes. So the links reach the pkgs through <root>/ps4 mounted read-only under
- * HOLD_DIR/ro/<drive>: games read them, nothing can write, truncate or remove them
- * (EROFS), whatever the system does with the game's folder. */
-#define RO_DIR HOLD_DIR "/ro"
-
-static void unmount_all_layers(const char *target, int force);
-
-/* Mounts (again, after the drive came back) the read-only view of root's library. */
-static int ro_view(const char *root, char *view, size_t n) {
-    char lib[PATH_MAX];
-    snprintf(lib, sizeof(lib), "%s/ps4", root);
-    snprintf(view, n, RO_DIR "/%s", strrchr(root, '/') + 1);
-    if (dead_layer(view))
-        unmount_all_layers(view, 1);
-    int top = top_layer(view, lib);
-    if (top == 1)
-        return 0;
-    if (top == -1)
-        unmount_all_layers(view, 1);
-    mkdirs(view, 0777);
-    if (nullfs_mount_flags(lib, view, MNT_RDONLY))
-        return -1;
-    printf("[mount] %s: read-only view of %s\n", view, lib);
-    return 0;
-}
-
-/* path, a pkg in <root>/ps4/..., as seen in the read-only view of that library. */
-static int ro_path(const char *path, char *out, size_t n) {
-    for (int i = 0; i < NROOTS; i++) {
-        char root[32], view[64];
-        root_path(i, root, sizeof(root));
-        size_t l = strlen(root);
-        if (strncmp(path, root, l) || strncmp(path + l, "/ps4/", 5))
-            continue;
-        if (ro_view(root, view, sizeof(view)))
-            return -1;
-        snprintf(out, n, "%s/%s", view, path + l + 5);
-        return 0;
-    }
-    printf("[reg] %s is not in a library: no read-only view for it\n", path);
-    return -1;
-}
 
 /* A running PS4 title keeps /mnt/sandbox/pfsmnt/<TID>-app0 mounted. Unlike the klog
  * events this survives a restart of the daemon, so it is the reference for "running". */
@@ -1273,6 +1267,7 @@ static int title_state(title_src_t *t) {
     /* folders set up by 0.3.1 and older lack the internal folder: registered again */
     const char *why = !db_is_registered(tid)                ? "not registered"
                       : !bgft_names(tid, t->app_path)       ? "no game task naming its pkg"
+                      : bgft_task_error(tid)                ? "its game task holds an error"
                       : !marker_matches(tid, t->marker)     ? "its pkgs changed"
                       : !hold_ready("app", tid, "app.pkg", t->app_path) ? "game link"
                       : t->has_patch && !hold_ready("patch", tid, "patch.pkg", t->patch_path) ? "update link"
