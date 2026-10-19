@@ -13,16 +13,19 @@ const GAMES = [
   { title_id: 'CUSA34284', name: 'Moving Out 2', version: '01.04', game_version: '01.00', has_patch: true, size: 2.6e9, state: 'restart', mount: 'rw', source: '/mnt/usb0/ps4/CUSA34284', dlc: 0, update_issue: '', content_id: 'EP4064-CUSA34284_00-MOVINGOUT2000000', system_ver: '9.00', storage: 'usb0' },
   { title_id: 'CUSA00069', name: 'Rayman Legends', version: '', has_patch: false, size: 0, state: 'offline', mount: '', source: '/mnt/usb1/ps4/CUSA00069', dlc: 0, update_issue: '', content_id: '', game_version: '', system_ver: '', storage: 'usb1' }];
 const CFG = { batch: true, batch_size: 5, dlc: true, restore_batch: 5, max_restore_batch: 10, paths: ['/'] };
+let REPLY_LANG; // the language the console reports (undefined: none, English)
 function reply(url) {
   return url.indexOf('/api/log') === 0 ? { log: 'a\nb' } : url.indexOf('/api/config') === 0 ? CFG :
-    url.indexOf('/api/games') === 0 ? { version: 'PS4Mount test', games: GAMES } : { ok: true, message: 'ok ' + url };
+    url.indexOf('/api/games') === 0 ? { version: 'PS4Mount test', lang: REPLY_LANG, games: GAMES } : { ok: true, message: 'ok ' + url };
 }
 const tick = () => new Promise(r => setTimeout(r, 30));
 const ok = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) process.exitCode = 1; };
 function page(file, opts) {
   const reqs = [], vc = new VirtualConsole(), nav = [];
   vc.on('jsdomError', e => { if (/navigation/i.test(e.message)) nav.push(e.message); else console.log('jsdomError', e.message); });
-  const dom = new JSDOM(fs.readFileSync(W + file, 'utf8'), {
+  // as build.sh does: the language tables where the page says <!--LANG-->
+  const html = fs.readFileSync(W + file, 'utf8').replace('<!--LANG-->', () => '<script>' + fs.readFileSync(W + 'lang.js', 'utf8') + '</script>');
+  const dom = new JSDOM(html, {
     url: 'http://ps5:8770/', runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc,
     beforeParse(w) {
       w.setInterval = () => 0;
@@ -52,7 +55,49 @@ function parses(code, version) {
   try { acorn.parse(code, { ecmaVersion: version }); return ''; } catch (e) { return e.message; }
 }
 
+// The value of a string argument: a literal, or literals joined with +.
+function literal(node) {
+  if (node.type === 'Literal' && typeof node.value === 'string') return node.value;
+  if (node.type === 'BinaryExpression' && node.operator === '+') {
+    const a = literal(node.left), b = literal(node.right);
+    return a === null || b === null ? null : a + b;
+  }
+  return null;
+}
+// Every t('...') text of a page's scripts (the ones built from parts are listed apart).
+function tKeys(file) {
+  const keys = [], built = [];
+  scripts(file).forEach((code) => {
+    (function walk(n) {
+      if (!n || typeof n.type !== 'string') return;
+      if (n.type === 'CallExpression' && n.callee.type === 'Identifier' && n.callee.name === 't' && n.arguments.length) {
+        const v = literal(n.arguments[0]);
+        if (v === null) built.push(code.slice(n.start, n.end)); else keys.push(v);
+      }
+      for (const k in n) { const c = n[k]; if (Array.isArray(c)) c.forEach(walk); else if (c && typeof c.type === 'string') walk(c); }
+    })(acorn.parse(code, { ecmaVersion: 2017 }));
+  });
+  return { keys, built };
+}
+
 (async () => {
+  // the language tables: ES5 (the old browser reads them), every text of the pages translated
+  { const e = parses(fs.readFileSync(W + 'lang.js', 'utf8'), 5); ok(!e, 'lang.js is ES5' + (e ? ': ' + e : '')); }
+  const L = new JSDOM('<script>' + fs.readFileSync(W + 'lang.js', 'utf8') + '</script>', { runScripts: 'dangerously' }).window.LANGS;
+  ['index.html', 'legacy.html'].forEach((f) => {
+    const { keys, built } = tKeys(f);
+    const missing = keys.filter((k) => !L.es[k]);
+    ok(keys.length > 20 && !missing.length, f + ': every t() text has a Spanish one' + (missing.length ? ': ' + JSON.stringify(missing) : ''));
+    ok(built.every((c) => /^t\(labels\[/.test(c) || /^t\(c\.kind\)/.test(c)), f + ': t() of a computed text only for states and pkg kinds: ' + built.join(' '));
+  });
+  ['Ready', 'Restart to play', 'Running', 'Not in library', 'Installed on console', 'Adding', 'On another drive', 'Drive not connected',
+    'game', 'update', 'add-on', 'other'].forEach((k) => ok(!!L.es[k], 'Spanish for "' + k + '"'));
+  Object.keys(L.es).forEach((k) => {
+    // the same ones; a translation may use one twice ("de {0} en {0}")
+    const set = (x) => [...new Set(x.match(/\{\d\}/g) || [])].sort().join(), a = set(k), b = set(L.es[k]);
+    if (a !== b) ok(false, 'same placeholders in the translation of "' + k + '"');
+  });
+
   // the browser of older firmwares: plain ES5 only
   scripts('legacy.html').forEach((code, i) => { const e = parses(code, 5); ok(!e, 'legacy script ' + i + ' is ES5' + (e ? ': ' + e : '')); });
   // the head script of the main page runs everywhere before the redirect: ES5 too
@@ -214,6 +259,38 @@ function parses(code, version) {
   // the settings have the internal storage switch
   d.getElementById('settingsbtn').click(); await tick();
   ok(d.getElementById('s-internal') !== null, 'settings have the /data/pkg switch');
+
+  // --- in Spanish: the console says "es"
+  REPLY_LANG = 'es';
+  p = page('index.html', { dialog: true }); ({ w, d, reqs } = p);
+  await tick();
+  ok(d.documentElement.lang === 'es', 'the page takes the language the console reports');
+  ok(d.getElementById('rescan').textContent === 'Buscar juegos' && d.getElementById('settingsbtn').textContent === 'Ajustes', 'fixed texts in Spanish');
+  ok(d.getElementById('q').placeholder === 'Buscar juego o CUSA', 'placeholders in Spanish');
+  { const c = [...d.querySelectorAll('.card')].find(x => x.textContent.includes('Moving Out 2'));
+    ok(c && c.querySelector('.badge').textContent === 'Reinicia para jugar' && c.textContent.includes('Reinicia la consola una vez'), 'states and notes in Spanish');
+    ok(c && c.querySelector('[data-a="unmount"]').textContent === 'Quitar de la biblioteca', 'buttons in Spanish'); }
+  ok(d.getElementById('summary').textContent.includes('6 juego(s)'), 'the summary in Spanish');
+  { const c = [...d.querySelectorAll('.card')].find(x => x.textContent.includes('Rayman'));
+    ok(c && c.textContent.includes('En usb1, que no está conectado'), 'a value inside a translated text'); }
+  w.showGame('CUSA34284');
+  ok(d.getElementById('g-facts').textContent.includes('Necesita firmware') && d.getElementById('g-facts').textContent.includes('v01.04 (juego v01.00 con su actualización)'), 'the game page in Spanish');
+  d.getElementById('settingsbtn').click(); await tick();
+  ok(d.getElementById('s-lang').value === 'auto' && d.getElementById('s-lang').options[0].textContent === 'El de la consola', 'the language setting, in Spanish');
+  d.getElementById('s-lang').value = 'en'; reqs.length = 0;
+  d.getElementById('setform').dispatchEvent(new w.Event('submit', { cancelable: true })); await tick();
+  ok(reqs.some(r => r.url === '/api/config' && /(^|&)lang=en(&|$)/.test(r.body)), 'the chosen language is saved');
+  REPLY_LANG = 'en'; w.load(); await tick(); await tick();
+  ok(d.getElementById('rescan').textContent === 'Scan for games' && d.documentElement.lang === 'en', 'and the page switches back to English');
+  REPLY_LANG = 'fr';
+  p = page('index.html', { dialog: true }); ({ w, d, reqs } = p);
+  await tick();
+  ok(d.getElementById('rescan').textContent === 'Scan for games', 'a language with no table: English');
+  REPLY_LANG = 'es';
+  p = page('legacy.html', {}); ({ w, d, reqs } = p);
+  await tick();
+  ok(d.getElementById('rescan').textContent === 'Buscar juegos' && d.getElementById('summary').textContent.includes('Listo'), 'the legacy page in Spanish');
+  REPLY_LANG = undefined;
 
   // --- legacy page
   p = page('legacy.html', {}); ({ w, d, reqs } = p);

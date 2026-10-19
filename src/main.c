@@ -42,6 +42,7 @@
 #include "db.h"
 #include "fw.h"
 #include "install.h"
+#include "lang.h"
 #include "logts.h"
 #include "mem.h"
 #include "origin.h"
@@ -49,7 +50,7 @@
 #include "web.h"
 #include "icon_data.h"
 
-#define VERSION "PS4Mount 0.6.0"
+#define VERSION "PS4Mount 0.1.0-beta"
 #define LOCK_PORT 9032
 #define SCAN_SECONDS 10
 #define STATE_DIR "/data/ps4mount"
@@ -80,12 +81,25 @@ typedef struct {
     int npaths;
     int restore_batch; /* games removed from the library per group when moving pkgs back */
     int internal;      /* pkgs in the console's /data/pkg are used too */
+    int lang;          /* LANG_* of notifications and the panel, -1: the console's */
 } config_t;
 
 #define MAX_RESTORE_BATCH 10
 
-/* add-ons off: the PS4 side of add-ons is not done yet */
-static config_t g_cfg = {1, 5, 0, {""}, 1, 5, 1};
+static config_t g_cfg = {1, 5, 1, {""}, 1, 5, 1, -1};
+
+int sceSystemServiceParamGetInt(int param_id, int *value);
+
+/* The language in use: the one chosen in the settings, else the console's. */
+static void apply_lang(void) {
+    static int console = -2;
+    if (console == -2) {
+        int v = -1;
+        console = sceSystemServiceParamGetInt(1, &v) ? -1 : v; /* 1: the system language */
+        printf("[main] console language %d\n", console);
+    }
+    g_lang = g_cfg.lang >= 0 ? g_cfg.lang : lang_from_console(console);
+}
 
 typedef struct { char useless[45]; char message[3075]; } notify_request_t;
 int sceUserServiceInitialize(void *);
@@ -215,7 +229,9 @@ static const char *sys_path(const char *path, char *out, size_t n) {
 static int root_present(const char *root) { return is_internal(root) ? g_cfg.internal : is_mountpoint(root); }
 
 /* "usb0", "ext0", "internal storage" */
-static const char *root_label(const char *root) { return is_internal(root) ? "internal storage" : root + 5; }
+static const char *root_label(const char *root) {
+    return is_internal(root) ? TR("internal storage", "memoria interna") : root + 5;
+}
 
 /* --- appmeta entries copied verbatim from the pkg --- */
 
@@ -1820,7 +1836,9 @@ static int adopt_dir_pass(const char *root, const char *dir, int pass) {
             ver_text(sysver->ival, need, sizeof(need));
             ver_text(g_fw, have, sizeof(have));
             if (first_time(path))
-                notify("%s needs firmware %s or newer (this console has %s): left where it is", e->d_name, need, have);
+                notify(TR("%s needs firmware %s or newer (this console has %s): left where it is",
+                          "%s necesita el firmware %s o superior (esta consola tiene %s): se deja donde está"),
+                       e->d_name, need, have);
             pkg_close(&pkg);
             continue;
         }
@@ -1873,8 +1891,10 @@ static int adopt_dir_pass(const char *root, const char *dir, int pass) {
             if (same || is_app) {
                 /* duplicates, and a second copy of a game, stay where they are */
                 if (first_time(path))
-                    notify(same ? "%s is already in use for %s; the copy was left in the USB root"
-                                : "%s: %s already has a game package; the new one was left in the USB root",
+                    notify(same ? TR("%s is already in use for %s; the copy was left where it is",
+                                     "%s ya se usa para %s; la copia se deja donde está")
+                                : TR("%s: %s already has a game package; the new one was left where it is",
+                                     "%s: %s ya tiene un pkg de juego; el nuevo se deja donde está"),
                            e->d_name, tid);
                 continue;
             }
@@ -1892,7 +1912,9 @@ static int adopt_dir_pass(const char *root, const char *dir, int pass) {
             snprintf(game, sizeof(game), "%s/ps4/%s", root, tid);
             if (!origin_find(game, "patch.pkg", was, sizeof(was)))
                 origin_add(game, old + strlen(game) + 1, was);
-            notify("New update for %s (v%s): the previous one was moved to ps4/%s/replaced", tid, ver, tid);
+            notify(TR("New update for %s (v%s): the previous one was moved to ps4/%s/replaced",
+                      "Nueva actualización de %s (v%s): la anterior se movió a ps4/%s/replaced"),
+                   tid, ver, tid);
         }
         if (rename(path, dst)) {
             printf("[scan] move %s: %s\n", path, strerror(errno));
@@ -2064,12 +2086,16 @@ static int adopt_root_pkgs(const char *root) {
     int same = old && sl == strlen(sig) && !memcmp(old, sig, sl);
     mem_free(old);
     if (g_dlc_orphans && !same)
-        notify("%s: %d add-on(s) wait for their game, which is not on this drive (see the log)", root_label(root),
+        notify(TR("%s: %d add-on(s) wait for their game, which is not on this drive (see the log)",
+                  "%s: %d DLC esperan su juego, que no está en esta unidad (ver el log)"),
+               root_label(root),
                waiting_count(root));
     if (g_dlc_orphans && !same)
         write_file(seen, sig, strlen(sig), 0666);
     if (g_dlc_dupes)
-        notify("%s: %d add-on copy(ies) were left in place because the game already has them", root_label(root),
+        notify(TR("%s: %d add-on copy(ies) were left in place because the game already has them",
+                  "%s: %d copia(s) de DLC se dejan donde están porque el juego ya las tiene"),
+               root_label(root),
                g_dlc_dupes);
     return moved;
 }
@@ -2100,18 +2126,18 @@ static void scan_root(const char *root, int fresh, int reconnected) {
         return;
     }
     if (fresh)
-        notify("Scanning %s for PS4 games...", label);
+        notify(TR("Scanning %s for PS4 games...", "Buscando juegos de PS4 en %s..."), label);
     if (reconnected)
         clear_removed_dlc();
     int moved = adopt_root_pkgs(root);
     if (moved && !fresh)
-        notify("%s: %d new package(s) found", label, moved);
+        notify(TR("%s: %d new package(s) found", "%s: %d pkg(s) nuevo(s) encontrado(s)"), label, moved);
     char lib[PATH_MAX];
     snprintf(lib, sizeof(lib), "%s/ps4", root);
     DIR *d = opendir(lib);
     if (!d) {
         if (fresh)
-            notify("%s: no PS4 games found", label);
+            notify(TR("%s: no PS4 games found", "%s: no se encontraron juegos de PS4"), label);
         return;
     }
     static title_t titles[MAX_TITLES];
@@ -2145,11 +2171,12 @@ static void scan_root(const char *root, int fresh, int reconnected) {
     }
     closedir(d);
     if (fresh && !count)
-        notify("%s: no PS4 games found", label);
+        notify(TR("%s: no PS4 games found", "%s: no se encontraron juegos de PS4"), label);
     else if (fresh)
-        notify("%s: %d PS4 game(s) found, %d new or updated", label, count, pending);
+        notify(TR("%s: %d PS4 game(s) found, %d new or updated", "%s: %d juego(s) de PS4 encontrado(s), %d nuevo(s) o actualizado(s)"),
+               label, count, pending);
     else if (pending)
-        notify("%s: %d new or updated PS4 game(s)", label, pending);
+        notify(TR("%s: %d new or updated PS4 game(s)", "%s: %d juego(s) de PS4 nuevo(s) o actualizado(s)"), label, pending);
     /* games already in the library: keep them mounted */
     for (int i = 0; i < count; i++) {
         title_t *t = &titles[i];
@@ -2174,7 +2201,7 @@ static void scan_root(const char *root, int fresh, int reconnected) {
             m->running = 0; /* closed without a klog end event */
         }
         if (mount_title(&src))
-            notify("Failed to mount %s (%s)", src.name, t->tid);
+            notify(TR("Failed to mount %s (%s)", "No se pudo montar %s (%s)"), src.name, t->tid);
         src_close(&src);
     }
     if (!pending)
@@ -2185,7 +2212,8 @@ static void scan_root(const char *root, int fresh, int reconnected) {
     int size = g_cfg.batch && g_cfg.batch_size > 0 ? g_cfg.batch_size : pending;
     int groups = (pending + size - 1) / size, grouped = groups > 1, done = 0, ok = 0, group = 0;
     if (grouped)
-        notify("%s: adding %d PS4 games in %d groups of up to %d", label, pending, groups, size);
+        notify(TR("%s: adding %d PS4 games in %d groups of up to %d", "%s: añadiendo %d juego(s) de PS4 en %d grupo(s) de hasta %d"),
+               label, pending, groups, size);
     int *members = malloc(sizeof(int) * (size_t)size);
     char (*ids)[10] = malloc(10 * (size_t)size);
     int *prepared = malloc(sizeof(int) * (size_t)size);
@@ -2208,7 +2236,8 @@ static void scan_root(const char *root, int fresh, int reconnected) {
             buf_t names = {0};
             for (int k = 0; k < n; k++)
                 buf_printf(&names, "%s%s", k ? ", " : "", titles[members[k]].name);
-            notify("Group %d/%d, adding %d-%d of %d: %.400s", group, groups, done + 1, done + n, pending,
+            notify(TR("Group %d/%d, adding %d-%d of %d: %.400s", "Grupo %d/%d, añadiendo %d-%d de %d: %.400s"), group, groups,
+                   done + 1, done + n, pending,
                    names.data ? (const char *)names.data : "");
             buf_free(&names);
         }
@@ -2221,8 +2250,8 @@ static void scan_root(const char *root, int fresh, int reconnected) {
                 char extra[64] = "";
                 if (t->ndlc)
                     snprintf(extra, sizeof(extra), " + %d add-on%s", t->ndlc, t->ndlc > 1 ? "s" : "");
-                notify("Adding %d/%d: %s%s%s (%s)", done + k + 1, pending, t->name,
-                       t->has_patch ? " with update" : "", extra, t->tid);
+                notify(TR("Adding %d/%d: %s%s%s (%s)", "Añadiendo %d/%d: %s%s%s (%s)"), done + k + 1, pending, t->name,
+                       t->has_patch ? TR(" with update", " con actualización") : "", extra, t->tid);
             }
             if (src_open(&src, root, t->tid) || register_prepare(&src)) {
                 if (retry_failed(t->tid))
@@ -2249,9 +2278,10 @@ static void scan_root(const char *root, int fresh, int reconnected) {
                 retry_clear(t->tid);
                 ok++;
                 if (!grouped && needs_reboot(t->tid))
-                    notify("%s added. Restart the console once to play it", t->name);
+                    notify(TR("%s added. Restart the console once to play it", "%s añadido. Reinicia la consola una vez para jugarlo"),
+                           t->name);
                 else if (!grouped)
-                    notify("%s ready to play", t->name);
+                    notify(TR("%s ready to play", "%s listo para jugar"), t->name);
             }
             src_close(&src);
         }
@@ -2261,8 +2291,11 @@ static void scan_root(const char *root, int fresh, int reconnected) {
     free(ids);
     free(prepared);
     if (pending > 1)
-        notify("%s: %d of %d game(s) added%s", label, ok, pending,
-               g_nreboot ? ". Restart the console once to play the new ones" : ok == pending ? ", ready to play" : "");
+        notify(TR("%s: %d of %d game(s) added%s", "%s: %d de %d juego(s) añadido(s)%s"), label, ok, pending,
+               g_nreboot         ? TR(". Restart the console once to play the new ones",
+                                      ". Reinicia la consola una vez para jugar los nuevos")
+               : ok == pending ? TR(", ready to play", ", listos para jugar")
+                               : "");
 }
 
 /* Releases mounts over /user/app/<TID> of older versions, which mounted the drive
@@ -2475,7 +2508,9 @@ static int offline_game(const char *tid, char *dir, size_t dn, char *drive, size
 static void open_failed(const char *tid) {
     char dir[PATH_MAX], drive[32], name[128];
     if (offline_game(tid, dir, sizeof(dir), drive, sizeof(drive), name, sizeof(name)))
-        notify("%s is on %s, which is not connected. Connect it and start the game again", name, drive);
+        notify(TR("%s is on %s, which is not connected. Connect it and start the game again",
+                  "%s está en %s, que no está conectado. Conéctalo y vuelve a abrir el juego"),
+               name, drive);
 }
 
 static void disagree_seen(const char *tid) {
@@ -2535,7 +2570,8 @@ static void delete_game_files(const char *dir, const char *tid, const char *name
         unsigned long long n = tree_size(dir);
         rm_tree(dir);
         printf("[delete] %s: %s deleted (%llu bytes)\n", tid, dir, n);
-        notify("%s deleted: %.1f GB freed on %s", name, (double)n / 1e9, root_label(root));
+        notify(TR("%s deleted: %.1f GB freed on %s", "%s borrado: %.1f GB liberados en %s"), name, (double)n / 1e9,
+               root_label(root));
         return;
     }
     printf("[delete] %s: %s is not its library folder, nothing deleted\n", tid, dir);
@@ -2694,7 +2730,7 @@ static int find_root(const char *tid, char *root, size_t n) {
 }
 
 void app_games_json(buf_t *out) {
-    buf_printf(out, "{\"version\":");
+    buf_printf(out, "{\"lang\":\"%s\",\"version\":", lang_tag(g_lang));
     json_str(out, VERSION);
     buf_printf(out, ",\"games\":[");
     int first = 1, nlisted = 0;
@@ -2846,14 +2882,14 @@ static int app_art(const char *tid, const char *name, uint32_t id, buf_t *out) {
 int app_add(const char *tid, char *msg, size_t cap) {
     char rm[64], root[32];
     if (find_root(tid, root, sizeof(root))) {
-        snprintf(msg, cap, "%s is not on any connected USB drive", tid);
+        snprintf(msg, cap, TR("%s is not on any connected drive", "%s no está en ninguna unidad conectada"), tid);
         return -1;
     }
     snprintf(rm, sizeof(rm), STATE_DIR "/%s.removed", tid);
     unlink(rm);
     clear_removed_dlc();
     g_next_scan = 0;
-    snprintf(msg, cap, "Adding %s to the library", tid);
+    snprintf(msg, cap, TR("Adding %s to the library", "Añadiendo %s a la biblioteca"), tid);
     return 0;
 }
 
@@ -2899,7 +2935,7 @@ int app_remove(const char *tid, char *msg, size_t cap) {
     managed_t *m = managed_by(tid, NULL);
     if ((m && m->running) || title_running(tid)) {
         printf("[web] remove %s refused: game running\n", tid);
-        snprintf(msg, cap, "Close the game before removing it");
+        snprintf(msg, cap, "%s", TR("Close the game before removing it", "Cierra el juego antes de quitarlo"));
         return -1;
     }
     if (m)
@@ -2911,7 +2947,7 @@ int app_remove(const char *tid, char *msg, size_t cap) {
     snprintf(b, sizeof(b), "/user/patch/%s", tid);
     if (mounted_from(a, NULL, 0) || mounted_from(b, NULL, 0)) {
         /* never let the system uninstall run while the USB folder is reachable */
-        snprintf(msg, cap, "Could not unmount %s; nothing was removed", tid);
+        snprintf(msg, cap, TR("Could not unmount %s; nothing was removed", "No se pudo desmontar %s; no se quitó nada"), tid);
         return -1;
     }
     char path[64];
@@ -2926,9 +2962,15 @@ int app_remove(const char *tid, char *msg, size_t cap) {
         m->used = 0;
     printf("[web] remove %s: uninstall=0x%08x\n", tid, rc);
     if (rc == -2)
-        snprintf(msg, cap, "The system did not finish removing %s yet; try again in a moment", tid);
+        snprintf(msg, cap,
+                 TR("The system did not finish removing %s yet; try again in a moment",
+                    "El sistema aún no terminó de quitar %s; inténtalo de nuevo en un momento"),
+                 tid);
     else
-        snprintf(msg, cap, rc ? "Failed to remove %s (0x%08x)" : "%s removed from the library. Its pkgs stay where they are.",
+        snprintf(msg, cap,
+                 rc ? TR("Failed to remove %s (0x%08x)", "No se pudo quitar %s (0x%08x)")
+                    : TR("%s removed from the library. Its pkgs stay where they are.",
+                         "%s quitado de la biblioteca. Sus pkgs se quedan donde están."),
                  tid, rc);
     return rc ? -1 : 0;
 }
@@ -2941,7 +2983,8 @@ static void readd_title(const char *tid) {
     if (g_nreadd_done < MAX_TITLES)
         snprintf(g_readd_done[g_nreadd_done++], 10, "%s", tid);
     pump_events(5000); /* let the system finish the refused launch */
-    notify("%s (%s): adding it to the library again", name, g_readd_why);
+    notify(TR("%s (%s): adding it to the library again", "%s (%s): volviendo a añadirlo a la biblioteca"), name,
+           g_readd_why);
     int rc = app_remove(tid, msg, sizeof(msg));
     printf("[reg] %s: removed to add it again: %s\n", tid, msg);
     if (!rc)
@@ -3168,7 +3211,7 @@ static int close_open_games(void) {
         return 0;
     for (int i = 0; i < n && i < 8; i++) {
         managed_t *m = managed_by(tids[i], NULL);
-        notify("Closing %s to move pkgs back", m ? m->name : tids[i]);
+        notify(TR("Closing %s to move pkgs back", "Cerrando %s para devolver sus pkgs"), m ? m->name : tids[i]);
         int rc = sceSystemServiceKillApp(ids[i], -1, 0, 0);
         printf("[restore] close %s (app 0x%08x): 0x%08x\n", tids[i], ids[i], rc);
     }
@@ -3244,18 +3287,20 @@ static void run_restore(char (*only)[10], int nonly) {
     static restore_item_t items[MAX_TITLES];
     int n = restore_collect(only, nonly, items, MAX_TITLES), moved = 0, failed = 0, done = 0, kept = 0;
     if (!n) {
-        notify("No PS4Mount games to move back");
+        notify("%s", TR("No PS4Mount games to move back", "No hay juegos de PS4Mount que devolver"));
         return;
     }
     if (close_open_games()) {
-        notify("The open game did not close; no pkgs were moved back");
+        notify("%s", TR("The open game did not close; no pkgs were moved back", "El juego abierto no se cerró; no se devolvió ningún pkg"));
         return;
     }
     int size = g_cfg.restore_batch;
     if (n == 1)
-        notify("Moving the pkgs of %s back...", items[0].name);
+        notify(TR("Moving the pkgs of %s back...", "Devolviendo los pkgs de %s..."), items[0].name);
     else
-        notify("Moving the pkgs of %d game(s) back to where they came from, %d at a time...", n, size);
+        notify(TR("Moving the pkgs of %d game(s) back to where they came from, %d at a time...",
+                  "Devolviendo los pkgs de %d juego(s) a su sitio, en grupos de %d..."),
+               n, size);
     for (int i = 0; i < n; i += size) {
         if (i)
             wait_db_quiet(BATCH_QUIET, 120);
@@ -3279,22 +3324,26 @@ static void run_restore(char (*only)[10], int nonly) {
     clear_removed_dlc();
     g_next_scan = 0;
     if (n == 1 && done)
-        notify("%s: %d pkg file(s) moved back%s", items[0].name, moved,
-               failed ? ", some could not be moved (see the log)" : "");
+        notify(TR("%s: %d pkg file(s) moved back%s", "%s: %d pkg(s) devuelto(s)%s"), items[0].name, moved,
+               failed ? TR(", some could not be moved (see the log)", ", algunos no se pudieron mover (ver el log)") : "");
     else if (n > 1)
-        notify("%d pkg file(s) of %d game(s) moved back%s%s", moved, done,
-               failed ? ", some could not be moved (see the log)" : "",
-               kept ? ", some games could not leave the library (see the log)" : "");
+        notify(TR("%d pkg file(s) of %d game(s) moved back%s%s", "%d pkg(s) de %d juego(s) devuelto(s)%s%s"), moved, done,
+               failed ? TR(", some could not be moved (see the log)", ", algunos no se pudieron mover (ver el log)") : "",
+               kept ? TR(", some games could not leave the library (see the log)",
+                         ", algunos juegos no pudieron salir de la biblioteca (ver el log)")
+                    : "");
 }
 
 int app_restore(const char *tids, char *msg, size_t cap) {
     if (g_restore_all || g_restore_n) {
-        snprintf(msg, cap, "Already moving pkgs back, wait for it to finish");
+        snprintf(msg, cap, "%s", TR("Already moving pkgs back, wait for it to finish", "Ya se están devolviendo pkgs, espera a que termine"));
         return -1;
     }
     if (!tids) {
         g_restore_all = 1;
-        snprintf(msg, cap, "Closing the open game and moving the pkgs of all games back to where they came from");
+        snprintf(msg, cap, "%s",
+                 TR("Closing the open game and moving the pkgs of all games back to where they came from",
+                    "Cerrando el juego abierto y devolviendo los pkgs de todos los juegos a su sitio"));
         return 0;
     }
     int n = 0;
@@ -3307,7 +3356,7 @@ int app_restore(const char *tids, char *msg, size_t cap) {
         }
         snprintf(tid, sizeof(tid), "%.9s", p);
         if (find_root(tid, root, sizeof(root))) {
-            snprintf(msg, cap, "%s is not on any connected drive", tid);
+            snprintf(msg, cap, TR("%s is not on any connected drive", "%s no está en ninguna unidad conectada"), tid);
             return -1;
         }
         int dup = 0;
@@ -3320,23 +3369,27 @@ int app_restore(const char *tids, char *msg, size_t cap) {
             p++;
     }
     if (!n) {
-        snprintf(msg, cap, "No games selected");
+        snprintf(msg, cap, "%s", TR("No games selected", "No hay juegos seleccionados"));
         return -1;
     }
     g_restore_n = n;
     if (n == 1)
-        snprintf(msg, cap, "Closing the open game and moving the pkgs of %s back to where they came from",
+        snprintf(msg, cap,
+                 TR("Closing the open game and moving the pkgs of %s back to where they came from",
+                    "Cerrando el juego abierto y devolviendo los pkgs de %s a su sitio"),
                  g_restore_tids[0]);
     else
-        snprintf(msg, cap, "Closing the open game and moving the pkgs of %d games back, %d at a time", n,
-                 g_cfg.restore_batch);
+        snprintf(msg, cap,
+                 TR("Closing the open game and moving the pkgs of %d games back, %d at a time",
+                    "Cerrando el juego abierto y devolviendo los pkgs de %d juego(s), en grupos de %d"),
+                 n, g_cfg.restore_batch);
     return 0;
 }
 
 int app_restored_forget(char *msg, size_t cap) {
     unlink(RESTORED_LIST);
     g_next_scan = 0;
-    snprintf(msg, cap, "Pkgs moved back will be picked up again on the next scan");
+    snprintf(msg, cap, "%s", TR("Pkgs moved back will be picked up again on the next scan", "Los pkgs devueltos se volverán a usar en la próxima búsqueda"));
     return 0;
 }
 
@@ -3352,20 +3405,22 @@ static int clean_scan_path(const char *in, char *out, size_t n, char *why, size_
     while (l && (out[l - 1] == ' ' || out[l - 1] == '/' || out[l - 1] == '\r'))
         out[--l] = 0;
     if (l >= 120) {
-        snprintf(why, wn, "folder name too long: %.40s...", out);
+        snprintf(why, wn, TR("folder name too long: %.40s...", "nombre de carpeta demasiado largo: %.40s..."), out);
         return -1;
     }
     if (strchr(out, '\\') || strchr(out, ':') || strstr(out, "//")) {
-        snprintf(why, wn, "invalid folder: %s", out);
+        snprintf(why, wn, TR("invalid folder: %s", "carpeta no válida: %s"), out);
         return -1;
     }
     for (const char *c = out; *c; c = strchr(c, '/') ? strchr(c, '/') + 1 : c + strlen(c))
         if (!strncmp(c, "..", 2) && (c[2] == '/' || !c[2])) {
-            snprintf(why, wn, "folders outside the drive are not allowed: %s", out);
+            snprintf(why, wn, TR("folders outside the drive are not allowed: %s", "no se permiten carpetas fuera de la unidad: %s"), out);
             return -1;
         }
     if (!strncasecmp(out, "ps4", 3) && (!out[3] || out[3] == '/')) {
-        snprintf(why, wn, "the ps4 folder holds the games PS4Mount already moved; choose another folder");
+        snprintf(why, wn, "%s",
+                 TR("the ps4 folder holds the games PS4Mount already moved; choose another folder",
+                    "la carpeta ps4 guarda los juegos que PS4Mount ya movió; elige otra carpeta"));
         return -1;
     }
     return 0;
@@ -3373,8 +3428,9 @@ static int clean_scan_path(const char *in, char *out, size_t n, char *why, size_
 
 static void config_save(void) {
     buf_t b = {0};
-    buf_printf(&b, "batch=%d\nbatch_size=%d\ndlc=%d\nrestore_batch=%d\ninternal=%d\n", g_cfg.batch, g_cfg.batch_size,
-               g_cfg.dlc, g_cfg.restore_batch, g_cfg.internal);
+    buf_printf(&b, "batch=%d\nbatch_size=%d\ndlc=%d\nrestore_batch=%d\ninternal=%d\nlang=%s\n", g_cfg.batch,
+               g_cfg.batch_size, g_cfg.dlc, g_cfg.restore_batch, g_cfg.internal,
+               g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto");
     for (int i = 0; i < g_cfg.npaths; i++)
         buf_printf(&b, "path=%s\n", g_cfg.paths[i]);
     write_file(CONFIG_PATH, b.data, b.len, 0666);
@@ -3400,6 +3456,8 @@ static void config_load(void) {
             c.restore_batch = atoi(line + 14);
         else if (!strncmp(line, "internal=", 9))
             c.internal = atoi(line + 9) != 0;
+        else if (!strncmp(line, "lang=", 5))
+            c.lang = lang_from_tag(line + 5);
         else if (!strncmp(line, "path=", 5) && c.npaths < MAX_SCAN_PATHS &&
                  !clean_scan_path(line + 5, path, sizeof(path), why, sizeof(why)))
             snprintf(c.paths[c.npaths++], sizeof(c.paths[0]), "%s", path);
@@ -3419,9 +3477,10 @@ static void config_load(void) {
 void app_config_json(buf_t *out) {
     buf_printf(out,
                "{\"batch\":%s,\"batch_size\":%d,\"dlc\":%s,\"internal\":%s,\"restore_batch\":%d,\"max_restore_batch\":%d,"
-               "\"paths\":[",
+               "\"lang\":\"%s\",\"ui_lang\":\"%s\",\"paths\":[",
                g_cfg.batch ? "true" : "false", g_cfg.batch_size, g_cfg.dlc ? "true" : "false",
-               g_cfg.internal ? "true" : "false", g_cfg.restore_batch, MAX_RESTORE_BATCH);
+               g_cfg.internal ? "true" : "false", g_cfg.restore_batch, MAX_RESTORE_BATCH,
+               g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto", lang_tag(g_lang));
     for (int i = 0; i < g_cfg.npaths; i++) {
         char shown[130];
         snprintf(shown, sizeof(shown), "/%s", g_cfg.paths[i]);
@@ -3465,6 +3524,8 @@ int app_config_set(const char *body, char *msg, size_t cap) {
                 c.dlc = atoi(value) != 0;
             else if (k == 8 && !strncmp(p, "internal", 8))
                 c.internal = atoi(value) != 0;
+            else if (k == 4 && !strncmp(p, "lang", 4))
+                c.lang = lang_from_tag(value); /* "auto" and anything else: the console's */
             else if (k == 13 && !strncmp(p, "restore_batch", 13)) {
                 char *end;
                 long v = strtol(value, &end, 10);
@@ -3474,7 +3535,7 @@ int app_config_set(const char *body, char *msg, size_t cap) {
                 for (char *line = strtok(value, "\n"); line; line = strtok(NULL, "\n")) {
                     char path[128];
                     if (clean_scan_path(line, path, sizeof(path), why, sizeof(why))) {
-                        snprintf(msg, cap, "Not saved: %s", why);
+                        snprintf(msg, cap, TR("Not saved: %s", "No se guardó: %s"), why);
                         return -1;
                     }
                     int dup = 0;
@@ -3483,7 +3544,7 @@ int app_config_set(const char *body, char *msg, size_t cap) {
                     if (dup)
                         continue;
                     if (c.npaths == MAX_SCAN_PATHS) {
-                        snprintf(msg, cap, "Not saved: at most %d folders", MAX_SCAN_PATHS);
+                        snprintf(msg, cap, TR("Not saved: at most %d folders", "No se guardó: como máximo %d carpetas"), MAX_SCAN_PATHS);
                         return -1;
                     }
                     snprintf(c.paths[c.npaths++], sizeof(c.paths[0]), "%s", path);
@@ -3493,24 +3554,27 @@ int app_config_set(const char *body, char *msg, size_t cap) {
         p = amp ? amp + 1 : NULL;
     }
     if (c.batch_size < 1 || c.batch_size > 50) {
-        snprintf(msg, cap, "Not saved: games per group must be between 1 and 50");
+        snprintf(msg, cap, "%s", TR("Not saved: games per group must be between 1 and 50", "No se guardó: los juegos por grupo deben estar entre 1 y 50"));
         return -1;
     }
     if (c.restore_batch < 1 || c.restore_batch > MAX_RESTORE_BATCH) {
-        snprintf(msg, cap, "Not saved: games per group when moving back must be a number from 1 to %d",
+        snprintf(msg, cap,
+                 TR("Not saved: games per group when moving back must be a number from 1 to %d",
+                    "No se guardó: los juegos por grupo al devolver deben ser un número de 1 a %d"),
                  MAX_RESTORE_BATCH);
         return -1;
     }
     if (!c.npaths) {
-        snprintf(msg, cap, "Not saved: add at least one folder (/ is the drive root)");
+        snprintf(msg, cap, "%s", TR("Not saved: add at least one folder (/ is the drive root)", "No se guardó: añade al menos una carpeta (/ es la raíz de la unidad)"));
         return -1;
     }
     g_cfg = c;
+    apply_lang();
     config_save();
     printf("[config] saved: batch=%d batch_size=%d dlc=%d restore_batch=%d folders=%d\n", c.batch, c.batch_size, c.dlc,
            c.restore_batch, c.npaths);
     g_next_scan = 0;
-    snprintf(msg, cap, "Settings saved");
+    snprintf(msg, cap, "%s", TR("Settings saved", "Ajustes guardados"));
     return 0;
 }
 
@@ -3574,24 +3638,34 @@ void app_check(const void *data, size_t len, uint64_t size, buf_t *out) {
     int rc = write_file(tmp, data, len, 0666) ? -1 : pkg_check(tmp, g_fw, &c);
     unlink(tmp);
     if (rc) {
-        buf_printf(out, "{\"ok\":false,\"problem\":\"not a PS4 pkg\"}");
+        buf_printf(out, "{\"ok\":false,\"problem\":\"%s\"}", TR("not a PS4 pkg", "no es un pkg de PS4"));
         return;
     }
     char problem[256], notes[3][200], sv[16], fw[16], where[32];
     int nnotes = 0;
     snprintf(problem, sizeof(problem), "%s", c.problem);
     if (!problem[0] && size && size != c.pkg_size)
-        snprintf(problem, sizeof(problem), "the file is %llu bytes but its header says %llu: it is incomplete or damaged",
+        snprintf(problem, sizeof(problem),
+                 TR("the file is %llu bytes but its header says %llu: it is incomplete or damaged",
+                    "el archivo tiene %llu bytes pero su cabecera dice %llu: está incompleto o dañado"),
                  (unsigned long long)size, (unsigned long long)c.pkg_size);
     if (!problem[0] && c.kind != PKG_KIND_ADDON && installed_internally(c.title_id))
-        snprintf(problem, sizeof(problem), "%s is installed on the console the normal way: PS4Mount leaves it alone",
+        snprintf(problem, sizeof(problem),
+                 TR("%s is installed on the console the normal way: PS4Mount leaves it alone",
+                    "%s está instalado en la consola de la forma normal: PS4Mount no lo toca"),
                  c.title_id);
     if (c.kind == PKG_KIND_ADDON && !g_cfg.dlc)
-        snprintf(notes[nnotes++], sizeof(notes[0]), "add-ons are turned off in the settings: it will wait in the folder");
+        snprintf(notes[nnotes++], sizeof(notes[0]), "%s",
+                 TR("add-ons are turned off in the settings: it will wait in the folder",
+                    "los DLC están desactivados en los ajustes: esperará en la carpeta"));
     if (c.kind == PKG_KIND_UPDATE && find_root(c.title_id, where, sizeof(where)) && !db_is_registered(c.title_id))
-        snprintf(notes[nnotes++], sizeof(notes[0]), "the game of this update is not on a drive yet: send it too");
+        snprintf(notes[nnotes++], sizeof(notes[0]), "%s",
+                 TR("the game of this update is not on a drive yet: send it too",
+                    "el juego de esta actualización aún no está en ninguna unidad: envíalo también"));
     if (c.kind == PKG_KIND_GAME && !find_root(c.title_id, where, sizeof(where)))
-        snprintf(notes[nnotes++], sizeof(notes[0]), "%s already has a game in %s: this copy will be left where it is",
+        snprintf(notes[nnotes++], sizeof(notes[0]),
+                 TR("%s already has a game in %s: this copy will be left where it is",
+                    "%s ya tiene un juego en %s: esta copia se dejará donde está"),
                  c.title_id, root_label(where));
     ver_text(c.system_ver, sv, sizeof(sv));
     ver_text(g_fw, fw, sizeof(fw));
@@ -3642,22 +3716,22 @@ int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint6
         p = amp ? amp + 1 : p + l;
     }
     if (upload_clean_name(raw, name, sizeof(name))) {
-        snprintf(msg, cap, "no file name");
+        snprintf(msg, cap, "%s", TR("no file name", "falta el nombre del archivo"));
         return -1;
     }
     if (upload_dir(dest, dir, sizeof(dir))) {
-        snprintf(msg, cap, "%s is not available", dest[0] ? dest : "the destination");
+        snprintf(msg, cap, TR("%s is not available", "%s no está disponible"), dest[0] ? dest : TR("the destination", "el destino"));
         return -1;
     }
     mkdirs(dir, 0777);
     uint64_t fb = free_bytes(dir), margin = 64ull << 20;
     if (fb < length + margin) {
-        snprintf(msg, cap, "not enough space in %s: %llu MB free, %llu MB needed", dir,
+        snprintf(msg, cap, TR("not enough space in %s: %llu MB free, %llu MB needed", "no hay espacio en %s: %llu MB libres, %llu MB necesarios"), dir,
                  (unsigned long long)(fb >> 20), (unsigned long long)((length + margin) >> 20));
         return -1;
     }
     if (upload_start(fd, dir, name, length, pre, pre_len, g_fw, upload_done)) {
-        snprintf(msg, cap, "another pkg is being received: wait for it to finish");
+        snprintf(msg, cap, "%s", TR("another pkg is being received: wait for it to finish", "ya se está recibiendo otro pkg: espera a que termine"));
         return -1;
     }
     return 0;
@@ -3829,7 +3903,9 @@ int main(void) {
     int lock = single_instance();
     if (lock < 0) {
         /* before the log: the screen is the only place this is seen */
-        notify(VERSION " is already running. Panel at http://<PS4 IP>:8770");
+        apply_lang(); /* the settings are the running one's: the console's language */
+        notify("%s", TR(VERSION " is already running. Panel at http://<PS4 IP>:8770",
+                  VERSION " ya está en marcha. Panel en http://<IP de la PS4>:8770"));
         return 0;
     }
     sceUserServiceInitialize(0);
@@ -3843,6 +3919,7 @@ int main(void) {
     log_start(STATE_DIR "/log.txt");
     setvbuf(stdout, NULL, _IOLBF, 0);
     config_load();
+    apply_lang();
     signal(SIGPIPE, SIG_IGN);
     check_firmware();
     if (user_app_masked())
@@ -3851,20 +3928,24 @@ int main(void) {
      * a browser */
     g_web = web_listen();
     if (g_reg_mode == REG_ALL)
-        notify(g_web >= 0 ? VERSION " running. Panel at http://<PS4 IP>:8770"
-                          : VERSION " running (panel unavailable)");
+        notify("%s", g_web >= 0 ? TR(VERSION " running. Panel at http://<PS4 IP>:8770",
+                               VERSION " en marcha. Panel en http://<IP de la PS4>:8770")
+                          : TR(VERSION " running (panel unavailable)", VERSION " en marcha (panel no disponible)"));
     else if (g_reg_mode == REG_TITLEDIR)
-        notify(VERSION " running (firmware %s: games are added one at a time). Panel at "
-                       "http://<PS4 IP>:8770",
+        notify(TR(VERSION " running (firmware %s: games are added one at a time). Panel at http://<PS4 IP>:8770",
+                  VERSION " en marcha (firmware %s: los juegos se añaden de uno en uno). Panel en "
+                          "http://<IP de la PS4>:8770"),
                g_fw_text);
     else
-        notify(VERSION ": firmware %s is not supported yet. To protect the system database, no games are added.",
+        notify(TR(VERSION ": firmware %s is not supported yet. To protect the system database, no games are added.",
+                  VERSION ": el firmware %s aún no es compatible. Para proteger la base de datos del sistema, no se "
+                          "añaden juegos."),
                g_fw_text);
     unlink(STATE_DIR "/stop");
     for (;;) {
         if (g_stop || exists(STATE_DIR "/stop")) {
             unlink(STATE_DIR "/stop");
-            notify(VERSION " stopped");
+            notify("%s", TR(VERSION " stopped", VERSION " detenido"));
             shutdown_daemon(lock);
             return 0;
         }
@@ -3872,7 +3953,7 @@ int main(void) {
             /* lost in rest mode: take it again, or stop if another PS4Mount has it now */
             close(lock);
             if ((lock = single_instance()) < 0) {
-                notify(VERSION " stopped: another PS4Mount is running");
+                notify("%s", TR(VERSION " stopped: another PS4Mount is running", VERSION " detenido: hay otro PS4Mount en marcha"));
                 shutdown_daemon(-1);
                 return 0;
             }
@@ -3920,7 +4001,9 @@ int main(void) {
             if (g_reg_mode != REG_NONE)
                 scan_all();
             else if (g_manual_scan)
-                notify("Firmware %s is not supported yet: no games are added", g_fw_text);
+                notify(TR("Firmware %s is not supported yet: no games are added",
+                          "El firmware %s aún no es compatible: no se añaden juegos"),
+                       g_fw_text);
             g_manual_scan = 0;
             g_next_scan = time(NULL) + SCAN_SECONDS;
         }

@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include "page_data.h"
+#include "lang.h"
 #include "mem.h"
 
 #define LOG_PATH "/data/ps4mount/log.txt"
@@ -215,14 +216,14 @@ void web_handle(int fd) {
         buf_free(&b);
     } else if (post && !strncmp(path, "/api/mount", 10)) {
         if (title_param(path, tid))
-            json_msg(fd, 0, "invalid title_id");
+            json_msg(fd, 0, TR("invalid title_id", "title_id no válido"));
         else {
             int rc = app_add(tid, msg, sizeof(msg));
             json_msg(fd, !rc, msg);
         }
     } else if (post && !strncmp(path, "/api/unmount", 12)) {
         if (title_param(path, tid))
-            json_msg(fd, 0, "invalid title_id");
+            json_msg(fd, 0, TR("invalid title_id", "title_id no válido"));
         else {
             int rc = app_remove(tid, msg, sizeof(msg));
             json_msg(fd, !rc, msg);
@@ -269,9 +270,9 @@ void web_handle(int fd) {
         if (!may_write(fd, req))
             reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
         else if (!length || length > CHECK_MAX)
-            json_msg(fd, 0, "send the first MB of the pkg (at most 16 MB)");
+            json_msg(fd, 0, TR("send the first MB of the pkg (at most 16 MB)", "envía el primer MB del pkg (como máximo 16 MB)"));
         else if (!(data = read_body(fd, body, (size_t)(req + n - body), (size_t)length)))
-            json_msg(fd, 0, "the pkg start did not arrive whole");
+            json_msg(fd, 0, TR("the pkg start did not arrive whole", "el comienzo del pkg no llegó entero"));
         else {
             buf_t b = {0};
             app_check(data, (size_t)length, sz ? strtoull(sz + 5, NULL, 10) : 0, &b);
@@ -283,7 +284,7 @@ void web_handle(int fd) {
         if (!may_write(fd, req))
             reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
         else if (!length)
-            json_msg(fd, 0, "nothing was sent");
+            json_msg(fd, 0, TR("nothing was sent", "no se envió nada"));
         else if (!app_upload(fd, path, body, (size_t)(req + n - body), length, msg, sizeof(msg)))
             return; /* the upload answers and closes it */
         else

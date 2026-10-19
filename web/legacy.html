@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PS4Mount</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230e1116'/%3E%3Crect x='25' y='5' width='14' height='11' rx='2' fill='%23c9d3e6'/%3E%3Crect x='16' y='14' width='32' height='44' rx='8' fill='%233d7bfd'/%3E%3Cpath d='M27 26v20l15-10z' fill='%23f4f6fb' stroke='%23f4f6fb' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E">
 <!-- Panel for the browser of older firmwares (no <dialog>): plain pages instead of dialogs,
      ES5 and XMLHttpRequest only, no CSS variables or grid. -->
 <style>
@@ -72,6 +73,9 @@ pre{white-space:pre-wrap;font-size:12px;background:#0b0d11;padding:12px;border-r
     <label><input type="checkbox" id="s-batch"> Add new games in groups</label>
     <label>Games per group <input type="number" id="s-size" inputmode="numeric" pattern="[0-9]*" min="1" max="50" style="width:6em"></label>
     <label><input type="checkbox" id="s-dlc"> Install add-ons (DLC)</label>
+    <label>Language
+      <select id="s-lang"><option value="auto">The console's</option><option value="en">English</option><option value="es">Español</option></select>
+    </label>
   </div>
   <div class="box">
     <h3>Restore games to the original path</h3>
@@ -104,9 +108,11 @@ pre{white-space:pre-wrap;font-size:12px;background:#0b0d11;padding:12px;border-r
   <button id="l-back">Back</button>
 </div>
 
+<!--LANG-->
 <script>
 var games = [], busy = {}, maxRestore = 10, msgTimer = 0;
 var labels = {ready: 'Ready', restart: 'Restart to play', running: 'Running', removed: 'Not in library', internal: 'Installed on console', pending: 'Adding', duplicate: 'On another drive', offline: 'Drive not connected'};
+function label(state) { return labels[state] ? t(labels[state]) : state; }
 
 function $(id) { return document.getElementById(id); }
 function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
@@ -138,8 +144,8 @@ function show(view) {
   for (var i = 0; i < v.length; i++) $(v[i]).className = 'view' + (v[i] === view ? ' on' : '');
   window.scrollTo(0, 0);
 }
-function addons(g) { return g.dlc ? g.dlc + ' add-on' + (g.dlc > 1 ? 's' : '') : 'no add-ons'; }
-function movedBack(g) { return 'Game' + (g.has_patch ? ', update' : '') + (g.dlc ? ' and ' + addons(g) : ''); }
+function addons(g) { return g.dlc ? (g.dlc === 1 ? t('1 add-on') : t('{0} add-ons', g.dlc)) : t('no add-ons'); }
+function movedBack(g) { return t('Game{0}{1}', g.has_patch ? t(', update') : '', g.dlc ? t(' and {0}', addons(g)) : ''); }
 
 function render() {
   var html = '', counts = {}, i, g, act;
@@ -147,31 +153,32 @@ function render() {
     g = games[i];
     counts[g.state] = (counts[g.state] || 0) + 1;
     act = '';
-    if (g.state === 'removed') act = '<button class="primary" data-a="mount" data-t="' + g.title_id + '">Add to library</button>';
-    else if (g.state === 'ready' || g.state === 'restart') act = '<button class="danger" data-a="unmount" data-t="' + g.title_id + '">Remove from library</button>';
-    else if (g.state === 'running') act = '<button disabled>Close the game to remove it</button>';
-    if (g.state !== 'internal' && g.state !== 'offline') act += '<button data-a="restore" data-t="' + g.title_id + '">Move pkgs back</button>';
-    if (busy[g.title_id]) act = '<button disabled>Please wait...</button>';
+    if (g.state === 'removed') act = '<button class="primary" data-a="mount" data-t="' + g.title_id + '">' + t('Add to library') + '</button>';
+    else if (g.state === 'ready' || g.state === 'restart') act = '<button class="danger" data-a="unmount" data-t="' + g.title_id + '">' + t('Remove from library') + '</button>';
+    else if (g.state === 'running') act = '<button disabled>' + t('Close the game to remove it') + '</button>';
+    if (g.state !== 'internal' && g.state !== 'offline') act += '<button data-a="restore" data-t="' + g.title_id + '">' + t('Move pkgs back') + '</button>';
+    if (busy[g.title_id]) act = '<button disabled>' + t('Please wait...') + '</button>';
     html += '<div class="card"><img src="/icon/' + g.title_id + '" alt="">' +
-      '<div class="info"><span class="badge b-' + g.state + '">' + esc(labels[g.state] || g.state) + '</span>' +
+      '<div class="info"><span class="badge b-' + g.state + '">' + esc(label(g.state)) + '</span>' +
       '<div class="name">' + esc(g.name) + '</div>' +
-      '<div class="meta">' + g.title_id + (g.version ? ' - v' + esc(g.version) : '') + (g.has_patch ? ' (with update)' : '') +
-        (g.dlc ? ' - ' + addons(g) : '') + (g.size ? ' - ' + gb(g.size) : '') + '</div>' +
-      '<div class="meta">' + esc(g.source) + (g.mount ? ' - mounted ' + g.mount : '') + '</div>' +
-      (g.state === 'restart' ? '<div class="warn">Added. Restart the console once to play it.</div>' : '') +
-      (g.state === 'offline' ? '<div class="warn">On ' + esc(g.storage) + ', which is not connected. Connect it to play.</div>' : '') +
+      '<div class="meta">' + g.title_id + (g.version ? ' - v' + esc(g.version) : '') + (g.has_patch ? t(' (with update)') : '') +
+        (g.dlc ? ' - ' + esc(addons(g)) : '') + (g.size ? ' - ' + gb(g.size) : '') + '</div>' +
+      '<div class="meta">' + esc(g.source) + (g.mount ? ' - ' + esc(t('mounted {0}', g.mount)) : '') + '</div>' +
+      (g.state === 'restart' ? '<div class="warn">' + t('Added. Restart the console once to play it.') + '</div>' : '') +
+      (g.state === 'offline' ? '<div class="warn">' + esc(t('On {0}, which is not connected. Connect it to play.', g.storage)) + '</div>' : '') +
       (g.update_issue ? '<div class="warn">' + esc(g.update_issue) + '</div>' : '') + '</div>' +
       '<div class="actions">' + act + '</div></div>';
   }
   $('grid').innerHTML = html;
   $('empty').style.display = games.length ? 'none' : 'block';
-  var s = '<span>' + games.length + ' game(s)</span>';
-  for (var k in counts) s += '<span>' + esc(labels[k] || k) + ': ' + counts[k] + '</span>';
+  var s = '<span>' + t('{0} game(s)', games.length) + '</span>';
+  for (var k in counts) s += '<span>' + esc(label(k)) + ': ' + counts[k] + '</span>';
   $('summary').innerHTML = s;
 }
 function load() {
   api('/api/games', 'GET', null, function (err, j) {
-    if (err) { say('Could not read the list: ' + err); return; }
+    if (err) { say(t('Could not read the list: {0}', err)); return; }
+    setLang(j.lang);
     games = j.games;
     $('ver').innerHTML = esc(j.version);
     render();
@@ -182,44 +189,45 @@ $('grid').onclick = function (e) {
   var b = e.target || e.srcElement;
   if (!b || !b.getAttribute || !b.getAttribute('data-a')) return;
   var tid = b.getAttribute('data-t'), a = b.getAttribute('data-a');
-  if (a === 'unmount' && !confirm('Remove ' + tid + ' from the library? Its pkgs stay where they are (deleting it on the console deletes them).')) return;
-  if (a === 'restore' && !confirm('Move the pkgs of ' + tid + ' (game, update and all its add-ons) back to where they came from, ' +
+  if (a === 'unmount' && !confirm(t('Remove {0} from the library? Its pkgs stay where they are (deleting it on the console deletes them).', tid))) return;
+  if (a === 'restore' && !confirm(t('Move the pkgs of {0} (game, update and all its add-ons) back to where they came from, ' +
       'with their original names?\n\nThe open game is closed first. The game leaves the library and PS4Mount stops picking ' +
-      'these pkgs up. No pkg is deleted.')) return;
+      'these pkgs up. No pkg is deleted.', tid))) return;
   busy[tid] = 1;
   render();
   api('/api/' + a + '?title_id=' + tid, 'POST', null, function (err, j) {
-    say(err ? 'Error: ' + err : j.message);
+    say(err ? t('Error: {0}', err) : j.message);
     delete busy[tid];
     load();
   });
 };
 $('nav-games').onclick = function () { show('v-games'); load(); };
 $('rescan').onclick = function () {
-  api('/api/rescan', 'POST', null, function (err, j) { say(err ? 'Error: ' + err : j.message); setTimeout(load, 3000); });
+  api('/api/rescan', 'POST', null, function (err, j) { say(err ? t('Error: {0}', err) : j.message); setTimeout(load, 3000); });
 };
 $('nav-log').onclick = function () {
   api('/api/log', 'GET', null, function (err, j) {
-    if (err) { say('Could not read the log: ' + err); return; }
+    if (err) { say(t('Could not read the log: {0}', err)); return; }
     $('log').innerHTML = esc(j.log);
     show('v-log');
   });
 };
 $('l-back').onclick = function () { show('v-games'); };
 $('stop').onclick = function () {
-  if (!confirm('Stop PS4Mount? The games stay unavailable until it is loaded again.')) return;
-  api('/api/stop', 'POST', null, function (err, j) { say(err ? 'Error: ' + err : j.message); });
+  if (!confirm(t('Stop PS4Mount? The games stay unavailable until it is loaded again.'))) return;
+  api('/api/stop', 'POST', null, function (err, j) { say(err ? t('Error: {0}', err) : j.message); });
 };
 
 /* --- settings --- */
 $('nav-settings').onclick = function () {
   api('/api/config', 'GET', null, function (err, c) {
-    if (err) { say('Could not read the settings: ' + err); return; }
+    if (err) { say(t('Could not read the settings: {0}', err)); return; }
     $('s-paths').value = c.paths.join('\n');
     $('s-batch').checked = c.batch;
     $('s-size').value = c.batch_size;
     $('s-size').disabled = !c.batch;
     $('s-dlc').checked = c.dlc;
+    $('s-lang').value = c.lang || 'auto';
     maxRestore = c.max_restore_batch || 10;
     $('rmax').innerHTML = maxRestore;
     $('s-rsize').value = c.restore_batch || 5;
@@ -251,26 +259,26 @@ onlyDigits($('s-rsize'), function () { return maxRestore; });
 /* Games per group when moving back: digits only, 1 to maxRestore. */
 function restoreSize() {
   var v = $('s-rsize').value;
-  if (!/^[0-9]+$/.test(v) || +v < 1 || +v > maxRestore) { say('Games per group must be a number from 1 to ' + maxRestore); return 0; }
+  if (!/^[0-9]+$/.test(v) || +v < 1 || +v > maxRestore) { say(t('Games per group must be a number from 1 to {0}', maxRestore)); return 0; }
   return +v;
 }
 $('s-save').onclick = function () {
   if (!restoreSize()) return;
   var size = $('s-size').value;
-  if (!/^[0-9]+$/.test(size) || +size < 1 || +size > 50) { say('Games per group must be a number from 1 to 50'); return; }
+  if (!/^[0-9]+$/.test(size) || +size < 1 || +size > 50) { say(t('Games per group must be a number from 1 to {0}', 50)); return; }
   var body = 'batch=' + ($('s-batch').checked ? 1 : 0) + '&batch_size=' + encodeURIComponent($('s-size').value) +
-    '&dlc=' + ($('s-dlc').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&paths=' + encodeURIComponent($('s-paths').value);
+    '&dlc=' + ($('s-dlc').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value);
   api('/api/config', 'POST', body, function (err, j) {
-    say(err ? (j && j.error ? j.error : 'Error: ' + err) : j.message);
-    if (!err) show('v-games');
+    say(err ? (j && j.error ? j.error : t('Error: {0}', err)) : j.message);
+    if (!err) { show('v-games'); load(); }
   });
 };
 /* Saves the group size, then starts moving back (body: selected games, or '' for all). */
 function startRestore(size, body) {
   api('/api/config', 'POST', 'restore_batch=' + size, function (err) {
-    if (err) { say('Error: ' + err); return; }
+    if (err) { say(t('Error: {0}', err)); return; }
     api('/api/restore', 'POST', body, function (err2, j) {
-      say(err2 ? 'Error: ' + err2 : j.message);
+      say(err2 ? t('Error: {0}', err2) : j.message);
       if (!err2) { show('v-games'); setTimeout(load, 3000); }
     });
   });
@@ -278,14 +286,14 @@ function startRestore(size, body) {
 $('s-restore').onclick = function () {
   var size = restoreSize();
   if (!size) return;
-  if (!confirm('WARNING: this moves the pkgs of ALL ' + games.length + ' games (game, update and all add-ons) back to where ' +
+  if (!confirm(t('WARNING: this moves the pkgs of ALL {0} games (game, update and all add-ons) back to where ' +
       'they came from, with their original names.\n\nThe open game is closed now, without saving. All PS4Mount games leave ' +
-      'the library, ' + size + ' at a time, and PS4Mount stops picking these pkgs up. No pkg is deleted.\n\nContinue?')) return;
+      'the library, {1} at a time, and PS4Mount stops picking these pkgs up. No pkg is deleted.\n\nContinue?', games.length, size))) return;
   startRestore(size, '');
 };
 $('s-forget').onclick = function () {
-  if (!confirm('Pick up the pkgs that were moved back again? They are moved into the ps4 folder and added on the next scan.')) return;
-  api('/api/restored/forget', 'POST', null, function (err, j) { say(err ? 'Error: ' + err : j.message); });
+  if (!confirm(t('Pick up the pkgs that were moved back again? They are moved into the ps4 folder and added on the next scan.'))) return;
+  api('/api/restored/forget', 'POST', null, function (err, j) { say(err ? t('Error: {0}', err) : j.message); });
 };
 
 /* --- choosing games to move back --- */
@@ -295,7 +303,7 @@ function pickUpdate() {
   for (var i = 0; i < b.length; i++) n += b[i].checked ? 1 : 0;
   $('p-all').checked = n > 0 && n === b.length;
   $('p-go').disabled = !n;
-  $('p-info').innerHTML = n ? n + ' game(s) selected' + (size && n > size ? ', removed from the library ' + size + ' at a time' : '') : 'No games selected';
+  $('p-info').innerHTML = esc(n ? t('{0} game(s) selected', n) + (size && n > size ? t(', removed from the library {0} at a time', size) : '') : t('No games selected'));
 }
 $('s-pick').onclick = function () {
   if (!restoreSize()) return;
@@ -307,7 +315,7 @@ $('s-pick').onclick = function () {
       '<td>' + esc(g.name) + '<div class="meta">' + g.title_id + ' - ' + esc(g.source) + '</div></td>' +
       '<td>' + esc(movedBack(g)) + '</td></tr>';
   }
-  $('p-rows').innerHTML = rows || '<tr><td colspan="3">No PS4Mount games on the connected drives</td></tr>';
+  $('p-rows').innerHTML = rows || '<tr><td colspan="3">' + t('No PS4Mount games on the connected drives') + '</td></tr>';
   var b = boxes();
   for (var k = 0; k < b.length; k++) b[k].onclick = pickUpdate;
   pickUpdate();
@@ -324,9 +332,9 @@ $('p-go').onclick = function () {
   if (!size) return;
   for (var i = 0; i < b.length; i++) if (b[i].checked) tids.push(b[i].value);
   if (!tids.length) return;
-  if (!confirm('Move the pkgs of ' + tids.length + ' game(s), each with its update and all its add-ons, back to where they ' +
-      'came from?\n\nThe open game is closed now, without saving. The games leave the library' +
-      (tids.length > size ? ', ' + size + ' at a time' : '') + '. No pkg is deleted.')) return;
+  if (!confirm(t('Move the pkgs of {0} game(s), each with its update and all its add-ons, back to where they ' +
+      'came from?\n\nThe open game is closed now, without saving. The games leave the library{1}. No pkg is deleted.',
+      tids.length, tids.length > size ? t(', {0} at a time', size) : ''))) return;
   startRestore(size, 'title_ids=' + tids.join(','));
 };
 

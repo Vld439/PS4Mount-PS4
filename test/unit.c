@@ -11,6 +11,7 @@
 #include "build.h"
 #include "check.h"
 #include "crypto.h"
+#include "lang.h"
 #include "pkgmake.h"
 #include "origin.h"
 #include "pkg.h"
@@ -361,6 +362,10 @@ static void test_check(void) {
 
     make_pkg(p, "UP0000-NPXS00001_00-TESTGAME00000000", "gd", 0, 1, 0x4000, 0x4000);
     CHECK(pkg_check(p, 0x13520001, &c) == 0 && !c.ok && strstr(c.problem, "not a game") && strstr(c.problem, "NPXS00001"));
+    /* the same refusal in Spanish, with the same argument in it */
+    g_lang = LANG_ES;
+    CHECK(pkg_check(p, 0x13520001, &c) == 0 && !c.ok && strstr(c.problem, "no un juego") && strstr(c.problem, "NPXS00001"));
+    g_lang = LANG_EN;
 
     make_pkg(p, cid, "gdc", 0, 1, 0x4000, 0x4000);
     CHECK(pkg_check(p, 0x13520001, &c) == 0 && !c.ok && c.kind == PKG_KIND_OTHER);
@@ -440,6 +445,21 @@ static void test_origin(void) {
     CHECK(system(cmd) == 0);
 }
 
+static void test_lang(void) {
+    printf("languages\n");
+    CHECK(g_lang == LANG_EN && !strcmp(TR("Yes", "Sí"), "Yes"));
+    g_lang = LANG_ES;
+    CHECK(!strcmp(TR("Yes", "Sí"), "Sí"));
+    CHECK(!strcmp(TR("Only English"), "Only English")); /* a language a text lacks: English */
+    g_lang = LANG_COUNT;                                 /* one with no column anywhere */
+    CHECK(!strcmp(TR("Yes", "Sí"), "Yes"));
+    g_lang = LANG_EN;
+    CHECK(lang_from_console(3) == LANG_ES && lang_from_console(20) == LANG_ES);
+    CHECK(lang_from_console(1) == LANG_EN && lang_from_console(7) == LANG_EN && lang_from_console(-1) == LANG_EN);
+    CHECK(lang_from_tag("es") == LANG_ES && lang_from_tag("en") == LANG_EN && lang_from_tag("auto") == -1);
+    CHECK(!strcmp(lang_tag(LANG_ES), "es") && !strcmp(lang_tag(-1), "en"));
+}
+
 int main(void) {
     test_crypto();
     test_app_json();
@@ -447,6 +467,7 @@ int main(void) {
     test_ac_pdb();
     test_bgft_task();
     test_check();
+    test_lang();
     test_license();
     test_sfo();
     test_origin();

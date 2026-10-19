@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include "check.h"
+#include "lang.h"
 #include "mem.h"
 
 #define PART_NAME ".ps4mount-upload.part"
@@ -123,7 +124,7 @@ static int write_all(int fd, const uint8_t *p, size_t n) {
 static int check_part(const job_t *j, char *msg, size_t n) {
     pkg_check_t c;
     if (pkg_check(j->part, j->fw, &c)) {
-        snprintf(msg, n, "%s is not a PS4 pkg", j->name);
+        snprintf(msg, n, TR("%s is not a PS4 pkg", "%s no es un pkg de PS4"), j->name);
         return -1;
     }
     pthread_mutex_lock(&g_mu);
@@ -134,7 +135,10 @@ static int check_part(const job_t *j, char *msg, size_t n) {
         return -1;
     }
     if (c.pkg_size != j->length) {
-        snprintf(msg, n, "%s is %llu bytes but its header says %llu: the file is incomplete or damaged", j->name,
+        snprintf(msg, n,
+                 TR("%s is %llu bytes but its header says %llu: the file is incomplete or damaged",
+                    "%s tiene %llu bytes pero su cabecera dice %llu: el archivo está incompleto o dañado"),
+                 j->name,
                  (unsigned long long)j->length, (unsigned long long)c.pkg_size);
         return -1;
     }
@@ -157,7 +161,7 @@ static void *receive(void *arg) {
     uint64_t got = 0;
     uint8_t *buf = mem_alloc(CHUNK);
     if (out < 0 || !buf) {
-        snprintf(msg, sizeof(msg), "cannot write %.300s: %s", j->part, strerror(errno));
+        snprintf(msg, sizeof(msg), TR("cannot write %.300s: %s", "no se puede escribir %.300s: %s"), j->part, strerror(errno));
         rc = -1;
     }
     if (!rc && j->pre_len) {
@@ -169,13 +173,16 @@ static void *receive(void *arg) {
         size_t want = j->length - got < CHUNK ? (size_t)(j->length - got) : CHUNK;
         ssize_t r = read(j->fd, buf, want);
         if (r <= 0) {
-            snprintf(msg, sizeof(msg), "%s: the transfer stopped after %llu of %llu bytes", j->name,
+            snprintf(msg, sizeof(msg),
+                     TR("%s: the transfer stopped after %llu of %llu bytes", "%s: la transferencia se cortó tras %llu de %llu bytes"),
+                     j->name,
                      (unsigned long long)got, (unsigned long long)j->length);
             rc = -1;
             break;
         }
         if (write_all(out, buf, (size_t)r)) {
-            snprintf(msg, sizeof(msg), "%s: write failed (%s): is the drive full?", j->name, strerror(errno));
+            snprintf(msg, sizeof(msg), TR("%s: write failed (%s): is the drive full?", "%s: falló la escritura (%s): ¿está llena la unidad?"),
+                     j->name, strerror(errno));
             rc = -1;
             break;
         }
@@ -190,7 +197,7 @@ static void *receive(void *arg) {
     }
     mem_free(buf);
     if (out >= 0 && close(out) && !rc) {
-        snprintf(msg, sizeof(msg), "%s: write failed (%s)", j->name, strerror(errno));
+        snprintf(msg, sizeof(msg), TR("%s: write failed (%s)", "%s: falló la escritura (%s)"), j->name, strerror(errno));
         rc = -1;
     }
     if (!rc)
@@ -200,7 +207,7 @@ static void *receive(void *arg) {
         free_name(j->final, j->name, final, sizeof(final)); /* j->final holds the folder until now */
         snprintf(j->final, sizeof(j->final), "%s", final);
         if (rename(j->part, j->final)) {
-            snprintf(msg, sizeof(msg), "%s: rename failed (%s)", j->name, strerror(errno));
+            snprintf(msg, sizeof(msg), TR("%s: rename failed (%s)", "%s: no se pudo renombrar (%s)"), j->name, strerror(errno));
             rc = -1;
         }
     }
@@ -210,7 +217,7 @@ static void *receive(void *arg) {
         set_state(ST_FAILED, msg);
         answer(j->fd, 0, msg);
     } else {
-        snprintf(msg, sizeof(msg), "%s received (%llu bytes)", j->name, (unsigned long long)got);
+        snprintf(msg, sizeof(msg), TR("%s received (%llu bytes)", "%s recibido (%llu bytes)"), j->name, (unsigned long long)got);
         printf("[upload] %s -> %s\n", msg, j->final);
         set_state(ST_DONE, msg);
         answer(j->fd, 1, msg);

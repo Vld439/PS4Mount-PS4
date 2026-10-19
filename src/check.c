@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "lang.h"
 #include "pkg.h"
 #include "mem.h"
 
@@ -48,7 +49,8 @@ int pkg_check(const char *path, uint32_t fw, pkg_check_t *out) {
     mem_free(pkg);
     if (!have_sfo) {
         mem_free(sfo);
-        snprintf(out->problem, sizeof(out->problem), "param.sfo cannot be read: the pkg is damaged");
+        snprintf(out->problem, sizeof(out->problem), "%s",
+                 TR("param.sfo cannot be read: the pkg is damaged", "no se puede leer param.sfo: el pkg está dañado"));
         return 0;
     }
     char cat[8];
@@ -65,17 +67,24 @@ int pkg_check(const char *path, uint32_t fw, pkg_check_t *out) {
 
     char need[16], have[16];
     if (out->kind == PKG_KIND_OTHER)
-        snprintf(out->problem, sizeof(out->problem), "not a game, an update or an add-on (category \"%s\")", cat);
+        snprintf(out->problem, sizeof(out->problem),
+                 TR("not a game, an update or an add-on (category \"%s\")",
+                    "no es un juego, una actualización ni un DLC (categoría \"%s\")"),
+                 cat);
     else if (strncmp(out->title_id, "CUSA", 4))
         snprintf(out->problem, sizeof(out->problem),
-                 "%s is an app (homebrew), not a game: PS4Mount plays CUSA games; install it the usual way",
+                 TR("%s is an app (homebrew), not a game: PS4Mount plays CUSA games; install it the usual way",
+                    "%s es una app (homebrew), no un juego: PS4Mount juega juegos CUSA; instálala de la forma normal"),
                  out->title_id);
     else if (!out->fake)
-        snprintf(out->problem, sizeof(out->problem), "not a fake pkg: only fake pkgs can be used");
+        snprintf(out->problem, sizeof(out->problem), "%s",
+                 TR("not a fake pkg: only fake pkgs can be used", "no es un pkg fake: solo se pueden usar pkgs fake"));
     else if (fw && out->system_ver && !fw_runs(out->system_ver, fw)) {
         ver_text(out->system_ver, need, sizeof(need));
         ver_text(fw, have, sizeof(have));
-        snprintf(out->problem, sizeof(out->problem), "needs firmware %s or newer; this console has %s", need, have);
+        snprintf(out->problem, sizeof(out->problem),
+                 TR("needs firmware %s or newer; this console has %s", "necesita el firmware %s o superior; esta consola tiene %s"),
+                 need, have);
     }
     out->ok = !out->problem[0];
     return 0;

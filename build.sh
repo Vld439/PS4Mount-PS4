@@ -8,9 +8,15 @@ cd "$(dirname "$0")"
 B=${PS4_PAYLOAD_SDK:-/opt/ps4-payload-sdk}/bin
 mkdir -p build
 # Embedded data: panel page, Media tab icon, playgo record templates.
+# The pages with their texts in other languages (web/lang.js) where they say <!--LANG-->.
+mkdir -p build/web
+for page in index legacy; do
+    awk -v js=web/lang.js '/^<!--LANG-->$/ { print "<script>"; while ((getline l < js) > 0) print l; close(js);
+                                              print "</script>"; next } { print }' web/$page.html > build/web/$page.html
+done
 {
-    (cd web && xxd -i -n index_html index.html)
-    (cd web && xxd -i -n legacy_html legacy.html)
+    (cd build/web && xxd -i -n index_html index.html)
+    (cd build/web && xxd -i -n legacy_html legacy.html)
 } > build/page_data.h
 (cd assets && xxd -i -n icon0_png icon0.png) > build/icon_data.h
 {
@@ -23,7 +29,7 @@ SQ_FLAGS="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAULT_ME
 SQ="build/sqlite3-$(echo "$SQ_FLAGS" | md5sum | cut -c1-8).o"
 [ -f "$SQ" ] || $B/orbis-clang -O2 -w -c third_party/sqlite/sqlite3.c -o "$SQ" $SQ_FLAGS
 $B/orbis-clang -O2 -Wall -Wextra -Ibuild -Ithird_party/sqlite -o build/ps4mount-ps4.elf \
-    src/main.c src/fw.c src/logts.c src/web.c src/pkg.c src/build.c src/check.c src/upload.c src/install.c src/mem.c src/db.c src/origin.c src/crypto.c "$SQ" \
+    src/main.c src/fw.c src/logts.c src/web.c src/pkg.c src/build.c src/check.c src/upload.c src/install.c src/lang.c src/mem.c src/db.c src/origin.c src/crypto.c "$SQ" \
     -lSceUserService -lSceAppInstUtil -lSceSystemService -lkernel_sys
 # Payload Guest only lists .bin payloads (and hands them to GoldHEN's BinLoader,
 # which takes the ELF as it is).

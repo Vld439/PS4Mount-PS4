@@ -40,5 +40,39 @@ awk '/strn?cmp\(path/ {cond=$0} /app_(add|remove|restore|restored_forget|config_
 # The page for older firmwares must stay without <dialog> and modern JavaScript.
 grep -nE '</dialog>|showModal|fetch\(|=>|\blet |\bconst ' web/legacy.html && rule "legacy.html uses <dialog> or modern JavaScript"
 
+# Every TR(...) text takes the same arguments in the same order: a translation with
+# another % conversion would read the wrong argument.
+python3 -I - "${SRC[@]}" <<'PY' || rule "a TR translation whose % conversions differ from the English text"
+import re, sys
+bad = 0
+conv = re.compile(r'%[-+ #0]*[0-9*]*(?:\.[0-9*]+)?(?:hh|h|ll|l|z|j|t)?[diouxXcspf%]')
+for path in sys.argv[1:]:
+    src = open(path, encoding="utf-8").read()
+    for m in re.finditer(r'\bTR\(', src):
+        depth, i = 1, m.end()
+        while depth and i < len(src):
+            c = src[i]
+            if c == '"':
+                i += 1
+                while src[i] != '"':
+                    i += 2 if src[i] == "\\" else 1
+            elif c == '(':
+                depth += 1
+            elif c == ')':
+                depth -= 1
+            i += 1
+        body = src[m.end():i - 1]
+        if body.strip() == "...":
+            continue  # the macro itself
+        args = re.findall(r'((?:"(?:[^"\\]|\\.)*"\s*)+)(?:,|$)', body)
+        texts = ["".join(re.findall(r'"((?:[^"\\]|\\.)*)"', a)) for a in args]
+        convs = [conv.findall(t) for t in texts]
+        if len(texts) < 2 or any(c != convs[0] for c in convs[1:]):
+            line = src.count("\n", 0, m.start()) + 1
+            print(f"{path}:{line}: {texts}")
+            bad = 1
+sys.exit(bad)
+PY
+
 [ $fail = 0 ] && echo "policy: all rules hold"
 exit $fail
