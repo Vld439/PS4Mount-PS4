@@ -1,9 +1,10 @@
 #!/bin/bash
-# Builds build/ps4mount.elf with the PS5 Payload SDK (https://github.com/ps5-payload-dev/sdk).
-# Set PS5_PAYLOAD_SDK when the SDK is not in /opt/ps5-payload-sdk.
+# Builds build/ps4mount-ps4.elf (and the same file as .bin) with the PS4 Payload SDK
+# (https://github.com/ps4-payload-dev/sdk).
+# Set PS4_PAYLOAD_SDK when the SDK is not in /opt/ps4-payload-sdk.
 set -e
 cd "$(dirname "$0")"
-B=${PS5_PAYLOAD_SDK:-/opt/ps5-payload-sdk}/bin
+B=${PS4_PAYLOAD_SDK:-/opt/ps4-payload-sdk}/bin
 mkdir -p build
 # Embedded data: panel page, Media tab icon, playgo record templates.
 {
@@ -16,9 +17,12 @@ mkdir -p build
     (cd tools && xxd -i -n k_pdb_patch_template pdb_patch_template.bin)
     (cd tools && xxd -i -n k_pdb_addcont_template pdb_addcont_template.bin)
 } > build/pdb_template.h
-[ -f build/sqlite3.o ] || $B/prospero-clang -O2 -w -c third_party/sqlite/sqlite3.c -o build/sqlite3.o \
+[ -f build/sqlite3.o ] || $B/orbis-clang -O2 -w -c third_party/sqlite/sqlite3.c -o build/sqlite3.o \
     -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAULT_MEMSTATUS=0
-$B/prospero-clang -O2 -Wall -Wextra -Ibuild -Ithird_party/sqlite -o build/ps4mount.elf \
+$B/orbis-clang -O2 -Wall -Wextra -Ibuild -Ithird_party/sqlite -o build/ps4mount-ps4.elf \
     src/main.c src/fw.c src/logts.c src/web.c src/pkg.c src/build.c src/db.c src/origin.c src/crypto.c build/sqlite3.o \
     -lSceUserService -lSceAppInstUtil -lSceSystemService -lkernel_sys
-ls -la build/ps4mount.elf
+# Payload Guest only lists .bin payloads (and hands them to GoldHEN's BinLoader,
+# which takes the ELF as it is).
+cp build/ps4mount-ps4.elf build/ps4mount-ps4.bin
+ls -la build/ps4mount-ps4.elf

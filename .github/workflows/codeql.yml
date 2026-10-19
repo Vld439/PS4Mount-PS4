@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 env:
-  # PS5 Payload SDK release used for the build (same as build.yml)
-  SDK_VERSION: v0.44
+  # PS4 Payload SDK release used for the build (same as build.yml)
+  SDK_VERSION: v0.9
 
 jobs:
   analyze:
@@ -33,12 +33,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install host tools and the PS5 Payload SDK
+      - name: Install host tools and the PS4 Payload SDK
         if: matrix.language == 'c-cpp'
         run: |
           sudo apt-get update
           sudo apt-get install -y clang-18 lld-18 xxd unzip
-          curl -fsSL -o sdk.zip "https://github.com/ps5-payload-dev/sdk/releases/download/${SDK_VERSION}/ps5-payload-sdk.zip"
+          curl -fsSL -o sdk.zip "https://github.com/ps4-payload-dev/sdk/releases/download/${SDK_VERSION}/ps4-payload-sdk.zip"
           unzip -q sdk.zip -d "$HOME"
 
       - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
@@ -54,7 +54,7 @@ jobs:
       - name: Build the payload and the host tests
         if: matrix.language == 'c-cpp'
         run: |
-          PS5_PAYLOAD_SDK="$HOME/ps5-payload-sdk" bash build.sh
+          PS4_PAYLOAD_SDK="$HOME/ps4-payload-sdk" bash build.sh
           bash test/run.sh
 
       - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2

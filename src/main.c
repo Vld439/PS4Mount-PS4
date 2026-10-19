@@ -33,7 +33,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <ps5/kernel.h>
+#include <ps4/kernel.h>
 
 #include "build.h"
 #include "crypto.h"
