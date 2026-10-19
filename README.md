@@ -20,7 +20,7 @@ PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount
 
 PS4Mount es un payload para una PS4 con jailbreak. Pones los pkgs del juego (y su actualización y sus DLC) en un USB o en la memoria de la consola, y PS4Mount los añade a la pantalla de inicio para jugarlos **desde el pkg, sin instalarlos**: no hay que esperar a una instalación ni gastar espacio en una segunda copia.
 
-Además tiene un **panel web** (desde el móvil, el PC o el navegador de la PS4) con tu biblioteca, portadas y fichas de cada juego, y **envío de juegos desde el PC por la red local**: cada pkg se comprueba antes de enviarlo, para no pasar horas enviando un juego que la consola no puede usar.
+Además tiene un **panel web** (desde el móvil o el PC) con tu biblioteca, portadas y fichas de cada juego, y **envío de juegos desde el PC por la red local**: cada pkg se comprueba antes de enviarlo, para no pasar horas enviando un juego que la consola no puede usar. Hay una versión sencilla para navegadores antiguos, sin probar todavía en el de la PS4.
 
 Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificaciones están en **español e inglés**: salen en el idioma de la consola (inglés si no es ninguno de los dos), y se puede cambiar en **Ajustes → Idioma**.
 
@@ -79,7 +79,7 @@ La consola solo inicia un juego cuando su servicio de descargas (BGFT) conoce la
 
 ### El panel
 
-Abre `http://<IP de la PS4>:8770` en el navegador de un móvil o un PC de la **misma red**, o en el navegador de la propia PS4 (que recibe una versión más sencilla).
+Abre `http://<IP de la PS4>:8770` en el navegador de un móvil o un PC de la **misma red**. Hay una versión sencilla para navegadores antiguos (`/legacy`), sin probar todavía en el navegador de la propia PS4.
 
 | Estado | Significa |
 | --- | --- |
@@ -192,7 +192,7 @@ GPL-3.0-or-later (ver [LICENSE](LICENSE)). Si publicas tu propia versión, conse
 
 PS4Mount is a payload for a jailbroken PS4. Put the game pkgs (with their update and add-ons) on a USB drive or in the console's storage, and PS4Mount adds them to the home screen so they are played **from the pkg, without installing them**: no install to wait for, no space spent on a second copy.
 
-It also has a **web panel** (from a phone, a computer or the PS4's browser) with your library, artwork and a page per game, and **sending games from a computer over the local network**: every pkg is checked before it is sent, so no one spends hours sending a game the console cannot use.
+It also has a **web panel** (from a phone or a computer) with your library, artwork and a page per game, and **sending games from a computer over the local network**: every pkg is checked before it is sent, so no one spends hours sending a game the console cannot use. There is a simpler page for older browsers, not yet tested on the PS4's own browser.
 
 Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notifications are in **English and Spanish**: they follow the console's language (English for any other), and **Settings → Language** changes it.
 
@@ -251,7 +251,7 @@ The console only starts a game when its background transfer service (BGFT) knows
 
 ### The panel
 
-Open `http://<PS4 IP>:8770` in the browser of a phone or computer on the **same network**, or in the PS4's own browser (which gets a simpler page).
+Open `http://<PS4 IP>:8770` in the browser of a phone or computer on the **same network**. There is a simpler page for older browsers (`/legacy`), not yet tested on the PS4's own browser.
 
 | State | Meaning |
 | --- | --- |
