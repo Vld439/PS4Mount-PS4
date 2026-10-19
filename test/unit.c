@@ -166,6 +166,77 @@ static void test_ac_pdb(void) {
     buf_free(&pdb);
 }
 
+/* PS4 BGFT tasks: u32 0, then records to the end of the file (no trailer). */
+static int parse_task(const uint8_t *d, size_t n, rec_t *out, int max) {
+    int c = 0;
+    size_t off = 4;
+    while (off + 12 <= n && c < max) {
+        out[c].key = le32(d + off);
+        out[c].len = le32(d + off + 4);
+        out[c].data = d + off + 12;
+        off += 12 + out[c].len;
+        c++;
+    }
+    return off == n ? c : -1;
+}
+
+static int rec_is(const rec_t *r, int n, uint32_t key, const void *data, size_t len) {
+    const rec_t *f = find(r, n, key);
+    return f && f->len == len && !memcmp(f->data, data, len);
+}
+
+static void test_bgft_task(void) {
+    printf("BGFT game task\n");
+    pkg_t app, pat;
+    fake_pkg(&app, "UP0000-CUSA00001_00-TESTGAME00000000", 271384576);
+    fake_pkg(&pat, "UP0000-CUSA00001_00-TESTGAME00000000", 21430272);
+    const char *url = "/mnt/usb0/ps4/CUSA00001/app.pkg", *purl = "/mnt/usb0/ps4/CUSA00001/patch.pkg";
+    buf_t json = {0}, pjson = {0};
+    build_app_json(&json, &app, url);
+    build_app_json(&pjson, &pat, purl);
+    patch_ref_t pr = {&pat, NULL, 0, "01.14", purl, &pjson};
+    static rec_t r[128];
+    uint8_t v[8];
+    for (int with_patch = 0; with_patch < 2; with_patch++)
+        for (int d1 = 0; d1 < 2; d1++) {
+            bgft_task_t t = {d1, 0x13520001, 0x00e31e2713ddac1eull, 0xf092, &app, "app.pkg", url, &json,
+                             with_patch ? &pr : NULL};
+            buf_t b = {0};
+            build_bgft_task(&b, &t);
+            int n = parse_task(b.data, b.len, r, 128);
+            CHECK(n == (with_patch ? 47 : 41));
+            CHECK(le32(b.data) == 0);
+            CHECK(r[0].key == 0x95 && le32(r[0].data) == 0x13520001);
+            /* the creation time sits where place_bgft reads it back */
+            CHECK(le32(b.data + 152) == 0x76 && le64(b.data + 164) == 0x00e31e2713ddac1eull);
+            CHECK(rec_is(r, n, 0x74, app.content_id, 36));
+            CHECK(rec_is(r, n, 0x7c, "CUSA00001", 9));
+            CHECK(rec_is(r, n, 0x1388, url, strlen(url)));
+            CHECK(rec_is(r, n, 0x1389, "/user/app/CUSA00001/app.pkg", 27));
+            CHECK(rec_is(r, n, 0x1390, json.data, json.len));
+            CHECK(find(r, n, 0x1a3) && le64(find(r, n, 0x1a3)->data) == app.pkg_size);
+            uint64_t total = app.pkg_size + (with_patch ? pat.pkg_size : 0);
+            CHECK(find(r, n, 0x7a) && le64(find(r, n, 0x7a)->data) == total);
+            CHECK(find(r, n, 0x7b) && le64(find(r, n, 0x7b)->data) == total);
+            CHECK(find(r, n, 0x1f4) && le32(find(r, n, 0x1f4)->data) == (with_patch ? 2u : 1u));
+            CHECK(find(r, n, 0x1a4) && le32(find(r, n, 0x1a4)->data) == 0xf092);
+            CHECK(find(r, n, 0x9a) && le64(find(r, n, 0x9a)->data) == (d1 ? 0x8000000000000000ull : 0));
+            memset(v, 0, 8);
+            v[7] = 0x10;
+            CHECK(rec_is(r, n, 0x193, v, 8));
+            CHECK(!with_patch == !find(r, n, 0x13a9));
+            if (with_patch) {
+                CHECK(rec_is(r, n, 0x13a8, purl, strlen(purl)));
+                CHECK(rec_is(r, n, 0x13a9, "/user/patch/CUSA00001/patch.pkg", 31));
+                CHECK(rec_is(r, n, 0x13b0, pjson.data, pjson.len));
+                CHECK(rec_is(r, n, 0x84, "01.14", 5));
+            }
+            buf_free(&b);
+        }
+    buf_free(&json);
+    buf_free(&pjson);
+}
+
 static void slot(uint8_t *lic, uint8_t v) { memset(lic, v, 0x400); }
 
 static int idx_count(const buf_t *idx) { return (int)le32(idx->data + 4); }
@@ -312,6 +383,7 @@ int main(void) {
     test_app_json();
     test_pbm();
     test_ac_pdb();
+    test_bgft_task();
     test_license();
     test_sfo();
     test_origin();

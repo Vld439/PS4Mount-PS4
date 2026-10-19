@@ -75,7 +75,8 @@ typedef struct {
 
 #define MAX_RESTORE_BATCH 10
 
-static config_t g_cfg = {1, 5, 1, {""}, 1, 5};
+/* add-ons off: the PS4 side of add-ons is not done yet */
+static config_t g_cfg = {1, 5, 0, {""}, 1, 5};
 
 typedef struct { char useless[45]; char message[3075]; } notify_request_t;
 int sceUserServiceInitialize(void *);
@@ -473,8 +474,9 @@ static int place_license(pkg_t *pkg) {
         return -1;
     }
     char rp[96], ip[96];
-    snprintf(rp, sizeof(rp), "/user/license/fake%.19s.rif", pkg->content_id);
-    snprintf(ip, sizeof(ip), "/user/license/fake%.19s.idx", pkg->content_id);
+    /* the PS4 names them free<CID>, the PS5 fake<CID> */
+    snprintf(rp, sizeof(rp), "/user/license/free%.19s.rif", pkg->content_id);
+    snprintf(ip, sizeof(ip), "/user/license/free%.19s.idx", pkg->content_id);
     uint8_t *old_rif = read_all(rp, &rl), *old_idx = read_all(ip, &il);
     buf_t rif = {0}, idx = {0};
     build_license(&rif, &idx, old_rif, rl, old_idx, il, pkg->content_id, lic);
@@ -550,11 +552,133 @@ static int dlc_ready(const title_src_t *t) {
     return 1;
 }
 
+/* --- BGFT game task (PS4) --- */
+
+/* The PS4 starts a game only when its background transfer service (BGFT) has the
+ * title's game task, /user/bgft/task/<ID>/d0.pdb and d1.pdb, and BGFT reads them at
+ * boot: a game added (or whose update changed) plays after the next restart. The
+ * ids used here are far above the ones the system gives its own tasks. */
+#define BGFT_DIR "/user/bgft/task"
+#define BGFT_FIRST 0xf001
+#define BGFT_LAST 0xffff
+
+static uint32_t g_fw; /* kernel_get_fw_version(), written in the tasks */
+
+/* Titles whose game task was written in this run. */
+static char g_reboot_tids[MAX_TITLES][10];
+static int g_nreboot;
+
+static int same_file(const char *path, const void *data, size_t size);
+
+static int needs_reboot(const char *tid) {
+    for (int i = 0; i < g_nreboot; i++)
+        if (!strcmp(g_reboot_tids[i], tid))
+            return 1;
+    return 0;
+}
+
+static int contains(const uint8_t *d, size_t n, const char *s) {
+    size_t l = strlen(s);
+    for (size_t i = 0; i + l <= n; i++)
+        if (!memcmp(d + i, s, l))
+            return 1;
+    return 0;
+}
+
+/* The id of the game task of tid written here, 0 when there is none. */
+static uint32_t bgft_find(const char *tid) {
+    char want[48], p[64];
+    snprintf(want, sizeof(want), "/user/app/%s/app.pkg", tid);
+    DIR *d = opendir(BGFT_DIR);
+    struct dirent *e;
+    uint32_t found = 0;
+    while (d && !found && (e = readdir(d))) {
+        char *end;
+        unsigned long id = strtoul(e->d_name, &end, 16);
+        if (*end || id < BGFT_FIRST || id > BGFT_LAST)
+            continue;
+        snprintf(p, sizeof(p), BGFT_DIR "/%s/d0.pdb", e->d_name);
+        size_t len;
+        uint8_t *data = read_all(p, &len);
+        if (data && contains(data, len, want))
+            found = (uint32_t)id;
+        free(data);
+    }
+    if (d)
+        closedir(d);
+    return found;
+}
+
+/* A free odd id whose install task id (one below) is free too. */
+static uint32_t bgft_free_id(void) {
+    char p[64];
+    for (uint32_t id = BGFT_FIRST; id <= BGFT_LAST; id += 2) {
+        snprintf(p, sizeof(p), BGFT_DIR "/%08x", id);
+        if (exists(p))
+            continue;
+        snprintf(p, sizeof(p), BGFT_DIR "/%08x", id - 1);
+        if (!exists(p))
+            return id;
+    }
+    return 0;
+}
+
+static void bgft_remove(const char *tid) {
+    uint32_t id = bgft_find(tid);
+    if (!id)
+        return;
+    char p[64];
+    snprintf(p, sizeof(p), BGFT_DIR "/%08x", id);
+    rm_tree(p);
+    printf("[reg] %s: BGFT game task %08x removed\n", tid, id);
+}
+
+static int place_bgft(title_src_t *t, const buf_t *json, const patch_ref_t *pr) {
+    const char *tid = t->app.title_id;
+    uint32_t id = bgft_find(tid);
+    int fresh = !id, rc = 0, changed = 0;
+    if (fresh && !(id = bgft_free_id())) {
+        printf("[reg] %s: no free BGFT task id\n", tid);
+        return -1;
+    }
+    char dir[64], p[96];
+    snprintf(dir, sizeof(dir), BGFT_DIR "/%08x", id);
+    mkdirs(dir, 0770);
+    /* creation time, microseconds since 0001-01-01; an existing task keeps its own */
+    uint64_t now = ((uint64_t)time(NULL) + 62135596800ull) * 1000000ull;
+    size_t len;
+    snprintf(p, sizeof(p), "%s/d0.pdb", dir);
+    uint8_t *old = read_all(p, &len);
+    if (old && len >= 172 && old[152] == 0x76 && !old[153] && !old[154] && !old[155]) {
+        now = 0;
+        for (int i = 7; i >= 0; i--)
+            now = now << 8 | old[164 + i];
+    }
+    free(old);
+    const char *name = strrchr(t->app_path, '/');
+    name = name ? name + 1 : t->app_path;
+    for (int d1 = 0; d1 < 2; d1++) {
+        bgft_task_t bt = {d1, g_fw, now, id - 1, &t->app, name, t->app_path, json, pr};
+        buf_t b = {0};
+        build_bgft_task(&b, &bt);
+        snprintf(p, sizeof(p), "%s/d%d.pdb", dir, d1);
+        if (!same_file(p, b.data, b.len)) {
+            rc |= write_buf(p, &b);
+            changed = 1;
+        }
+        buf_free(&b);
+    }
+    if (changed) {
+        printf("[reg] %s: BGFT game task %08x %s\n", tid, id, fresh ? "written" : "updated");
+        if (!needs_reboot(tid) && g_nreboot < MAX_TITLES)
+            snprintf(g_reboot_tids[g_nreboot++], 10, "%s", tid);
+    }
+    return rc ? -1 : 0;
+}
+
 static int place_files(title_src_t *t) {
     pkg_t *app = &t->app, *pat = t->has_patch ? &t->patch : NULL;
-    const char *tid = app->title_id, *cid = app->content_id;
-    const sfo_item_t *av = sfo_get(&t->app_sfo, "APP_VER");
-    const char *app_ver = av && !av->is_int ? av->sval : "01.00";
+    const char *tid = app->title_id;
     char p[PATH_MAX], q[PATH_MAX], hold[PATH_MAX];
     int rc = 0;
 
@@ -580,19 +704,20 @@ static int place_files(title_src_t *t) {
 
     size_t pl = 0, ppl = 0;
     uint8_t *pg = pkg_entry(app, 0x1001, &pl), *ppg = pat ? pkg_entry(pat, 0x1001, &ppl) : NULL;
-    buf_t json = {0}, pbm = {0}, xml = {0}, pjson = {0}, ppbm_patch = {0}, pxml = {0}, ppbm = {0}, pdb = {0}, patch_pdb = {0};
+    buf_t json = {0}, pbm = {0}, xml = {0}, pjson = {0}, ppbm_patch = {0}, pxml = {0}, ppbm = {0};
     build_app_json(&json, app, t->app_path);
-    build_app_pbm(&pbm, app, app_ver, PBM_APP);
+    /* the PS4 leaves no version and type 0 in app.pbm and patch.pbm (as every install
+     * does on 13.52) */
+    build_app_pbm(&pbm, app, "", 0);
     patch_ref_t pr = {0}, *prp = NULL;
     if (pat) {
         build_app_json(&pjson, pat, t->patch_path);
-        build_app_pbm(&ppbm_patch, pat, t->ver, PBM_PATCH);
+        build_app_pbm(&ppbm_patch, pat, "", 0);
         pr = (patch_ref_t){pat, ppg, ppl, t->ver, t->patch_path, &pjson};
         prp = &pr;
     }
     if (build_app_xml(&xml, pg, pl) || build_pfs_pbm(&ppbm, app, pg, pl, prp) ||
-        build_pdb(&pdb, app, t->ver, t->app_path, &json, pg, pl, prp) ||
-        (pat && (build_app_xml(&pxml, ppg, ppl) || build_patch_pdb(&patch_pdb, &pr)))) {
+        (pat && build_app_xml(&pxml, ppg, ppl))) {
         printf("[reg] %s: playgo-chunk.dat unusable\n", tid);
         rc = -1;
         goto out;
@@ -613,13 +738,7 @@ static int place_files(title_src_t *t) {
     rc |= write_buf(q, &ppbm);
     snprintf(q, sizeof(q), "%s/pfs.pbm.backup", p);
     rc |= write_buf(q, &ppbm);
-    snprintf(p, sizeof(p), "/user/playgo/app/%s/00", cid);
-    mkdirs(p, 0777);
-    snprintf(q, sizeof(q), "%s/d0.pdb", p);
-    rc |= write_buf(q, &pdb);
-    snprintf(q, sizeof(q), "%s/d1.pdb", p);
-    rc |= write_buf(q, &pdb);
-    snprintf(p, sizeof(p), "/user/playgo/patch/%s", cid);
+    rc |= place_bgft(t, &json, prp);
     if (pat) {
         rc |= hold_prepare("patch", tid, "patch.pkg", t->patch_path);
         hold_path(hold, sizeof(hold), "patch", tid);
@@ -631,14 +750,7 @@ static int place_files(title_src_t *t) {
         rc |= write_buf(q, &ppbm_patch);
         snprintf(q, sizeof(q), "%s/patch.xml", hold);
         rc |= write_buf(q, &pxml);
-        snprintf(p, sizeof(p), "/user/playgo/patch/%s/00/00.00", cid);
-        mkdirs(p, 0777);
-        snprintf(q, sizeof(q), "%s/d0.pdb", p);
-        rc |= write_buf(q, &patch_pdb);
-        snprintf(q, sizeof(q), "%s/d1.pdb", p);
-        rc |= write_buf(q, &patch_pdb);
     } else {
-        rm_tree(p);
         hold_path(hold, sizeof(hold), "patch", tid);
         rm_tree(hold);
     }
@@ -652,8 +764,6 @@ out:
     buf_free(&ppbm_patch);
     buf_free(&pxml);
     buf_free(&ppbm);
-    buf_free(&pdb);
-    buf_free(&patch_pdb);
     return rc ? -1 : 0;
 }
 
@@ -939,10 +1049,8 @@ static int title_state(title_src_t *t) {
             printf("[scan] %s: %s is already served from another drive, this copy is not used\n", t->dir, tid);
         return -1;
     }
-    char pdb[PATH_MAX];
-    snprintf(pdb, sizeof(pdb), "/user/playgo/app/%s/00/d0.pdb", t->app.content_id);
     /* folders set up by 0.3.1 and older lack the internal folder: registered again */
-    return !db_is_registered(tid) || !exists(pdb) || !marker_matches(tid, t->marker) ||
+    return !db_is_registered(tid) || !bgft_find(tid) || !marker_matches(tid, t->marker) ||
            !hold_ready("app", tid, "app.pkg") || (t->has_patch && !hold_ready("patch", tid, "patch.pkg")) ||
            !dlc_ready(t);
 }
@@ -986,7 +1094,7 @@ static const char *reg_mode_name(void) {
 }
 
 static void check_firmware(void) {
-    uint32_t fw = kernel_get_fw_version();
+    uint32_t fw = g_fw = kernel_get_fw_version();
     unsigned major, minor;
     fw_decode(fw, &major, &minor);
     fw_text(fw, g_fw_text, sizeof(g_fw_text));
@@ -1835,7 +1943,9 @@ static void scan_root(const char *root, int fresh, int reconnected) {
             } else {
                 retry_clear(t->tid);
                 ok++;
-                if (!grouped)
+                if (!grouped && needs_reboot(t->tid))
+                    notify("%s added. Restart the console once to play it", t->name);
+                else if (!grouped)
                     notify("%s ready to play", t->name);
             }
             src_close(&src);
@@ -1846,7 +1956,8 @@ static void scan_root(const char *root, int fresh, int reconnected) {
     free(ids);
     free(prepared);
     if (pending > 1)
-        notify("%s: %d of %d game(s) added%s", label, ok, pending, ok == pending ? ", ready to play" : "");
+        notify("%s: %d of %d game(s) added%s", label, ok, pending,
+               g_nreboot ? ". Restart the console once to play the new ones" : ok == pending ? ", ready to play" : "");
 }
 
 /* Releases mounts over /user/app/<TID> of older versions, which mounted the drive
@@ -2058,6 +2169,7 @@ static void handle_klog_line(const char *line) {
             rm_tree(hold);
             hold_path(hold, sizeof(hold), "patch", m->tid);
             rm_tree(hold);
+            bgft_remove(m->tid);
             notify("%s removed from the library. The pkg stays on the USB drive.", m->name);
             m->used = 0;
         } else if (strlen(id) == 36 && g_deleting) {
@@ -2481,6 +2593,7 @@ static void restore_clear_state(const char *tid) {
     snprintf(p, sizeof(p), STATE_DIR "/%s.src", tid);
     unlink(p);
     retry_clear(tid);
+    bgft_remove(tid);
 }
 
 /* Requests from the panel, run by the main loop: some titles, or all of them. */
@@ -2918,7 +3031,7 @@ static int same_file(const char *path, const void *data, size_t size) {
 
 /* Installs the shortcut when it is missing or out of date (deleting it from the
  * home screen makes the next start install it again). */
-static void install_panel_shortcut(void) {
+__attribute__((unused)) static void install_panel_shortcut(void) {
     const char *param = "/user/app/" PANEL_ID "/sce_sys/param.json", *icon = "/user/app/" PANEL_ID "/sce_sys/icon0.png";
     /* sceAppInstUtilAppExists reports 0 for this shortcut on fw 13.20; app.db is reliable */
     int present = db_is_registered(PANEL_ID), rc = 0;
@@ -3050,15 +3163,15 @@ int main(void) {
     check_firmware();
     if (user_app_masked())
         unmask_leftover();
-    if (g_reg_mode != REG_NONE)
-        install_panel_shortcut(); /* registered by the system like the games */
+    /* no Media tab shortcut: it is a PS5 web app (param.json); the panel is opened from
+     * a browser */
     g_web = web_listen();
     if (g_reg_mode == REG_ALL)
-        notify(g_web >= 0 ? VERSION " running. Panel in the Media tab or http://<PS5 IP>:8770"
+        notify(g_web >= 0 ? VERSION " running. Panel at http://<PS4 IP>:8770"
                           : VERSION " running (panel unavailable)");
     else if (g_reg_mode == REG_TITLEDIR)
-        notify(VERSION " running (firmware %s: games are added one at a time). Panel in the Media tab or "
-                       "http://<PS5 IP>:8770",
+        notify(VERSION " running (firmware %s: games are added one at a time). Panel at "
+                       "http://<PS4 IP>:8770",
                g_fw_text);
     else
         notify(VERSION ": firmware %s is not supported yet. To protect the system database, no games are added.",

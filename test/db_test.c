@@ -72,8 +72,9 @@ int main(void) {
     printf("titles\n");
     sqlite3 *w;
     CHECK(sqlite3_open(APP_DB, &w) == SQLITE_OK);
-    exec(w, "CREATE TABLE tbl_contentinfo(titleId TEXT, contentId TEXT);"
-            "INSERT INTO tbl_contentinfo VALUES('CUSA00001','UP0000-CUSA00001_00-A'),('CUSA00002','UP0000-CUSA00002_00-B');");
+    exec(w, "CREATE TABLE tbl_appinfo(titleId TEXT, key INT, val);"
+            "INSERT INTO tbl_appinfo VALUES('CUSA00001','TITLE_ID','CUSA00001'),('CUSA00001','TITLE','A'),"
+            "('CUSA00002','TITLE_ID','CUSA00002'),('CUSA00003','TITLE','C');"); /* CUSA00003: no TITLE_ID row */
     next_second();
     CHECK(db_is_registered("CUSA00001"));
     CHECK(db_is_registered("CUSA00002"));
@@ -96,7 +97,7 @@ int main(void) {
     CHECK(sa.st_mtime == sb.st_mtime && sa.st_size == sb.st_size);
     CHECK(!exists(APP_DB "-journal") && !exists(APP_DB "-wal"));
     /* the system writes right after a read: nothing of ours may be holding a lock */
-    CHECK(sqlite3_exec(w, "BEGIN IMMEDIATE; INSERT INTO tbl_contentinfo VALUES('CUSA00004','x'); COMMIT;", NULL, NULL,
+    CHECK(sqlite3_exec(w, "BEGIN IMMEDIATE; INSERT INTO tbl_appinfo VALUES('CUSA00004','TITLE_ID','x'); COMMIT;", NULL, NULL,
                        NULL) == SQLITE_OK);
 
     printf("one read per second\n");
@@ -104,11 +105,11 @@ int main(void) {
      * next one, so the check is tried a few times */
     int cached = -1;
     for (int attempt = 0; attempt < 5 && cached < 0; attempt++) {
-        exec(w, "INSERT INTO tbl_contentinfo VALUES('CUSA00005','x');");
+        exec(w, "INSERT INTO tbl_appinfo VALUES('CUSA00005','TITLE_ID','x');");
         next_second();
         time_t t = time(NULL);
         int first = db_is_registered("CUSA00005");
-        exec(w, "DELETE FROM tbl_contentinfo WHERE titleId='CUSA00005';");
+        exec(w, "DELETE FROM tbl_appinfo WHERE titleId='CUSA00005';");
         int second = db_is_registered("CUSA00005");
         if (time(NULL) == t) {
             CHECK(first);
@@ -120,7 +121,7 @@ int main(void) {
     CHECK(!db_is_registered("CUSA00005"));
 
     printf("a write in progress does not block or empty the list\n");
-    exec(w, "BEGIN EXCLUSIVE; DELETE FROM tbl_contentinfo;");
+    exec(w, "BEGIN EXCLUSIVE; DELETE FROM tbl_appinfo;");
     next_second();
     double t0 = now();
     int seen = db_is_registered("CUSA00001");

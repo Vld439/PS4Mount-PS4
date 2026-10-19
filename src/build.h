@@ -45,8 +45,22 @@ int build_pdb(buf_t *out, const pkg_t *pkg, const char *ver, const char *url, co
 int build_patch_pdb(buf_t *out, const patch_ref_t *patch);
 /* /user/playgo/addcont/<CID>/00/d0.pdb (and d1.pdb). */
 void build_ac_pdb(buf_t *out, const pkg_t *pkg, const char *url, const buf_t *ac_json);
-/* /user/license/fake<CID[:19]>.rif and .idx: the current files (NULL when missing)
- * with the slot of content_id added or replaced. */
+/* PS4: the background transfer (BGFT) game task of a title, /user/bgft/task/<ID>/d0.pdb
+ * and d1.pdb. A game starts only when BGFT has it, and BGFT reads its tasks at boot. */
+typedef struct {
+    int d1;              /* d1.pdb (d0.pdb otherwise) */
+    uint32_t fw;         /* kernel_get_fw_version() */
+    uint64_t now_us;     /* microseconds since 0001-01-01 */
+    uint32_t install_id; /* the install task it names (gone after the next boot) */
+    const pkg_t *pkg;
+    const char *name, *url; /* name: the pkg's file name; url: where the pkg is */
+    const buf_t *json;   /* app.json */
+    const patch_ref_t *patch; /* NULL without update */
+} bgft_task_t;
+
+void build_bgft_task(buf_t *out, const bgft_task_t *t);
+/* /user/license/fake<CID[:19]>.rif and .idx (free<CID[:19]> on the PS4): the current
+ * files (NULL when missing) with the slot of content_id added or replaced. */
 void build_license(buf_t *rif, buf_t *idx, const uint8_t *old_rif, size_t rif_len, const uint8_t *old_idx,
                    size_t idx_len, const char *content_id, const uint8_t *license_dat);
 

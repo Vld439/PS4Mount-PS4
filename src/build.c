@@ -356,3 +356,83 @@ void build_license(buf_t *rif, buf_t *idx, const uint8_t *old_rif, size_t rif_le
         buf_put(idx, e, sizeof(e));
     }
 }
+
+/* The game task as the PS4 (13.52) leaves it for a pkg installed from a local file:
+ * a u32 0, then records as in a pdb, with no trailer. The record order and the values
+ * are those of the system's own tasks. The install task it names (install_id) is
+ * removed by the system at the next boot, as it does with its own. */
+static void rec32(buf_t *b, uint32_t key, uint32_t v) {
+    uint8_t d[4];
+    put_le32(d, v);
+    pdb_record(b, key, d, 4);
+}
+
+static void rec64(buf_t *b, uint32_t key, uint64_t v) {
+    uint8_t d[8];
+    put_le64(d, v);
+    pdb_record(b, key, d, 8);
+}
+
+static void rec8(buf_t *b, uint32_t key, uint8_t v) { pdb_record(b, key, &v, 1); }
+
+static void recs(buf_t *b, uint32_t key, const char *s) { pdb_record(b, key, s, (uint32_t)strlen(s)); }
+
+void build_bgft_task(buf_t *out, const bgft_task_t *t) {
+    const pkg_t *p = t->pkg;
+    const patch_ref_t *pr = t->patch;
+    uint64_t total = p->pkg_size + (pr ? pr->pkg->pkg_size : 0);
+    char path[64];
+    uint8_t zero[4] = {0};
+    buf_put(out, zero, 4);
+    rec32(out, 0x95, t->fw);
+    rec32(out, 0x64, 3);
+    rec32(out, 0x6b, 6);
+    rec32(out, 0x65, 0);
+    rec32(out, 0x78, 0);
+    rec32(out, 0x66, 0);
+    rec32(out, 0x68, 0);
+    rec64(out, 0x6c, 0);
+    rec32(out, 0x6d, 2);
+    rec64(out, 0x76, t->now_us);
+    rec32(out, 0x190, 1);
+    pdb_record(out, 0x74, p->content_id, 36);
+    pdb_record(out, 0x7c, p->title_id, 9);
+    rec32(out, 0x19a, 4);
+    rec32(out, 0x75, 0);
+    recs(out, 0x192, "0");
+    rec64(out, 0x193, 0x1000000000000000ull);
+    rec32(out, 0x70, 2);
+    rec32(out, 0x19d, 0);
+    rec8(out, 0x195, 3);
+    pdb_record(out, 0x1390, t->json->data, (uint32_t)t->json->len);
+    recs(out, 0x1388, t->url);
+    snprintf(path, sizeof(path), "/user/app/%s/app.pkg", p->title_id);
+    recs(out, 0x1389, path);
+    rec8(out, 0x194, 3);
+    rec32(out, 0x1f4, pr ? 2 : 1);
+    recs(out, 0x85, "");
+    recs(out, 0x69, t->name);
+    rec64(out, 0x1a3, p->pkg_size);
+    rec64(out, 0x7a, total);
+    rec32(out, 0x1a4, t->install_id);
+    recs(out, 0xb4, "");
+    recs(out, 0xb5, "");
+    rec32(out, 0xb6, 0xffffffff);
+    rec32(out, 0xb7, 0xffffffff);
+    recs(out, 0xbb, "");
+    rec32(out, 0xb8, 0xffffffff);
+    recs(out, 0xb9, "");
+    rec64(out, 0x9a, t->d1 ? 0x8000000000000000ull : 0);
+    rec32(out, 0x191, 0x30000);
+    rec64(out, 0x1a6, 0x1000000000000000ull);
+    rec64(out, 0x7b, total);
+    if (pr) { /* as the system writes them for a game with its update */
+        rec32(out, 0x19c, 0);
+        rec8(out, 0x197, 3);
+        pdb_record(out, 0x13b0, pr->json->data, (uint32_t)pr->json->len);
+        snprintf(path, sizeof(path), "/user/patch/%s/patch.pkg", p->title_id);
+        recs(out, 0x13a9, path);
+        recs(out, 0x13a8, pr->url);
+        recs(out, 0x84, pr->ver);
+    }
+}
