@@ -10,7 +10,8 @@ const GAMES = [
   { title_id: 'CUSA28732', name: 'Civ VII', version: '01.16', has_patch: true, size: 9e9, state: 'running', mount: 'rw', source: '/mnt/usb0/ps4/CUSA28732', dlc: 35, update_issue: '' },
   { title_id: 'CUSA00190', name: 'Killzone', version: '01.00', has_patch: false, size: 9e9, state: 'internal', mount: '', source: '/mnt/usb0/ps4/CUSA00190', dlc: 0, update_issue: '' },
   { title_id: 'CUSA41712', name: 'Soulstice', version: '01.03', has_patch: false, size: 9e9, state: 'ready', mount: 'rw', source: '/mnt/usb0/ps4/CUSA41712', dlc: 1, update_issue: '' },
-  { title_id: 'CUSA34284', name: 'Moving Out 2', version: '01.04', game_version: '01.00', has_patch: true, size: 2.6e9, state: 'restart', mount: 'rw', source: '/mnt/usb0/ps4/CUSA34284', dlc: 0, update_issue: '', content_id: 'EP4064-CUSA34284_00-MOVINGOUT2000000', system_ver: '9.00', storage: 'usb0' }];
+  { title_id: 'CUSA34284', name: 'Moving Out 2', version: '01.04', game_version: '01.00', has_patch: true, size: 2.6e9, state: 'restart', mount: 'rw', source: '/mnt/usb0/ps4/CUSA34284', dlc: 0, update_issue: '', content_id: 'EP4064-CUSA34284_00-MOVINGOUT2000000', system_ver: '9.00', storage: 'usb0' },
+  { title_id: 'CUSA00069', name: 'Rayman Legends', version: '', has_patch: false, size: 0, state: 'offline', mount: '', source: '/mnt/usb1/ps4/CUSA00069', dlc: 0, update_issue: '', content_id: '', game_version: '', system_ver: '', storage: 'usb1' }];
 const CFG = { batch: true, batch_size: 5, dlc: true, restore_batch: 5, max_restore_batch: 10, paths: ['/'] };
 function reply(url) {
   return url.indexOf('/api/log') === 0 ? { log: 'a\nb' } : url.indexOf('/api/config') === 0 ? CFG :
@@ -71,15 +72,18 @@ function parses(code, version) {
   let { w, d, reqs } = p;
   await tick();
   ok(p.nav.length === 0, 'index with <dialog> stays');
-  ok(d.querySelectorAll('.card').length === 5, 'five game cards');
+  ok(d.querySelectorAll('.card').length === 6, 'six game cards');
   ok(d.querySelector('.card .name').textContent === 'Civ VII', 'cards sorted by name');
   { const c = [...d.querySelectorAll('.card')].find(x => x.textContent.includes('Moving Out 2'));
     ok(c && c.querySelector('.badge').textContent === 'Restart to play' && c.textContent.includes('Restart the console once'), 'a game added in this boot says to restart');
     ok(c && c.querySelector('[data-a="unmount"]') !== null, 'it can be removed from the library'); }
+  { const c = [...d.querySelectorAll('.card')].find(x => x.textContent.includes('Rayman Legends'));
+    ok(c && c.querySelector('.badge').textContent === 'Drive not connected' && c.textContent.includes('On usb1, which is not connected'), 'a game of a drive that is away says so');
+    ok(c && !c.textContent.includes(' · v ·') && !c.querySelector('button[data-a]'), 'no empty version, nothing to do with it'); }
   d.querySelector('.summary span[data-f="restart"]').click();
   ok(d.querySelectorAll('.card').length === 1, 'the state chips filter the cards');
   d.querySelector('.summary span[data-f=""]').click();
-  ok(d.querySelectorAll('.card').length === 5, 'all games again');
+  ok(d.querySelectorAll('.card').length === 6, 'all games again');
   d.querySelector('.art[data-g="CUSA34284"]').click(); await tick();
   ok(d.getElementById('gamedlg').hasAttribute('open') && d.getElementById('g-name').textContent === 'Moving Out 2', 'a cover opens the game');
   ok(d.getElementById('g-hero').style.backgroundImage.includes('/pic/CUSA34284'), 'with its background art');
@@ -214,7 +218,7 @@ function parses(code, version) {
   // --- legacy page
   p = page('legacy.html', {}); ({ w, d, reqs } = p);
   await tick();
-  ok(d.querySelectorAll('.card').length === 5 && d.getElementById('ver').textContent === 'PS4Mount test', 'legacy lists the games');
+  ok(d.querySelectorAll('.card').length === 6 && d.getElementById('ver').textContent === 'PS4Mount test', 'legacy lists the games');
   ok(d.body.textContent.includes('Restart to play') && d.body.textContent.includes('Restart the console once'), 'legacy shows the restart state');
   ok(!/=>|\blet\b|\bconst\b|`|fetch\(|showModal|<dialog/.test(fs.readFileSync(W + 'legacy.html', 'utf8').split('<script>')[1]), 'legacy script is ES5 without fetch or dialog');
   d.getElementById('nav-settings').click(); await tick();

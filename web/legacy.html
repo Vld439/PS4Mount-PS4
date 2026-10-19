@@ -106,7 +106,7 @@ pre{white-space:pre-wrap;font-size:12px;background:#0b0d11;padding:12px;border-r
 
 <script>
 var games = [], busy = {}, maxRestore = 10, msgTimer = 0;
-var labels = {ready: 'Ready', restart: 'Restart to play', running: 'Running', removed: 'Not in library', internal: 'Installed on console', pending: 'Adding', duplicate: 'On another drive'};
+var labels = {ready: 'Ready', restart: 'Restart to play', running: 'Running', removed: 'Not in library', internal: 'Installed on console', pending: 'Adding', duplicate: 'On another drive', offline: 'Drive not connected'};
 
 function $(id) { return document.getElementById(id); }
 function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
@@ -150,15 +150,16 @@ function render() {
     if (g.state === 'removed') act = '<button class="primary" data-a="mount" data-t="' + g.title_id + '">Add to library</button>';
     else if (g.state === 'ready' || g.state === 'restart') act = '<button class="danger" data-a="unmount" data-t="' + g.title_id + '">Remove from library</button>';
     else if (g.state === 'running') act = '<button disabled>Close the game to remove it</button>';
-    if (g.state !== 'internal') act += '<button data-a="restore" data-t="' + g.title_id + '">Move pkgs back</button>';
+    if (g.state !== 'internal' && g.state !== 'offline') act += '<button data-a="restore" data-t="' + g.title_id + '">Move pkgs back</button>';
     if (busy[g.title_id]) act = '<button disabled>Please wait...</button>';
     html += '<div class="card"><img src="/icon/' + g.title_id + '" alt="">' +
       '<div class="info"><span class="badge b-' + g.state + '">' + esc(labels[g.state] || g.state) + '</span>' +
       '<div class="name">' + esc(g.name) + '</div>' +
-      '<div class="meta">' + g.title_id + ' - v' + esc(g.version) + (g.has_patch ? ' (with update)' : '') +
-        (g.dlc ? ' - ' + addons(g) : '') + ' - ' + gb(g.size) + '</div>' +
+      '<div class="meta">' + g.title_id + (g.version ? ' - v' + esc(g.version) : '') + (g.has_patch ? ' (with update)' : '') +
+        (g.dlc ? ' - ' + addons(g) : '') + (g.size ? ' - ' + gb(g.size) : '') + '</div>' +
       '<div class="meta">' + esc(g.source) + (g.mount ? ' - mounted ' + g.mount : '') + '</div>' +
       (g.state === 'restart' ? '<div class="warn">Added. Restart the console once to play it.</div>' : '') +
+      (g.state === 'offline' ? '<div class="warn">On ' + esc(g.storage) + ', which is not connected. Connect it to play.</div>' : '') +
       (g.update_issue ? '<div class="warn">' + esc(g.update_issue) + '</div>' : '') + '</div>' +
       '<div class="actions">' + act + '</div></div>';
   }
@@ -301,7 +302,7 @@ $('s-pick').onclick = function () {
   var rows = '', g;
   for (var i = 0; i < games.length; i++) {
     g = games[i];
-    if (g.state === 'internal') continue;
+    if (g.state === 'internal' || g.state === 'offline') continue;
     rows += '<tr><td class="c"><input type="checkbox" value="' + g.title_id + '"></td>' +
       '<td>' + esc(g.name) + '<div class="meta">' + g.title_id + ' - ' + esc(g.source) + '</div></td>' +
       '<td>' + esc(movedBack(g)) + '</td></tr>';

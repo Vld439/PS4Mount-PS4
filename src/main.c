@@ -2319,6 +2319,46 @@ static int readd_queue(const char *tid, const char *why) {
     return 1;
 }
 
+/* A game added from a drive that is not connected now: 1 with its folder (from its
+ * marker), the drive's name and the name the system registered. */
+static int offline_game(const char *tid, char *dir, size_t dn, char *drive, size_t vn, char *name, size_t nn) {
+    char p[96];
+    size_t len = 0;
+    snprintf(p, sizeof(p), STATE_DIR "/%s.src", tid);
+    uint8_t *m = read_all(p, &len);
+    if (!m)
+        return 0;
+    snprintf(dir, dn, "%.*s", (int)strcspn((char *)m, "\n"), (char *)m);
+    mem_free(m);
+    /* only drives: /mnt/usb0/ps4/<TID> */
+    if (strncmp(dir, "/mnt/", 5) || !db_is_registered(tid))
+        return 0;
+    snprintf(p, sizeof(p), "%s/app.pkg", dir);
+    if (exists(p))
+        return 0;
+    snprintf(drive, vn, "%.*s", (int)strcspn(dir + 5, "/"), dir + 5);
+    snprintf(name, nn, "%s", tid);
+    snprintf(p, sizeof(p), "/system_data/priv/appmeta/%s/param.sfo", tid);
+    uint8_t *d = read_all(p, &len);
+    sfo_t *sfo = mem_alloc(sizeof(*sfo));
+    if (d && sfo && !sfo_parse(d, len, sfo)) {
+        const sfo_item_t *t = sfo_get(sfo, "TITLE");
+        if (t && !t->is_int && t->sval[0])
+            snprintf(name, nn, "%s", t->sval);
+    }
+    mem_free(sfo);
+    mem_free(d);
+    return 1;
+}
+
+/* The system cannot open the pkg of a game being started: when its drive is away, say
+ * so (the system's own error names no reason). */
+static void open_failed(const char *tid) {
+    char dir[PATH_MAX], drive[32], name[128];
+    if (offline_game(tid, dir, sizeof(dir), drive, sizeof(drive), name, sizeof(name)))
+        notify("%s is on %s, which is not connected. Connect it and start the game again", name, drive);
+}
+
 static void disagree_seen(const char *tid) {
     managed_t *m = managed_by(tid, NULL);
     if (!m)
@@ -2353,6 +2393,9 @@ static void handle_klog_line(const char *line) {
             m->running = 1;
             m->running_since = time(NULL);
         }
+    } else if ((p = after(line, "sceKernelOpen(/user/app/")) && strstr(p, "/app.pkg) failed")) {
+        snprintf(id, sizeof(id), "%.9s", p);
+        open_failed(id);
     } else if ((p = after(line, "system file disagree ["))) {
         snprintf(id, sizeof(id), "%.9s", p);
         disagree_seen(id);
@@ -2453,7 +2496,8 @@ void app_games_json(buf_t *out) {
     buf_printf(out, "{\"version\":");
     json_str(out, VERSION);
     buf_printf(out, ",\"games\":[");
-    int first = 1;
+    int first = 1, nlisted = 0;
+    static char listed[MAX_TITLES][10];
     for (int i = 0; i < NROOTS; i++) {
         char root[32], lib[PATH_MAX];
         root_path(i, root, sizeof(root));
@@ -2494,6 +2538,8 @@ void app_games_json(buf_t *out) {
                 state = needs_reboot(tid) ? "restart" : "ready";
             else
                 state = "pending";
+            if (nlisted < MAX_TITLES)
+                snprintf(listed[nlisted++], 10, "%s", tid);
             buf_printf(out, "%s{\"title_id\":\"%s\",\"name\":", first ? "" : ",", tid);
             json_str(out, t.name);
             buf_printf(out, ",\"version\":");
@@ -2523,6 +2569,33 @@ void app_games_json(buf_t *out) {
         }
         closedir(d);
     }
+    /* games of drives that are not connected: still on the home screen, not playable */
+    DIR *sd = opendir(STATE_DIR);
+    struct dirent *e;
+    while (sd && (e = readdir(sd))) {
+        size_t n = strlen(e->d_name);
+        if (n != 13 || strcmp(e->d_name + 9, ".src") || strncmp(e->d_name, "CUSA", 4))
+            continue;
+        char tid[10], dir[PATH_MAX], drive[32], name[128];
+        snprintf(tid, sizeof(tid), "%.9s", e->d_name);
+        int seen = 0;
+        for (int i = 0; i < nlisted && !seen; i++)
+            seen = !strcmp(listed[i], tid);
+        if (seen || !offline_game(tid, dir, sizeof(dir), drive, sizeof(drive), name, sizeof(name)))
+            continue;
+        buf_printf(out, "%s{\"title_id\":\"%s\",\"name\":", first ? "" : ",", tid);
+        json_str(out, name);
+        buf_printf(out, ",\"version\":\"\",\"has_patch\":false,\"size\":0,\"state\":\"offline\",\"mount\":\"\","
+                        "\"source\":");
+        json_str(out, dir);
+        buf_printf(out, ",\"dlc\":0,\"update_issue\":\"\",\"content_id\":\"\",\"game_version\":\"\","
+                        "\"system_ver\":\"\",\"storage\":");
+        json_str(out, drive);
+        buf_printf(out, "}");
+        first = 0;
+    }
+    if (sd)
+        closedir(sd);
     buf_printf(out, "]}");
 }
 

@@ -36,7 +36,7 @@ main{padding:20px;max-width:1400px;margin:0 auto}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
 .art{aspect-ratio:1/1;background:#0b0d11 center/cover no-repeat;position:relative}
 .badge{position:absolute;left:10px;top:10px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;background:#000a}
-.b-restart{background:var(--warn)}.b-ready{background:var(--ok)}.b-running{background:var(--accent)}.b-removed{background:#555}.b-internal{background:var(--warn)}.b-pending{background:var(--warn)}.b-duplicate{background:#555}
+.b-restart{background:var(--warn)}.b-ready{background:var(--ok)}.b-running{background:var(--accent)}.b-removed{background:#555}.b-internal{background:var(--warn)}.b-pending{background:var(--warn)}.b-duplicate{background:#555}.b-offline{background:#555}
 .info{padding:12px 14px;display:flex;flex-direction:column;gap:4px;flex:1}
 .name{font-weight:600;font-size:16px}
 .meta{color:var(--muted);font-size:13px;word-break:break-all}
@@ -152,7 +152,7 @@ progress{width:100%;height:10px;margin-top:8px;accent-color:var(--accent)}
 <div id="toast"></div>
 <script>
 var games = [], busy = {};
-var labels = {ready: 'Ready', restart: 'Restart to play', running: 'Running', removed: 'Not in library', internal: 'Installed on console', pending: 'Adding', duplicate: 'On another drive'};
+var labels = {ready: 'Ready', restart: 'Restart to play', running: 'Running', removed: 'Not in library', internal: 'Installed on console', pending: 'Adding', duplicate: 'On another drive', offline: 'Drive not connected'};
 var filter = '';
 
 function $(id) { return document.getElementById(id); }
@@ -190,7 +190,7 @@ function actions(g) {
   if (g.state === 'removed') act = '<button class="primary" data-a="mount" data-t="' + g.title_id + '">Add to library</button>';
   else if (g.state === 'ready' || g.state === 'restart') act = '<button class="danger" data-a="unmount" data-t="' + g.title_id + '">Remove from library</button>';
   else if (g.state === 'running') act = '<button disabled>Close the game to remove it</button>';
-  if (g.state !== 'internal')
+  if (g.state !== 'internal' && g.state !== 'offline') /* the pkgs of an absent drive cannot move */
     act += '<button data-a="restore" data-t="' + g.title_id + '">Move pkgs back</button>';
   if (busy[g.title_id]) act = '<button disabled>Please wait…</button>';
   return act;
@@ -207,10 +207,11 @@ function render() {
     html += '<div class="card"><div class="art" data-g="' + g.title_id + '" style="background-image:url(/icon/' + g.title_id + ')">' +
       '<span class="badge b-' + g.state + '">' + esc(labels[g.state] || g.state) + '</span></div>' +
       '<div class="info"><div class="name">' + esc(g.name) + '</div>' +
-      '<div class="meta">' + g.title_id + ' · v' + esc(g.version) + (g.has_patch ? ' (with update)' : '') +
-        (g.dlc ? ' · ' + g.dlc + ' add-on' + (g.dlc > 1 ? 's' : '') : '') + ' · ' + gb(g.size) + '</div>' +
+      '<div class="meta">' + g.title_id + (g.version ? ' · v' + esc(g.version) : '') + (g.has_patch ? ' (with update)' : '') +
+        (g.dlc ? ' · ' + g.dlc + ' add-on' + (g.dlc > 1 ? 's' : '') : '') + (g.size ? ' · ' + gb(g.size) : '') + '</div>' +
       '<div class="meta">' + esc(g.source) + (g.mount ? ' · mounted ' + g.mount : '') + '</div>' +
       (g.state === 'restart' ? '<div class="warn">Added. Restart the console once to play it.</div>' : '') +
+      (g.state === 'offline' ? '<div class="warn">On ' + esc(g.storage) + ', which is not connected. Connect it to play.</div>' : '') +
       (g.update_issue ? '<div class="warn">' + esc(g.update_issue) + '</div>' : '') + '</div>' +
       '<div class="actions">' + act + '</div></div>';
   });
@@ -324,7 +325,7 @@ $('s-pick').onclick = function () {
   if (!restoreSize()) return;
   var rows = '';
   games.forEach(function (g) {
-    if (g.state === 'internal') return;
+    if (g.state === 'internal' || g.state === 'offline') return;
     rows += '<tr><td class="c"><input type="checkbox" value="' + g.title_id + '"></td>' +
       '<td>' + esc(g.name) + '<div class="meta">' + g.title_id + ' · ' + esc(g.source) + '</div></td>' +
       '<td>' + esc(movedBack(g)) + '</td></tr>';
