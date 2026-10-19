@@ -367,7 +367,8 @@ static int src_open(title_src_t *t, const char *root, const char *tid) {
     snprintf(t->app_path, sizeof(t->app_path), "%s/app.pkg", t->dir);
     snprintf(t->patch_path, sizeof(t->patch_path), "%s/patch.pkg", t->dir);
     if (pkg_open(&t->app, t->app_path) || read_sfo(&t->app, &t->app_sfo)) {
-        printf("[scan] %s: unreadable app pkg\n", t->app_path);
+        if (first_time(t->app_path))
+            printf("[scan] %s: unreadable app pkg\n", t->app_path);
         return -1;
     }
     if (exists(t->patch_path)) {
@@ -475,26 +476,38 @@ static void hold_path(char *out, size_t n, const char *kind, const char *tid) {
     snprintf(out, n, HOLD_DIR "/%s/%s", kind, tid);
 }
 
-/* Fresh internal folder for kind ("app"/"patch") with name -> pkg_path. */
+static int ro_path(const char *path, char *out, size_t n);
+
+/* Fresh internal folder for kind ("app"/"patch") with name -> pkg_path, as seen in the
+ * read-only view of its library (see ro_view). */
 static int hold_prepare(const char *kind, const char *tid, const char *name, const char *pkg_path) {
-    char dir[PATH_MAX], link[PATH_MAX];
+    char dir[PATH_MAX], link[PATH_MAX], ro[PATH_MAX];
+    if (ro_path(pkg_path, ro, sizeof(ro)))
+        return -1;
     hold_path(dir, sizeof(dir), kind, tid);
     mkdirs(dir, 0777);
     snprintf(link, sizeof(link), "%s/%s", dir, name);
     unlink(link);
-    if (symlink(pkg_path, link)) {
+    if (symlink(ro, link)) {
         printf("[reg] symlink %s: %s\n", link, strerror(errno));
         return -1;
     }
     return 0;
 }
 
-/* The link of kind exists and reaches its pkg. */
-static int hold_ready(const char *kind, const char *tid, const char *name) {
-    char p[PATH_MAX];
+/* The link of kind reaches its pkg through the read-only view (links of older versions
+ * point at the pkg itself: they are written again). readlink fails for payloads here
+ * (0xffffffd1), so the link is followed instead: it must end on the read-only view. */
+static int hold_ready(const char *kind, const char *tid, const char *name, const char *pkg_path) {
+    char p[PATH_MAX], ro[PATH_MAX];
+    struct statfs sf;
     hold_path(p, sizeof(p), kind, tid);
     snprintf(p + strlen(p), sizeof(p) - strlen(p), "/%s", name);
-    return exists(p);
+    if (ro_path(pkg_path, ro, sizeof(ro)) || !exists(p) || statfs(p, &sf))
+        return 0;
+    /* nullfs does not report MNT_RDONLY in statfs; the view is only ever mounted read-only */
+    size_t l = strlen(sf.f_mntonname);
+    return !strncmp(ro, sf.f_mntonname, l) && ro[l] == '/';
 }
 
 static uint8_t *read_all(const char *path, size_t *len) {
@@ -556,7 +569,8 @@ static int place_dlc(dlc_src_t *a) {
     snprintf(q, sizeof(q), "%s/ac.pkg", dir);
     unlink(q);
     int rc = 0;
-    if (symlink(a->path, q)) {
+    char ro[PATH_MAX];
+    if (ro_path(a->path, ro, sizeof(ro)) || symlink(ro, q)) {
         printf("[reg] symlink %s: %s\n", q, strerror(errno));
         rc = -1;
     }
@@ -942,13 +956,61 @@ static int top_layer(const char *target, const char *dir) {
     return strcmp(sf.f_fstypename, "nullfs") || strcmp(sf.f_mntfromname, dir) ? -1 : 1;
 }
 
-static int nullfs_mount(const char *dir, const char *target) {
+static int nullfs_mount_flags(const char *dir, const char *target, int flags) {
     struct iovec iov[] = {IOV("fstype"), IOV("nullfs"), IOV("from"), IOV(dir), IOV("fspath"), IOV(target)};
-    if (nmount(iov, 6, 0)) {
+    if (nmount(iov, 6, flags)) {
         printf("[mount] %s -> %s: %s\n", dir, target, strerror(errno));
         return -1;
     }
     return 0;
+}
+
+static int nullfs_mount(const char *dir, const char *target) { return nullfs_mount_flags(dir, target, 0); }
+
+/* --- read-only views of the libraries ---
+ * Deleting a game on the PS4 empties /user/app/<TID>, and the system follows the app.pkg
+ * link there and truncates the pkg it reaches: a pkg on the USB drive was left at 0
+ * bytes. So the links reach the pkgs through <root>/ps4 mounted read-only under
+ * HOLD_DIR/ro/<drive>: games read them, nothing can write, truncate or remove them
+ * (EROFS), whatever the system does with the game's folder. */
+#define RO_DIR HOLD_DIR "/ro"
+
+static void unmount_all_layers(const char *target, int force);
+
+/* Mounts (again, after the drive came back) the read-only view of root's library. */
+static int ro_view(const char *root, char *view, size_t n) {
+    char lib[PATH_MAX];
+    snprintf(lib, sizeof(lib), "%s/ps4", root);
+    snprintf(view, n, RO_DIR "/%s", strrchr(root, '/') + 1);
+    if (dead_layer(view))
+        unmount_all_layers(view, 1);
+    int top = top_layer(view, lib);
+    if (top == 1)
+        return 0;
+    if (top == -1)
+        unmount_all_layers(view, 1);
+    mkdirs(view, 0777);
+    if (nullfs_mount_flags(lib, view, MNT_RDONLY))
+        return -1;
+    printf("[mount] %s: read-only view of %s\n", view, lib);
+    return 0;
+}
+
+/* path, a pkg in <root>/ps4/..., as seen in the read-only view of that library. */
+static int ro_path(const char *path, char *out, size_t n) {
+    for (int i = 0; i < NROOTS; i++) {
+        char root[32], view[64];
+        root_path(i, root, sizeof(root));
+        size_t l = strlen(root);
+        if (strncmp(path, root, l) || strncmp(path + l, "/ps4/", 5))
+            continue;
+        if (ro_view(root, view, sizeof(view)))
+            return -1;
+        snprintf(out, n, "%s/%s", view, path + l + 5);
+        return 0;
+    }
+    printf("[reg] %s is not in a library: no read-only view for it\n", path);
+    return -1;
 }
 
 /* A running PS4 title keeps /mnt/sandbox/pfsmnt/<TID>-app0 mounted. Unlike the klog
@@ -1193,9 +1255,16 @@ static int title_state(title_src_t *t) {
         return -1;
     }
     /* folders set up by 0.3.1 and older lack the internal folder: registered again */
-    return !db_is_registered(tid) || !bgft_names(tid, t->app_path) || !marker_matches(tid, t->marker) ||
-           !hold_ready("app", tid, "app.pkg") || (t->has_patch && !hold_ready("patch", tid, "patch.pkg")) ||
-           !dlc_ready(t);
+    const char *why = !db_is_registered(tid)                ? "not registered"
+                      : !bgft_names(tid, t->app_path)       ? "no game task naming its pkg"
+                      : !marker_matches(tid, t->marker)     ? "its pkgs changed"
+                      : !hold_ready("app", tid, "app.pkg", t->app_path) ? "game link"
+                      : t->has_patch && !hold_ready("patch", tid, "patch.pkg", t->patch_path) ? "update link"
+                      : !dlc_ready(t)                        ? "add-ons"
+                                                             : NULL;
+    if (why)
+        printf("[scan] %s: to register (%s)\n", tid, why);
+    return why != NULL;
 }
 
 static void pump_events(int ms);
@@ -2239,9 +2308,12 @@ static void end_delete_window(void) {
  * cannot be removed). Returns 2 for a screen that opens the window, 1 for a screen
  * that keeps it open (menus and dialogs on the way), 0 otherwise. */
 static int delete_scene(const char *name) {
-    static const char *opens[] = {"AppDeleteConfirmScene", "console storage delete content", "DeleteDialogScreen", NULL};
+    /* PS5 names, then the PS4's: Options > Delete asks with ConfirmContentDeleteScene and
+     * deletes under Parent_ContentDeleteScene */
+    static const char *opens[] = {"AppDeleteConfirmScene", "console storage delete content", "DeleteDialogScreen",
+                                  "ConfirmContentDeleteScene", NULL};
     static const char *keeps[] = {"AppDeletingScene", "ReactPopupMenu", "Noname", "Render.NPXS40021",
-                                  "storage management", NULL};
+                                  "storage management", "ContentDeleteScene", NULL};
     for (int i = 0; opens[i]; i++)
         if (strstr(name, opens[i]))
             return 2;
@@ -2368,6 +2440,32 @@ static void disagree_seen(const char *tid) {
         readd_queue(tid, "system file disagree");
 }
 
+/* A game of ours deleted on the console: out of the library until added again on the
+ * panel. Its pkg was never reachable for writing (read-only view) and stays where it is. */
+static void title_deleted(managed_t *m) {
+    char path[64];
+    snprintf(path, sizeof(path), STATE_DIR "/%s.removed", m->tid);
+    write_file(path, m->dir, strlen(m->dir), 0666);
+    snprintf(path, sizeof(path), STATE_DIR "/%s.src", m->tid);
+    unlink(path);
+    char hold[PATH_MAX];
+    hold_path(hold, sizeof(hold), "app", m->tid);
+    rm_tree(hold);
+    hold_path(hold, sizeof(hold), "patch", m->tid);
+    rm_tree(hold);
+    bgft_remove(m->tid);
+    notify("%s removed from the library. Its pkg stays in %s", m->name, m->dir);
+    m->used = 0;
+}
+
+/* PS4: "GameWillDelete(<TID>)" names the game the system is deleting (only that line: a
+ * delete that works writes nothing after it). Inside a delete window it is the user's
+ * delete, and the game leaves the library there and then; PS4Mount's own uninstalls
+ * (removing on the panel, adding a game again) happen outside those windows. A delete
+ * that failed, "AppUnInstallMainExecute ret = [<code>]" (the folder was still mounted:
+ * the screens came too fast), is finished by the main loop as a removal on the panel. */
+static char g_will_delete[10], g_delete_tid[10];
+
 static void handle_klog_line(const char *line) {
     const char *p;
     char id[40];
@@ -2396,6 +2494,23 @@ static void handle_klog_line(const char *line) {
     } else if ((p = after(line, "sceKernelOpen(/user/app/")) && strstr(p, "/app.pkg) failed")) {
         snprintf(id, sizeof(id), "%.9s", p);
         open_failed(id);
+    } else if ((p = after(line, "GameWillDelete(")) && g_deleting) {
+        snprintf(id, sizeof(id), "%.9s", p);
+        managed_t *m = managed_by(id, NULL);
+        g_will_delete[0] = 0;
+        if (m) {
+            printf("[delete] %s deleted on the console\n", id);
+            snprintf(g_will_delete, sizeof(g_will_delete), "%s", id);
+            title_deleted(m);
+        }
+    } else if ((p = after(line, "AppUnInstallMainExecute ret = [")) && g_will_delete[0]) {
+        unsigned long rc = strtoul(p, NULL, 16);
+        printf("[delete] %s: the system's delete returned 0x%08lx\n", g_will_delete, rc);
+        if (rc) /* out of the library already: finish the uninstall */
+            snprintf(g_delete_tid, sizeof(g_delete_tid), "%s", g_will_delete);
+        g_will_delete[0] = 0;
+        if (g_deleting)
+            g_deleting_close_at = time(NULL) + 3;
     } else if ((p = after(line, "system file disagree ["))) {
         snprintf(id, sizeof(id), "%.9s", p);
         disagree_seen(id);
@@ -2416,19 +2531,7 @@ static void handle_klog_line(const char *line) {
         snprintf(id, sizeof(id), "%.36s", p);
         managed_t *m = managed_by(NULL, id);
         if (m) {
-            char path[64];
-            snprintf(path, sizeof(path), STATE_DIR "/%s.removed", m->tid);
-            write_file(path, m->dir, strlen(m->dir), 0666);
-            snprintf(path, sizeof(path), STATE_DIR "/%s.src", m->tid);
-            unlink(path);
-            char hold[PATH_MAX];
-            hold_path(hold, sizeof(hold), "app", m->tid);
-            rm_tree(hold);
-            hold_path(hold, sizeof(hold), "patch", m->tid);
-            rm_tree(hold);
-            bgft_remove(m->tid);
-            notify("%s removed from the library. The pkg stays on the USB drive.", m->name);
-            m->used = 0;
+            title_deleted(m);
         } else if (strlen(id) == 36 && g_deleting) {
             /* an add-on of one of our games deleted on a delete screen: keep it out until the
              * drive is reconnected. Outside those screens the uninstall is the system's own:
@@ -3691,6 +3794,19 @@ int main(void) {
             run_restore(g_restore_all ? NULL : g_restore_tids, g_restore_n);
             g_restore_n = 0;
             g_restore_all = 0;
+            continue;
+        }
+        if (g_delete_tid[0] && !g_deleting) {
+            char tid[10], msg[256], name[128];
+            managed_t *m = managed_by(g_delete_tid, NULL);
+            snprintf(tid, sizeof(tid), "%s", g_delete_tid);
+            snprintf(name, sizeof(name), "%s", m ? m->name : tid);
+            g_delete_tid[0] = 0;
+            pump_events(2000); /* let the system close its error dialog */
+            if (!app_remove(tid, msg, sizeof(msg)))
+                notify("%s removed from the library. Its pkg stays on the drive", name);
+            else
+                notify("%s", msg);
             continue;
         }
         if (g_readd_tid[0] && !g_deleting) {
