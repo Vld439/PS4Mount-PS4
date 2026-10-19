@@ -113,29 +113,29 @@ progress{width:100%;height:10px;margin-top:8px;accent-color:var(--accent)}
   <label>Language
     <select id="s-lang"><option value="auto">The console's</option><option value="en">English</option><option value="es">Español</option></select>
   </label>
-  <fieldset><legend>Restore games to the original path</legend>
-    <span class="hint">Moves the pkgs of a game (game, update and all its add-ons) back to where they came from,
-      with their original names, and takes the game out of the library. No pkg is deleted. The open game is closed first.</span>
+  <fieldset><legend>Restore original files</legend>
+    <span class="hint">Takes games off the console and puts their pkgs (game, update and add-ons) back where they were, with the
+      names they had. Nothing is deleted. The open game is closed first.</span>
     <label><span>Games removed from the library per group (1 to <span class="rmax">10</span>)</span>
       <input type="number" class="num" id="s-rsize" inputmode="numeric" pattern="[0-9]*" min="1" max="10">
     </label>
     <div class="row" style="justify-content:flex-start;flex-wrap:wrap">
-      <button type="button" class="danger" id="s-restore">Move all games back</button>
-      <button type="button" id="s-pick">Restore selected games</button>
-      <button type="button" id="s-forget">Pick up moved-back pkgs again</button>
+      <button type="button" class="danger" id="s-restore">Restore the files of all games</button>
+      <button type="button" id="s-pick">Restore the files of chosen games</button>
+      <button type="button" id="s-forget">Use restored pkgs again</button>
     </div>
   </fieldset>
   <div class="row"><button type="button" id="s-cancel">Cancel</button><button class="primary" type="submit">Save</button></div>
 </form></dialog>
-<dialog id="pickdlg"><h3>Restore selected games</h3>
-<div class="note">Each selected game is moved back with its update and all its add-ons (DLC). The open game is closed first.</div>
+<dialog id="pickdlg"><h3>Restore the files of chosen games</h3>
+<div class="note">Each chosen game gets its pkgs back where they were, with its update and all its add-ons. The open game is closed first.</div>
 <div class="pickwrap"><table class="picker">
-  <thead><tr><th class="c"><input type="checkbox" id="p-all" title="Select all"></th><th>Game</th><th>Moved back</th></tr></thead>
+  <thead><tr><th class="c"><input type="checkbox" id="p-all" title="Select all"></th><th>Game</th><th>Files</th></tr></thead>
   <tbody id="p-rows"></tbody>
 </table></div>
 <div class="hint" id="p-info"></div>
 <div class="row" style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
-  <button type="button" id="p-cancel">Cancel</button><button type="button" class="danger" id="p-go" disabled>Move selected back</button>
+  <button type="button" id="p-cancel">Cancel</button><button type="button" class="danger" id="p-go" disabled>Restore the chosen ones</button>
 </div></dialog>
 <dialog id="senddlg"><h3>Send games</h3>
 <div class="hint" style="color:var(--muted);font-size:13px;margin-bottom:10px">Pick the pkgs on this computer. Each one is
@@ -191,13 +191,16 @@ function startRestore(size, body) {
     .catch(function (err) { toast(t('Error: {0}', err.message)); });
 }
 
-function actions(g) {
+/* page: the game's page, where restoring its original files is offered too (a seldom
+ * needed undo, kept off the cards) */
+function actions(g, page) {
   var act = '';
   if (g.state === 'removed') act = '<button class="primary" data-a="mount" data-t="' + g.title_id + '">' + t('Add to library') + '</button>';
   else if (g.state === 'ready' || g.state === 'restart') act = '<button class="danger" data-a="unmount" data-t="' + g.title_id + '">' + t('Remove from library') + '</button>';
   else if (g.state === 'running') act = '<button disabled>' + t('Close the game to remove it') + '</button>';
-  if (g.state !== 'internal' && g.state !== 'offline') /* the pkgs of an absent drive cannot move */
-    act += '<button data-a="restore" data-t="' + g.title_id + '">' + t('Move pkgs back') + '</button>';
+  if (page && g.state !== 'internal' && g.state !== 'offline') /* the pkgs of an absent drive cannot move */
+    act += '<button data-a="restore" data-t="' + g.title_id + '">' + t('Restore original files') + '</button>' +
+      '<div class="meta" style="flex-basis:100%">' + t('Takes the game off the console and puts its pkgs back where they were, with the names they had. Nothing is deleted.') + '</div>';
   if (busy[g.title_id]) act = '<button disabled>' + t('Please wait…') + '</button>';
   return act;
 }
@@ -241,7 +244,7 @@ function showGame(tid) {
     [t('On'), (g.storage || '') + ' · ' + g.source]];
   $('g-facts').innerHTML = f.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') +
     (g.state === 'restart' ? '<dt></dt><dd class="warn">' + t('Added. Restart the console once to play it.') + '</dd>' : '');
-  $('g-actions').innerHTML = actions(g);
+  $('g-actions').innerHTML = actions(g, true);
   $('gamedlg').showModal();
 }
 $('summary').addEventListener('click', function (e) {
@@ -262,9 +265,9 @@ function onAction(e) {
   if ($('gamedlg').open) $('gamedlg').close();
   var tid = b.getAttribute('data-t'), a = b.getAttribute('data-a');
   if (a === 'unmount' && !confirm(t('Remove {0} from the library? Its pkgs stay where they are (deleting it on the console deletes them).', tid))) return;
-  if (a === 'restore' && !confirm(t('Move the pkgs of {0} (game, update and all its add-ons) back to where they came from, ' +
-      'with their original names?\n\nThe open game is closed first. The game leaves the library and PS4Mount stops picking ' +
-      'these pkgs up. No pkg is deleted.', tid))) return;
+  if (a === 'restore' && !confirm(t('Restore the original files of {0}?\n\nThe game leaves the console and its pkgs (game, update and add-ons) go back ' +
+      'where they were, with the names they had. The open game is closed first. PS4Mount stops using these pkgs. Nothing is ' +
+      'deleted.', tid))) return;
   busy[tid] = 1; render();
   api('/api/' + a + '?title_id=' + tid, 'POST').then(function (j) { toast(j.message); })
     .catch(function (err) { toast(t('Error: {0}', err.message)); })
@@ -316,9 +319,9 @@ onlyDigits($('s-rsize'), function () { return maxRestore; });
 $('s-restore').onclick = function () {
   var size = restoreSize();
   if (!size) return;
-  if (!confirm(t('WARNING: this moves the pkgs of ALL {0} games (game, update and all add-ons) back to where ' +
-      'they came from, with their original names.\n\nThe open game is closed now, without saving. All PS4Mount games leave ' +
-      'the library, {1} at a time, and PS4Mount stops picking these pkgs up. No pkg is deleted.\n\nContinue?', games.length, size))) return;
+  if (!confirm(t('WARNING: this restores the original files of ALL {0} games: their pkgs (game, update and add-ons) go back ' +
+      'where they were, with the names they had.\n\nThe open game is closed now, without saving. All PS4Mount games leave ' +
+      'the console, {1} at a time, and PS4Mount stops using these pkgs. Nothing is deleted.\n\nContinue?', games.length, size))) return;
   startRestore(size);
 };
 function pickUpdate() {
@@ -353,13 +356,13 @@ $('p-go').onclick = function () {
   if (!size) return;
   for (var i = 0; i < boxes.length; i++) if (boxes[i].checked) tids.push(boxes[i].value);
   if (!tids.length) return;
-  if (!confirm(t('Move the pkgs of {0} game(s), each with its update and all its add-ons, back to where they ' +
-      'came from?\n\nThe open game is closed now, without saving. The games leave the library{1}. No pkg is deleted.',
+  if (!confirm(t('Restore the original files of {0} game(s), each with its update and all its add-ons?\n\nThe open game is ' +
+      'closed now, without saving. The games leave the console{1}. Nothing is deleted.',
       tids.length, tids.length > size ? t(', {0} at a time', size) : ''))) return;
   startRestore(size, 'title_ids=' + tids.join(','));
 };
 $('s-forget').onclick = function () {
-  if (!confirm(t('Pick up the pkgs that were moved back again? They are moved into the ps4 folder and added on the next scan.'))) return;
+  if (!confirm(t('Use the restored pkgs again? They are moved into the ps4 folder and added on the next scan.'))) return;
   api('/api/restored/forget', 'POST').then(function (j) { toast(j.message); })
     .catch(function (err) { toast(t('Error: {0}', err.message)); });
 };

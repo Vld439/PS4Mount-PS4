@@ -96,7 +96,9 @@ Cada juego tiene una ficha (pulsa su portada) con su versión, el firmware que n
 
 ![Ficha de un juego](docs/panel-game-es.png)
 
-Botones: **Quitar de la biblioteca** (lo quita de la consola y conserva sus pkgs), **Añadir a la biblioteca**, **Devolver los pkgs** (los devuelve a donde estaban, con su nombre original), **Buscar juegos**, **Enviar juegos**, **Ajustes**, **Log** y **Detener**.
+Botones: **Quitar de la biblioteca** (lo quita de la consola y conserva sus pkgs), **Añadir a la biblioteca**, **Buscar juegos**, **Enviar juegos**, **Ajustes**, **Log** y **Detener**.
+
+En la ficha del juego también está **Restaurar archivos originales**: deshace lo que PS4Mount hizo con sus archivos. Quita el juego de la consola y vuelve a dejar sus pkgs donde estaban, con el nombre que tenían (por ejemplo, `ps4/CUSA00092/app.pkg` vuelve a ser `PS4Mount/Flower/Flower.pkg`). Sirve para recuperar tus archivos tal como los tenías, por ejemplo para instalar el juego de la forma normal. No borra nada, y PS4Mount no vuelve a tomar esos pkgs.
 
 ### Enviar juegos desde el PC
 
@@ -119,7 +121,7 @@ En el panel, **Enviar juegos**: arrastra los pkgs y elige el destino (el USB o l
 | Usar también los pkgs de /data/PS4Mount | Sí | Usa también los pkgs de la memoria interna. |
 | Idioma | El de la consola | El idioma del panel y de las notificaciones: el de la consola, inglés o español. |
 
-Se guardan en `/data/ps4mount/config.txt`. Los ajustes también tienen **Devolver todos los juegos** y **Volver a usar los pkgs devueltos**.
+Se guardan en `/data/ps4mount/config.txt`. Los ajustes también tienen **Restaurar los archivos de todos los juegos** (o de los elegidos) y **Volver a usar los pkgs restaurados**.
 
 ### Quitar y borrar juegos
 
@@ -266,7 +268,9 @@ Each game has a page (click its artwork) with its version, the firmware it needs
 
 ![A game's page](docs/panel-game.png)
 
-Buttons: **Remove from library** (takes it off the console and keeps its pkgs), **Add to library**, **Move pkgs back** (moves the pkgs back to where they came from, with their original names), **Scan for games**, **Send games**, **Settings**, **Log** and **Stop**.
+Buttons: **Remove from library** (takes it off the console and keeps its pkgs), **Add to library**, **Scan for games**, **Send games**, **Settings**, **Log** and **Stop**.
+
+A game's page also has **Restore original files**: it undoes what PS4Mount did to its files. It takes the game off the console and puts its pkgs back where they were, with the names they had (for example `ps4/CUSA00092/app.pkg` becomes `PS4Mount/Flower/Flower.pkg` again). It is there to get your files back as they were, for example to install the game the usual way. Nothing is deleted, and PS4Mount does not pick those pkgs up again.
 
 ### Sending games from a computer
 
@@ -289,7 +293,7 @@ In the panel, **Send games**: drop the pkgs and pick where they go (the USB driv
 | Also use pkgs in the console's /data/PS4Mount | On | Uses the pkgs in the console's storage too. |
 | Language | The console's | The language of the panel and the notifications: the console's, English or Spanish. |
 
-They are saved in `/data/ps4mount/config.txt`. The settings also have **Move all games back** and **Pick up moved-back pkgs again**.
+They are saved in `/data/ps4mount/config.txt`. The settings also have **Restore the files of all games** (or of chosen ones) and **Use restored pkgs again**.
 
 ### Removing and deleting games
 

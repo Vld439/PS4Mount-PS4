@@ -78,28 +78,28 @@ pre{white-space:pre-wrap;font-size:12px;background:#0b0d11;padding:12px;border-r
     </label>
   </div>
   <div class="box">
-    <h3>Restore games to the original path</h3>
-    <span class="hint">Moves the pkgs of a game (game, update and all its add-ons) back to where they came from, with their
-      original names, and takes the game out of the library. No pkg is deleted. The open game is closed first.</span>
+    <h3>Restore original files</h3>
+    <span class="hint">Takes games off the console and puts their pkgs (game, update and add-ons) back where they were, with the
+      names they had. Nothing is deleted. The open game is closed first.</span>
     <label>Games removed from the library per group (1 to <span id="rmax">10</span>)
       <input type="number" id="s-rsize" inputmode="numeric" pattern="[0-9]*" min="1" max="10" style="width:6em">
     </label>
-    <button class="danger" id="s-restore">Move all games back</button>
-    <button id="s-pick">Restore selected games</button>
-    <button id="s-forget">Pick up moved-back pkgs again</button>
+    <button class="danger" id="s-restore">Restore the files of all games</button>
+    <button id="s-pick">Restore the files of chosen games</button>
+    <button id="s-forget">Use restored pkgs again</button>
   </div>
   <button id="s-cancel">Back</button><button class="primary" id="s-save">Save</button>
 </div>
 
 <div class="view" id="v-pick">
-  <h2>Restore selected games</h2>
-  <p class="note">Each selected game is moved back with its update and all its add-ons (DLC). The open game is closed first.</p>
+  <h2>Restore the files of chosen games</h2>
+  <p class="note">Each chosen game gets its pkgs back where they were, with its update and all its add-ons. The open game is closed first.</p>
   <table>
-    <thead><tr><th class="c"><input type="checkbox" id="p-all"></th><th>Game</th><th>Moved back</th></tr></thead>
+    <thead><tr><th class="c"><input type="checkbox" id="p-all"></th><th>Game</th><th>Files</th></tr></thead>
     <tbody id="p-rows"></tbody>
   </table>
   <p class="hint" id="p-info"></p>
-  <button id="p-cancel">Back</button><button class="danger" id="p-go" disabled>Move selected back</button>
+  <button id="p-cancel">Back</button><button class="danger" id="p-go" disabled>Restore the chosen ones</button>
 </div>
 
 <div class="view" id="v-log">
@@ -156,7 +156,6 @@ function render() {
     if (g.state === 'removed') act = '<button class="primary" data-a="mount" data-t="' + g.title_id + '">' + t('Add to library') + '</button>';
     else if (g.state === 'ready' || g.state === 'restart') act = '<button class="danger" data-a="unmount" data-t="' + g.title_id + '">' + t('Remove from library') + '</button>';
     else if (g.state === 'running') act = '<button disabled>' + t('Close the game to remove it') + '</button>';
-    if (g.state !== 'internal' && g.state !== 'offline') act += '<button data-a="restore" data-t="' + g.title_id + '">' + t('Move pkgs back') + '</button>';
     if (busy[g.title_id]) act = '<button disabled>' + t('Please wait...') + '</button>';
     html += '<div class="card"><img src="/icon/' + g.title_id + '" alt="">' +
       '<div class="info"><span class="badge b-' + g.state + '">' + esc(label(g.state)) + '</span>' +
@@ -190,9 +189,9 @@ $('grid').onclick = function (e) {
   if (!b || !b.getAttribute || !b.getAttribute('data-a')) return;
   var tid = b.getAttribute('data-t'), a = b.getAttribute('data-a');
   if (a === 'unmount' && !confirm(t('Remove {0} from the library? Its pkgs stay where they are (deleting it on the console deletes them).', tid))) return;
-  if (a === 'restore' && !confirm(t('Move the pkgs of {0} (game, update and all its add-ons) back to where they came from, ' +
-      'with their original names?\n\nThe open game is closed first. The game leaves the library and PS4Mount stops picking ' +
-      'these pkgs up. No pkg is deleted.', tid))) return;
+  if (a === 'restore' && !confirm(t('Restore the original files of {0}?\n\nThe game leaves the console and its pkgs (game, update and add-ons) go back ' +
+      'where they were, with the names they had. The open game is closed first. PS4Mount stops using these pkgs. Nothing is ' +
+      'deleted.', tid))) return;
   busy[tid] = 1;
   render();
   api('/api/' + a + '?title_id=' + tid, 'POST', null, function (err, j) {
@@ -286,13 +285,13 @@ function startRestore(size, body) {
 $('s-restore').onclick = function () {
   var size = restoreSize();
   if (!size) return;
-  if (!confirm(t('WARNING: this moves the pkgs of ALL {0} games (game, update and all add-ons) back to where ' +
-      'they came from, with their original names.\n\nThe open game is closed now, without saving. All PS4Mount games leave ' +
-      'the library, {1} at a time, and PS4Mount stops picking these pkgs up. No pkg is deleted.\n\nContinue?', games.length, size))) return;
+  if (!confirm(t('WARNING: this restores the original files of ALL {0} games: their pkgs (game, update and add-ons) go back ' +
+      'where they were, with the names they had.\n\nThe open game is closed now, without saving. All PS4Mount games leave ' +
+      'the console, {1} at a time, and PS4Mount stops using these pkgs. Nothing is deleted.\n\nContinue?', games.length, size))) return;
   startRestore(size, '');
 };
 $('s-forget').onclick = function () {
-  if (!confirm(t('Pick up the pkgs that were moved back again? They are moved into the ps4 folder and added on the next scan.'))) return;
+  if (!confirm(t('Use the restored pkgs again? They are moved into the ps4 folder and added on the next scan.'))) return;
   api('/api/restored/forget', 'POST', null, function (err, j) { say(err ? t('Error: {0}', err) : j.message); });
 };
 
@@ -332,8 +331,8 @@ $('p-go').onclick = function () {
   if (!size) return;
   for (var i = 0; i < b.length; i++) if (b[i].checked) tids.push(b[i].value);
   if (!tids.length) return;
-  if (!confirm(t('Move the pkgs of {0} game(s), each with its update and all its add-ons, back to where they ' +
-      'came from?\n\nThe open game is closed now, without saving. The games leave the library{1}. No pkg is deleted.',
+  if (!confirm(t('Restore the original files of {0} game(s), each with its update and all its add-ons?\n\nThe open game is ' +
+      'closed now, without saving. The games leave the console{1}. Nothing is deleted.',
       tids.length, tids.length > size ? t(', {0} at a time', size) : ''))) return;
   startRestore(size, 'title_ids=' + tids.join(','));
 };

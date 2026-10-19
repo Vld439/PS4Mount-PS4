@@ -34,20 +34,30 @@ var LANGS = {
     "Pkgs sent to the console's storage are added from there, with no install to wait for. They still take internal space.":
       'Los pkgs enviados a la memoria de la consola se añaden desde ahí, sin esperar una instalación. Ocupan espacio interno.',
     'Language': 'Idioma',
+    'Restore original files': 'Restaurar archivos originales',
+    'Takes games off the console and puts their pkgs (game, update and add-ons) back where they were, with the names they had. Nothing is deleted. The open game is closed first.':
+      'Quita juegos de la consola y vuelve a dejar sus pkgs (juego, actualización y DLC) donde estaban, con el nombre que tenían. No se borra nada. Antes se cierra el juego abierto.',
+    'Takes the game off the console and puts its pkgs back where they were, with the names they had. Nothing is deleted.':
+      'Quita el juego de la consola y vuelve a dejar sus pkgs donde estaban, con el nombre que tenían. No borra nada.',
+    'Restore the files of all games': 'Restaurar los archivos de todos los juegos',
+    'Restore the files of chosen games': 'Restaurar los archivos de los juegos elegidos',
+    'Use restored pkgs again': 'Volver a usar los pkgs restaurados',
+    'Each chosen game gets its pkgs back where they were, with its update and all its add-ons. The open game is closed first.':
+      'A cada juego elegido se le devuelven sus pkgs donde estaban, con su actualización y todos sus DLC. Antes se cierra el juego abierto.',
+    'Files': 'Archivos',
+    'Restore the chosen ones': 'Restaurar los elegidos',
+    'Restore the original files of {0}?\n\nThe game leaves the console and its pkgs (game, update and add-ons) go back where they were, with the names they had. The open game is closed first. PS4Mount stops using these pkgs. Nothing is deleted.':
+      '¿Restaurar los archivos originales de {0}?\n\nEl juego sale de la consola y sus pkgs (juego, actualización y DLC) vuelven donde estaban, con el nombre que tenían. Antes se cierra el juego abierto. PS4Mount deja de usar esos pkgs. No se borra nada.',
+    'WARNING: this restores the original files of ALL {0} games: their pkgs (game, update and add-ons) go back where they were, with the names they had.\n\nThe open game is closed now, without saving. All PS4Mount games leave the console, {1} at a time, and PS4Mount stops using these pkgs. Nothing is deleted.\n\nContinue?':
+      'ATENCIÓN: esto restaura los archivos originales de LOS {0} juegos: sus pkgs (juego, actualización y DLC) vuelven donde estaban, con el nombre que tenían.\n\nEl juego abierto se cierra ahora, sin guardar. Todos los juegos de PS4Mount salen de la consola, de {1} en {1}, y PS4Mount deja de usar esos pkgs. No se borra nada.\n\n¿Continuar?',
+    'Restore the original files of {0} game(s), each with its update and all its add-ons?\n\nThe open game is closed now, without saving. The games leave the console{1}. Nothing is deleted.':
+      '¿Restaurar los archivos originales de {0} juego(s), cada uno con su actualización y todos sus DLC?\n\nEl juego abierto se cierra ahora, sin guardar. Los juegos salen de la consola{1}. No se borra nada.',
+    'Use the restored pkgs again? They are moved into the ps4 folder and added on the next scan.':
+      '¿Volver a usar los pkgs restaurados? Se moverán a la carpeta ps4 y se añadirán en la próxima búsqueda.',
     "The console's": 'El de la consola',
-    'Restore games to the original path': 'Devolver los juegos a su ubicación original',
-    'Moves the pkgs of a game (game, update and all its add-ons) back to where they came from, with their original names, and takes the game out of the library. No pkg is deleted. The open game is closed first.':
-      'Devuelve los pkgs de un juego (juego, actualización y todos sus DLC) a donde estaban, con sus nombres originales, y saca el juego de la biblioteca. No se borra ningún pkg. Antes se cierra el juego abierto.',
     'Games removed from the library per group (1 to': 'Juegos que salen de la biblioteca por grupo (1 a',
-    'Move all games back': 'Devolver todos los juegos',
-    'Restore selected games': 'Devolver los juegos elegidos',
-    'Pick up moved-back pkgs again': 'Volver a usar los pkgs devueltos',
-    'Each selected game is moved back with its update and all its add-ons (DLC). The open game is closed first.':
-      'Cada juego elegido se devuelve con su actualización y todos sus DLC. Antes se cierra el juego abierto.',
     'Select all': 'Elegir todos',
     'Game': 'Juego',
-    'Moved back': 'Se devuelve',
-    'Move selected back': 'Devolver los elegidos',
     'Pick the pkgs on this computer. Each one is checked first (it takes a second): only pkgs this console can use are sent, so no transfer ends in a game that does not start. They are added to the library when they arrive.':
       'Elige los pkgs de este equipo. Cada uno se comprueba antes (tarda un segundo): solo se envían los que esta consola puede usar, así ningún envío acaba en un juego que no arranca. Se añaden a la biblioteca al llegar.',
     'Drop .pkg files here, or click to pick them': 'Suelta aquí los .pkg, o pulsa para elegirlos',
@@ -67,7 +77,6 @@ var LANGS = {
     'Add to library': 'Añadir a la biblioteca',
     'Remove from library': 'Quitar de la biblioteca',
     'Close the game to remove it': 'Cierra el juego para quitarlo',
-    'Move pkgs back': 'Devolver los pkgs',
     'Please wait…': 'Espera…',
     'Please wait...': 'Espera...',
     ' (with update)': ' (con actualización)',
@@ -102,19 +111,11 @@ var LANGS = {
     'Games per group must be a number from 1 to {0}': 'Los juegos por grupo deben ser un número de 1 a {0}',
     'Remove {0} from the library? Its pkgs stay where they are (deleting it on the console deletes them).':
       '¿Quitar {0} de la biblioteca? Sus pkgs se quedan donde están (borrarlo desde la consola sí los borra).',
-    'Move the pkgs of {0} (game, update and all its add-ons) back to where they came from, with their original names?\n\nThe open game is closed first. The game leaves the library and PS4Mount stops picking these pkgs up. No pkg is deleted.':
-      '¿Devolver los pkgs de {0} (juego, actualización y todos sus DLC) a donde estaban, con sus nombres originales?\n\nAntes se cierra el juego abierto. El juego sale de la biblioteca y PS4Mount deja de usar esos pkgs. No se borra ningún pkg.',
-    'WARNING: this moves the pkgs of ALL {0} games (game, update and all add-ons) back to where they came from, with their original names.\n\nThe open game is closed now, without saving. All PS4Mount games leave the library, {1} at a time, and PS4Mount stops picking these pkgs up. No pkg is deleted.\n\nContinue?':
-      'ATENCIÓN: esto devuelve los pkgs de LOS {0} juegos (juego, actualización y todos los DLC) a donde estaban, con sus nombres originales.\n\nEl juego abierto se cierra ahora, sin guardar. Todos los juegos de PS4Mount salen de la biblioteca, de {1} en {1}, y PS4Mount deja de usar esos pkgs. No se borra ningún pkg.\n\n¿Continuar?',
     '{0} game(s) selected': '{0} juego(s) elegido(s)',
     ', removed from the library {0} at a time': ', salen de la biblioteca de {0} en {0}',
     'No games selected': 'No hay juegos elegidos',
     'No PS4Mount games on the connected drives': 'No hay juegos de PS4Mount en las unidades conectadas',
-    'Move the pkgs of {0} game(s), each with its update and all its add-ons, back to where they came from?\n\nThe open game is closed now, without saving. The games leave the library{1}. No pkg is deleted.':
-      '¿Devolver los pkgs de {0} juego(s), cada uno con su actualización y todos sus DLC, a donde estaban?\n\nEl juego abierto se cierra ahora, sin guardar. Los juegos salen de la biblioteca{1}. No se borra ningún pkg.',
     ', {0} at a time': ', de {0} en {0}',
-    'Pick up the pkgs that were moved back again? They are moved into the ps4 folder and added on the next scan.':
-      '¿Volver a usar los pkgs devueltos? Se moverán a la carpeta ps4 y se añadirán en la próxima búsqueda.',
     '{0} free': '{0} libres',
     'No drive connected': 'No hay ninguna unidad conectada',
     'no place to send it to': 'no hay dónde enviarlo',

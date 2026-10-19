@@ -136,8 +136,12 @@ function tKeys(file) {
     ok(t.includes('EP4064-CUSA34284_00-MOVINGOUT2000000') && t.includes('game v01.00 with its update') && t.includes('9.00'), 'details: content id, versions, firmware'); }
   ok(d.querySelector('#g-actions [data-a="unmount"]') !== null, 'and its actions');
   d.getElementById('gamedlg').removeAttribute('open');
-  ok(d.querySelector('[data-a="restore"][data-t="CUSA28732"]') !== null, 'running game has Move pkgs back');
-  ok(d.querySelector('[data-a="restore"][data-t="CUSA00190"]') === null, 'internal game has no Move pkgs back');
+  ok(d.querySelector('#grid [data-a="restore"]') === null, 'restoring original files is not on the cards');
+  w.showGame('CUSA28732');
+  ok(d.querySelector('#g-actions [data-a="restore"]') !== null && d.getElementById('g-actions').textContent.includes('Restore original files'), 'a game page offers restoring its original files');
+  w.showGame('CUSA00190');
+  ok(d.querySelector('#g-actions [data-a="restore"]') === null, 'not for a game installed on the console');
+  d.getElementById('gamedlg').removeAttribute('open');
   d.getElementById('settingsbtn').click(); await tick();
   ok(d.getElementById('setdlg').hasAttribute('open') && d.getElementById('s-rsize').value === '5', 'settings open with restore group 5');
   const rs = d.getElementById('s-rsize');
@@ -290,6 +294,19 @@ function tKeys(file) {
   p = page('legacy.html', {}); ({ w, d, reqs } = p);
   await tick();
   ok(d.getElementById('rescan').textContent === 'Buscar juegos' && d.getElementById('summary').textContent.includes('Listo'), 'the legacy page in Spanish');
+  // no fixed text of either page left in English
+  ['index.html', 'legacy.html'].forEach((f) => {
+    const html = fs.readFileSync(W + f, 'utf8').replace(/<script>[\s\S]*?<\/script>/g, '')
+      .replace('<!--LANG-->', () => '<script>' + fs.readFileSync(W + 'lang.js', 'utf8') + '</script><script>setLang("es")</script>');
+    const doc = new JSDOM(html, { runScripts: 'dangerously' }).window.document, walker = doc.createTreeWalker(doc.body, 4), left = [];
+    let n;
+    while ((n = walker.nextNode())) {
+      if (/^(SCRIPT|STYLE|PRE|TEXTAREA|OPTION)$/.test(n.parentNode.nodeName)) continue;
+      const k = n.nodeValue.replace(/\s+/g, ' ').trim();
+      if (k && /[a-z]{3}/.test(k) && !n.psmEn && !/^(PS4Mount|Log|\.pkg)$/.test(k)) left.push(k);
+    }
+    ok(!left.length, f + ': every fixed text in Spanish' + (left.length ? ': ' + JSON.stringify(left) : ''));
+  });
   REPLY_LANG = undefined;
 
   // --- legacy page

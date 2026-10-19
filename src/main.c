@@ -3213,7 +3213,7 @@ static int close_open_games(void) {
         return 0;
     for (int i = 0; i < n && i < 8; i++) {
         managed_t *m = managed_by(tids[i], NULL);
-        notify(TR("Closing %s to move pkgs back", "Cerrando %s para devolver sus pkgs"), m ? m->name : tids[i]);
+        notify(TR("Closing %s to restore its original files", "Cerrando %s para restaurar sus archivos originales"), m ? m->name : tids[i]);
         int rc = sceSystemServiceKillApp(ids[i], -1, 0, 0);
         printf("[restore] close %s (app 0x%08x): 0x%08x\n", tids[i], ids[i], rc);
     }
@@ -3289,19 +3289,19 @@ static void run_restore(char (*only)[10], int nonly) {
     static restore_item_t items[MAX_TITLES];
     int n = restore_collect(only, nonly, items, MAX_TITLES), moved = 0, failed = 0, done = 0, kept = 0;
     if (!n) {
-        notify("%s", TR("No PS4Mount games to move back", "No hay juegos de PS4Mount que devolver"));
+        notify("%s", TR("No PS4Mount games to restore", "No hay juegos de PS4Mount que restaurar"));
         return;
     }
     if (close_open_games()) {
-        notify("%s", TR("The open game did not close; no pkgs were moved back", "El juego abierto no se cerró; no se devolvió ningún pkg"));
+        notify("%s", TR("The open game did not close; no files were restored", "El juego abierto no se cerró; no se restauró ningún archivo"));
         return;
     }
     int size = g_cfg.restore_batch;
     if (n == 1)
-        notify(TR("Moving the pkgs of %s back...", "Devolviendo los pkgs de %s..."), items[0].name);
+        notify(TR("Restoring the original files of %s...", "Restaurando los archivos originales de %s..."), items[0].name);
     else
-        notify(TR("Moving the pkgs of %d game(s) back to where they came from, %d at a time...",
-                  "Devolviendo los pkgs de %d juego(s) a su sitio, en grupos de %d..."),
+        notify(TR("Restoring the original files of %d game(s), %d at a time...",
+                  "Restaurando los archivos originales de %d juego(s), en grupos de %d..."),
                n, size);
     for (int i = 0; i < n; i += size) {
         if (i)
@@ -3326,10 +3326,10 @@ static void run_restore(char (*only)[10], int nonly) {
     clear_removed_dlc();
     g_next_scan = 0;
     if (n == 1 && done)
-        notify(TR("%s: %d pkg file(s) moved back%s", "%s: %d pkg(s) devuelto(s)%s"), items[0].name, moved,
+        notify(TR("%s: %d pkg file(s) restored%s", "%s: %d pkg(s) restaurado(s)%s"), items[0].name, moved,
                failed ? TR(", some could not be moved (see the log)", ", algunos no se pudieron mover (ver el log)") : "");
     else if (n > 1)
-        notify(TR("%d pkg file(s) of %d game(s) moved back%s%s", "%d pkg(s) de %d juego(s) devuelto(s)%s%s"), moved, done,
+        notify(TR("%d pkg file(s) of %d game(s) restored%s%s", "%d pkg(s) de %d juego(s) restaurado(s)%s%s"), moved, done,
                failed ? TR(", some could not be moved (see the log)", ", algunos no se pudieron mover (ver el log)") : "",
                kept ? TR(", some games could not leave the library (see the log)",
                          ", algunos juegos no pudieron salir de la biblioteca (ver el log)")
@@ -3338,14 +3338,14 @@ static void run_restore(char (*only)[10], int nonly) {
 
 int app_restore(const char *tids, char *msg, size_t cap) {
     if (g_restore_all || g_restore_n) {
-        snprintf(msg, cap, "%s", TR("Already moving pkgs back, wait for it to finish", "Ya se están devolviendo pkgs, espera a que termine"));
+        snprintf(msg, cap, "%s", TR("Already restoring files, wait for it to finish", "Ya se están restaurando archivos, espera a que termine"));
         return -1;
     }
     if (!tids) {
         g_restore_all = 1;
         snprintf(msg, cap, "%s",
-                 TR("Closing the open game and moving the pkgs of all games back to where they came from",
-                    "Cerrando el juego abierto y devolviendo los pkgs de todos los juegos a su sitio"));
+                 TR("Closing the open game and restoring the original files of all games",
+                    "Cerrando el juego abierto y restaurando los archivos originales de todos los juegos"));
         return 0;
     }
     int n = 0;
@@ -3377,13 +3377,13 @@ int app_restore(const char *tids, char *msg, size_t cap) {
     g_restore_n = n;
     if (n == 1)
         snprintf(msg, cap,
-                 TR("Closing the open game and moving the pkgs of %s back to where they came from",
-                    "Cerrando el juego abierto y devolviendo los pkgs de %s a su sitio"),
+                 TR("Closing the open game and restoring the original files of %s",
+                    "Cerrando el juego abierto y restaurando los archivos originales de %s"),
                  g_restore_tids[0]);
     else
         snprintf(msg, cap,
-                 TR("Closing the open game and moving the pkgs of %d games back, %d at a time",
-                    "Cerrando el juego abierto y devolviendo los pkgs de %d juego(s), en grupos de %d"),
+                 TR("Closing the open game and restoring the original files of %d games, %d at a time",
+                    "Cerrando el juego abierto y restaurando los archivos originales de %d juego(s), en grupos de %d"),
                  n, g_cfg.restore_batch);
     return 0;
 }
@@ -3391,7 +3391,7 @@ int app_restore(const char *tids, char *msg, size_t cap) {
 int app_restored_forget(char *msg, size_t cap) {
     unlink(RESTORED_LIST);
     g_next_scan = 0;
-    snprintf(msg, cap, "%s", TR("Pkgs moved back will be picked up again on the next scan", "Los pkgs devueltos se volverán a usar en la próxima búsqueda"));
+    snprintf(msg, cap, "%s", TR("Restored pkgs will be used again on the next scan", "Los pkgs restaurados se volverán a usar en la próxima búsqueda"));
     return 0;
 }
 
