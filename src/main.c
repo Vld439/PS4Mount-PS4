@@ -195,6 +195,17 @@ static void root_path(int i, char *out, size_t n) {
 
 static int is_internal(const char *root) { return !strcmp(root, INTERNAL_ROOT); }
 
+/* A pkg path as the system writes it in its records: /data is an alias the payload can
+ * use, but BGFT refuses it ("invalid content_url") and starts nothing; the installs of
+ * the system say /user/data. */
+static const char *sys_path(const char *path, char *out, size_t n) {
+    if (!strncmp(path, INTERNAL_ROOT "/", sizeof(INTERNAL_ROOT)))
+        snprintf(out, n, "/user%s", path);
+    else
+        snprintf(out, n, "%s", path);
+    return out;
+}
+
 static int root_present(const char *root) { return is_internal(root) ? g_cfg.internal : is_mountpoint(root); }
 
 /* "usb0", "ext0", "internal storage" */
@@ -536,9 +547,11 @@ static int place_dlc(dlc_src_t *a) {
         rc = -1;
     }
     buf_t json = {0}, pbm = {0}, pdb = {0};
-    build_app_json(&json, pkg, a->path);
+    char url[PATH_MAX + 8];
+    sys_path(a->path, url, sizeof(url));
+    build_app_json(&json, pkg, url);
     build_app_pbm(&pbm, pkg, ver, a->data ? PBM_ADDCONT : PBM_LICENSE);
-    build_ac_pdb(&pdb, pkg, a->path, &json);
+    build_ac_pdb(&pdb, pkg, url, &json);
     snprintf(q, sizeof(q), "%s/ac.json", dir);
     rc |= write_buf(q, &json);
     snprintf(q, sizeof(q), "%s/ac.pbm", dir);
@@ -667,6 +680,19 @@ static uint32_t bgft_find(const char *tid) {
     return found;
 }
 
+/* 1 when the game task of tid names the pkg at path (as the system writes it): tasks
+ * written before /data paths were turned into /user/data ones are written again. */
+static int bgft_names(const char *tid, const char *path) {
+    uint32_t id = bgft_find(tid);
+    char p[64], url[PATH_MAX + 8];
+    size_t len;
+    snprintf(p, sizeof(p), BGFT_DIR "/%08x/d0.pdb", id);
+    uint8_t *data = id ? read_all(p, &len) : NULL;
+    int ok = data && contains(data, len, sys_path(path, url, sizeof(url)));
+    mem_free(data);
+    return ok;
+}
+
 /* A free odd id whose install task id (one below) is free too. */
 static uint32_t bgft_free_id(void) {
     char p[64];
@@ -715,8 +741,10 @@ static int place_bgft(title_src_t *t, const buf_t *json, const patch_ref_t *pr) 
     mem_free(old);
     const char *name = strrchr(t->app_path, '/');
     name = name ? name + 1 : t->app_path;
+    char url[PATH_MAX + 8];
+    sys_path(t->app_path, url, sizeof(url));
     for (int d1 = 0; d1 < 2; d1++) {
-        bgft_task_t bt = {d1, g_fw, now, id - 1, &t->app, name, t->app_path, json, pr};
+        bgft_task_t bt = {d1, g_fw, now, id - 1, &t->app, name, url, json, pr};
         buf_t b = {0};
         build_bgft_task(&b, &bt);
         snprintf(p, sizeof(p), "%s/d%d.pdb", dir, d1);
@@ -762,15 +790,16 @@ static int place_files(title_src_t *t) {
     size_t pl = 0, ppl = 0;
     uint8_t *pg = pkg_entry(app, 0x1001, &pl), *ppg = pat ? pkg_entry(pat, 0x1001, &ppl) : NULL;
     buf_t json = {0}, pbm = {0}, xml = {0}, pjson = {0}, ppbm_patch = {0}, pxml = {0}, ppbm = {0};
-    build_app_json(&json, app, t->app_path);
+    char app_url[PATH_MAX + 8], patch_url[PATH_MAX + 8];
+    build_app_json(&json, app, sys_path(t->app_path, app_url, sizeof(app_url)));
     /* the PS4 leaves no version and type 0 in app.pbm and patch.pbm (as every install
      * does on 13.52) */
     build_app_pbm(&pbm, app, "", 0);
     patch_ref_t pr = {0}, *prp = NULL;
     if (pat) {
-        build_app_json(&pjson, pat, t->patch_path);
+        build_app_json(&pjson, pat, sys_path(t->patch_path, patch_url, sizeof(patch_url)));
         build_app_pbm(&ppbm_patch, pat, "", 0);
-        pr = (patch_ref_t){pat, ppg, ppl, t->ver, t->patch_path, &pjson};
+        pr = (patch_ref_t){pat, ppg, ppl, t->ver, patch_url, &pjson};
         prp = &pr;
     }
     if (build_app_xml(&xml, pg, pl) || build_pfs_pbm(&ppbm, app, pg, pl, prp) ||
@@ -1107,7 +1136,7 @@ static int title_state(title_src_t *t) {
         return -1;
     }
     /* folders set up by 0.3.1 and older lack the internal folder: registered again */
-    return !db_is_registered(tid) || !bgft_find(tid) || !marker_matches(tid, t->marker) ||
+    return !db_is_registered(tid) || !bgft_names(tid, t->app_path) || !marker_matches(tid, t->marker) ||
            !hold_ready("app", tid, "app.pkg") || (t->has_patch && !hold_ready("patch", tid, "patch.pkg")) ||
            !dlc_ready(t);
 }
