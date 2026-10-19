@@ -3443,7 +3443,8 @@ static void pump_events(int ms) {
 int main(void) {
     int lock = single_instance();
     if (lock < 0) {
-        printf(VERSION " already running\n");
+        /* before the log: the screen is the only place this is seen */
+        notify(VERSION " is already running. Panel at http://<PS4 IP>:8770");
         return 0;
     }
     sceUserServiceInitialize(0);

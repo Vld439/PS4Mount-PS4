@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 env:
-  # PS4 Payload SDK release used for the build (same as build.yml)
-  SDK_VERSION: v0.9
+  # PS4 Payload SDK commit used for the build (same as build.yml)
+  SDK_COMMIT: 573b4a0d0d5fa8695cfeee5f5e2f0447c550035d
 
 jobs:
   analyze:
@@ -38,9 +38,10 @@ jobs:
         if: matrix.language == 'c-cpp'
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-18 lld-18 xxd unzip
-          curl -fsSL -o sdk.zip "https://github.com/ps4-payload-dev/sdk/releases/download/${SDK_VERSION}/ps4-payload-sdk.zip"
-          unzip -q sdk.zip -d "$HOME"
+          sudo apt-get install -y clang-18 lld-18 xxd
+          git clone -q https://github.com/ps4-payload-dev/sdk.git "$RUNNER_TEMP/sdk-src"
+          git -C "$RUNNER_TEMP/sdk-src" checkout -q "$SDK_COMMIT"
+          make -C "$RUNNER_TEMP/sdk-src" install DESTDIR="$HOME/ps4-payload-sdk"
 
       - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:

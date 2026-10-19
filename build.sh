@@ -1,6 +1,7 @@
 #!/bin/bash
 # Builds build/ps4mount-ps4.elf (and the same file as .bin) with the PS4 Payload SDK
-# (https://github.com/ps4-payload-dev/sdk).
+# (https://github.com/ps4-payload-dev/sdk): a build with the 13.52 offsets (the v0.9 release
+# stops before main on 13.52; see SDK_COMMIT in .github/workflows/build.yml).
 # Set PS4_PAYLOAD_SDK when the SDK is not in /opt/ps4-payload-sdk.
 set -e
 cd "$(dirname "$0")"
