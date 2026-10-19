@@ -2079,8 +2079,19 @@ static void start_delete_window(void) {
     printf("[delete] delete screen open, game folders unmounted\n");
 }
 
-/* Copies klog lines about our titles (and crash/mount errors) into the log. */
+/* Copies klog lines about our titles (and crash/mount errors) into the log; every
+ * line while STATE_DIR/klog_all exists (for diagnosis: the kernel log has one reader). */
 static void trace_klog(const char *line) {
+    static time_t checked;
+    static int all;
+    if (time(NULL) != checked) {
+        checked = time(NULL);
+        all = exists(STATE_DIR "/klog_all");
+    }
+    if (all && !strstr(line, "[REGMGR]")) {
+        printf("[klog] %.300s\n", line);
+        return;
+    }
     static const char *keys[] = {"CRASH", "Trophy:Register", "_pfs_mount", "mountpfs", "PrepareProcessLaunch",
                                  "preLaunchCheck", "scePlayGoCore", "process_mount", "process_check", "sqlite",
                                  "SQLITE", "corrupt", "Corrupt", "CORRUPT", "dbr", "DBR", NULL};
