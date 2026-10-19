@@ -72,12 +72,13 @@ typedef struct {
     char paths[MAX_SCAN_PATHS][128]; /* folders searched for pkgs, relative to each drive; "" is the root */
     int npaths;
     int restore_batch; /* games removed from the library per group when moving pkgs back */
+    int internal;      /* pkgs in the console's /data/pkg are used too */
 } config_t;
 
 #define MAX_RESTORE_BATCH 10
 
 /* add-ons off: the PS4 side of add-ons is not done yet */
-static config_t g_cfg = {1, 5, 0, {""}, 1, 5};
+static config_t g_cfg = {1, 5, 0, {""}, 1, 5, 1};
 
 typedef struct { char useless[45]; char message[3075]; } notify_request_t;
 int sceUserServiceInitialize(void *);
@@ -172,6 +173,30 @@ static int is_mountpoint(const char *path) {
     struct statfs sf;
     return statfs(path, &sf) == 0 && !strcmp(sf.f_mntonname, path);
 }
+
+/* --- where games are looked for --- */
+
+/* The USB drives, the extended storage and, when turned on, the console's own storage:
+ * pkgs sent to /data/pkg are registered from there (library /data/ps4), with no second
+ * copy and no install to wait for. They still take internal space. */
+#define NROOTS 11
+#define INTERNAL_ROOT "/data"
+
+static void root_path(int i, char *out, size_t n) {
+    if (i < 8)
+        snprintf(out, n, "/mnt/usb%d", i);
+    else if (i < 10)
+        snprintf(out, n, "/mnt/ext%d", i - 8);
+    else
+        snprintf(out, n, INTERNAL_ROOT);
+}
+
+static int is_internal(const char *root) { return !strcmp(root, INTERNAL_ROOT); }
+
+static int root_present(const char *root) { return is_internal(root) ? g_cfg.internal : is_mountpoint(root); }
+
+/* "usb0", "ext0", "internal storage" */
+static const char *root_label(const char *root) { return is_internal(root) ? "internal storage" : root + 5; }
 
 /* --- appmeta entries copied verbatim from the pkg --- */
 
@@ -1699,7 +1724,9 @@ typedef struct {
 /* A ps4/ folder or a .pkg in the root. Other partitions (like the boot partition
  * Ventoy adds to a drive) are skipped without a notification. */
 static void scan_dir(char *out, size_t n, const char *root, int i) {
-    if (g_cfg.paths[i][0])
+    if (is_internal(root))
+        snprintf(out, n, "%s", i ? "" : INTERNAL_ROOT "/pkg"); /* never /data itself */
+    else if (g_cfg.paths[i][0])
         snprintf(out, n, "%s/%s", root, g_cfg.paths[i]);
     else
         snprintf(out, n, "%s", root);
@@ -1788,10 +1815,11 @@ static int adopt_root_pkgs(const char *root) {
         moved += adopt_dir_pkgs(root, dir);
     }
     if (g_dlc_orphans)
-        notify("%s: %d add-on(s) wait for their game, which is not on this drive (see the log)", root + 5,
+        notify("%s: %d add-on(s) wait for their game, which is not on this drive (see the log)", root_label(root),
                waiting_count(root));
     if (g_dlc_dupes)
-        notify("%s: %d add-on copy(ies) were left in place because the game already has them", root + 5, g_dlc_dupes);
+        notify("%s: %d add-on copy(ies) were left in place because the game already has them", root_label(root),
+               g_dlc_dupes);
     return moved;
 }
 
@@ -1814,7 +1842,7 @@ static void clear_removed_dlc(void) {
 static int readd_queue(const char *tid, const char *why);
 
 static void scan_root(const char *root, int fresh, int reconnected) {
-    const char *label = root + 5; /* "usb0" / "ext0" */
+    const char *label = root_label(root);
     if (!has_candidates(root)) {
         if (fresh)
             printf("[scan] %s: no ps4 folder or pkg, skipped\n", root);
@@ -2020,15 +2048,12 @@ static void release_stale(void) {
 }
 
 static void scan_all(void) {
-    static int seen[10], first = 1;
+    static int seen[NROOTS], first = 1;
     release_stale();
     char root[32];
-    for (int i = 0; i < 10; i++) {
-        if (i < 8)
-            snprintf(root, sizeof(root), "/mnt/usb%d", i);
-        else
-            snprintf(root, sizeof(root), "/mnt/ext%d", i - 8);
-        int present = is_mountpoint(root);
+    for (int i = 0; i < NROOTS; i++) {
+        root_path(i, root, sizeof(root));
+        int present = root_present(root);
         if (present)
             scan_root(root, !seen[i] || g_manual_scan, !seen[i] && !first);
         seen[i] = present;
@@ -2274,14 +2299,11 @@ static void json_str(buf_t *b, const char *s) {
 
 /* Finds the library folder of tid on any connected storage. */
 static int find_root(const char *tid, char *root, size_t n) {
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < NROOTS; i++) {
         char r[32], p[PATH_MAX];
-        if (i < 8)
-            snprintf(r, sizeof(r), "/mnt/usb%d", i);
-        else
-            snprintf(r, sizeof(r), "/mnt/ext%d", i - 8);
+        root_path(i, r, sizeof(r));
         snprintf(p, sizeof(p), "%s/ps4/%s/app.pkg", r, tid);
-        if (is_mountpoint(r) && exists(p)) {
+        if (root_present(r) && exists(p)) {
             snprintf(root, n, "%s", r);
             return 0;
         }
@@ -2294,13 +2316,10 @@ void app_games_json(buf_t *out) {
     json_str(out, VERSION);
     buf_printf(out, ",\"games\":[");
     int first = 1;
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < NROOTS; i++) {
         char root[32], lib[PATH_MAX];
-        if (i < 8)
-            snprintf(root, sizeof(root), "/mnt/usb%d", i);
-        else
-            snprintf(root, sizeof(root), "/mnt/ext%d", i - 8);
-        if (!is_mountpoint(root))
+        root_path(i, root, sizeof(root));
+        if (!root_present(root))
             continue;
         snprintf(lib, sizeof(lib), "%s/ps4", root);
         DIR *d = opendir(lib);
@@ -2737,13 +2756,10 @@ typedef struct {
 /* only: n title ids to keep, or NULL for every game. */
 static int restore_collect(char (*only)[10], int nonly, restore_item_t *items, int max) {
     int n = 0;
-    for (int i = 0; i < 10 && n < max; i++) {
+    for (int i = 0; i < NROOTS && n < max; i++) {
         char root[32], lib[PATH_MAX];
-        if (i < 8)
-            snprintf(root, sizeof(root), "/mnt/usb%d", i);
-        else
-            snprintf(root, sizeof(root), "/mnt/ext%d", i - 8);
-        if (!is_mountpoint(root))
+        root_path(i, root, sizeof(root));
+        if (!root_present(root))
             continue;
         snprintf(lib, sizeof(lib), "%s/ps4", root);
         DIR *d = opendir(lib);
@@ -2915,8 +2931,8 @@ static int clean_scan_path(const char *in, char *out, size_t n, char *why, size_
 
 static void config_save(void) {
     buf_t b = {0};
-    buf_printf(&b, "batch=%d\nbatch_size=%d\ndlc=%d\nrestore_batch=%d\n", g_cfg.batch, g_cfg.batch_size, g_cfg.dlc,
-               g_cfg.restore_batch);
+    buf_printf(&b, "batch=%d\nbatch_size=%d\ndlc=%d\nrestore_batch=%d\ninternal=%d\n", g_cfg.batch, g_cfg.batch_size,
+               g_cfg.dlc, g_cfg.restore_batch, g_cfg.internal);
     for (int i = 0; i < g_cfg.npaths; i++)
         buf_printf(&b, "path=%s\n", g_cfg.paths[i]);
     write_file(CONFIG_PATH, b.data, b.len, 0666);
@@ -2940,6 +2956,8 @@ static void config_load(void) {
             c.dlc = atoi(line + 4) != 0;
         else if (!strncmp(line, "restore_batch=", 14))
             c.restore_batch = atoi(line + 14);
+        else if (!strncmp(line, "internal=", 9))
+            c.internal = atoi(line + 9) != 0;
         else if (!strncmp(line, "path=", 5) && c.npaths < MAX_SCAN_PATHS &&
                  !clean_scan_path(line + 5, path, sizeof(path), why, sizeof(why)))
             snprintf(c.paths[c.npaths++], sizeof(c.paths[0]), "%s", path);
@@ -2957,9 +2975,11 @@ static void config_load(void) {
 }
 
 void app_config_json(buf_t *out) {
-    buf_printf(out, "{\"batch\":%s,\"batch_size\":%d,\"dlc\":%s,\"restore_batch\":%d,\"max_restore_batch\":%d,\"paths\":[",
-               g_cfg.batch ? "true" : "false", g_cfg.batch_size, g_cfg.dlc ? "true" : "false", g_cfg.restore_batch,
-               MAX_RESTORE_BATCH);
+    buf_printf(out,
+               "{\"batch\":%s,\"batch_size\":%d,\"dlc\":%s,\"internal\":%s,\"restore_batch\":%d,\"max_restore_batch\":%d,"
+               "\"paths\":[",
+               g_cfg.batch ? "true" : "false", g_cfg.batch_size, g_cfg.dlc ? "true" : "false",
+               g_cfg.internal ? "true" : "false", g_cfg.restore_batch, MAX_RESTORE_BATCH);
     for (int i = 0; i < g_cfg.npaths; i++) {
         char shown[130];
         snprintf(shown, sizeof(shown), "/%s", g_cfg.paths[i]);
@@ -3001,6 +3021,8 @@ int app_config_set(const char *body, char *msg, size_t cap) {
                 c.batch_size = atoi(value);
             else if (k == 3 && !strncmp(p, "dlc", 3))
                 c.dlc = atoi(value) != 0;
+            else if (k == 8 && !strncmp(p, "internal", 8))
+                c.internal = atoi(value) != 0;
             else if (k == 13 && !strncmp(p, "restore_batch", 13)) {
                 char *end;
                 long v = strtol(value, &end, 10);
