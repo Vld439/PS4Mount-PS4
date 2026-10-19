@@ -3422,6 +3422,7 @@ static int g_klog = -1, g_web = -1;
 /* Closes the ports and the log before main returns: the process stays (it is the
  * loader's) and anything left open in it would keep the next PS4Mount out. */
 static void shutdown_daemon(int lock) {
+    install_close();
     if (g_web >= 0)
         close(g_web);
     if (g_klog >= 0)

@@ -38,6 +38,8 @@ int sceKernelLoadStartModule(const char *, size_t, const void *, uint32_t, void 
 
 static int (*g_register)(bgft_param_ex_t *, int *);
 static int (*g_start)(int);
+static int (*g_term)(void);
+static void *g_heap;
 
 static int bgft_open(char *msg, unsigned long n) {
     if (g_register)
@@ -53,7 +55,8 @@ static int bgft_open(char *msg, unsigned long n) {
     int (*reg)(bgft_param_ex_t *, int *) =
         (void *)kernel_dynlib_dlsym(getpid(), h, "sceBgftServiceIntDownloadRegisterTaskByStorageEx");
     int (*start)(int) = (void *)kernel_dynlib_dlsym(getpid(), h, "sceBgftServiceDownloadStartTask");
-    if (!init || !reg || !start) {
+    int (*term)(void) = (void *)kernel_dynlib_dlsym(getpid(), h, "sceBgftServiceIntTerm");
+    if (!init || !reg || !start || !term) {
         snprintf(msg, n, "the system installer lacks the functions PS4Mount uses");
         return -1;
     }
@@ -68,12 +71,21 @@ static int bgft_open(char *msg, unsigned long n) {
     memset(ip.heap, 0, BGFT_HEAP);
     int rc = init(&ip);
     if (rc) {
+        /* the payload runs in a borrowed process: another payload there may have left the
+         * service open (0x80990001), and it serves one client */
+        int t = term(), again = init(&ip);
+        printf("[dlc] installer init 0x%08x, after closing it (0x%08x): 0x%08x\n", rc, t, again);
+        rc = again;
+    }
+    if (rc) {
         snprintf(msg, n, "the system installer did not start (0x%08x)", rc);
         mem_free(ip.heap);
         return -1;
     }
     g_register = reg;
     g_start = start;
+    g_term = term;
+    g_heap = ip.heap;
     return 0;
 }
 
@@ -102,4 +114,12 @@ int install_pkg(const char *path, const char *name, int user, char *msg, unsigne
     }
     snprintf(msg, n, "installing %s (task %08x)", path, task);
     return task;
+}
+
+void install_close(void) {
+    if (!g_register)
+        return;
+    g_term();
+    mem_free(g_heap);
+    g_register = NULL;
 }

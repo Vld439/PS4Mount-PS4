@@ -8,3 +8,7 @@
  * for user, shown as name. Returns the BGFT task id, or -1 (msg says why). The install
  * runs in the system: its result shows in /user/addcont. */
 int install_pkg(const char *path, const char *name, int user, char *msg, unsigned long n);
+
+/* Closes the installer service, when it was opened: the next payload in this process
+ * finds it closed. */
+void install_close(void);
