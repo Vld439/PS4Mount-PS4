@@ -11,6 +11,7 @@
 
 #include "crypto.h"
 #include "keys.h"
+#include "mem.h"
 
 static int unwrap_key3(pkg_t *pkg);
 
@@ -42,12 +43,12 @@ static int unwrap_key3(pkg_t *pkg) {
     size_t len;
     uint8_t *keys = pkg_entry(pkg, 0x10, &len);
     if (!keys || len < 0x20 + 7 * 0x20 + 4 * 0x100) {
-        free(keys);
+        mem_free(keys);
         return -1;
     }
     uint8_t block[256];
     rsa2048_modexp(keys + 0x20 + 7 * 0x20 + 3 * 0x100, k_pkg_key3_d, k_pkg_key3_n, block);
-    free(keys);
+    mem_free(keys);
     if (block[0] != 0 || block[1] != 2)
         return -1;
     int i = 2;
@@ -115,14 +116,14 @@ uint8_t *pkg_entry(pkg_t *pkg, uint32_t id, size_t *len) {
         if (e->size > PKG_MAX_ENTRY_SIZE)
             return NULL;
         size_t padded = ((size_t)e->size + 15u) & ~(size_t)15u;
-        uint8_t *buf = malloc(padded + 1);
+        uint8_t *buf = mem_alloc(padded + 1);
         if (!buf || read_at(pkg->fd, buf, padded, e->offset)) {
-            free(buf);
+            mem_free(buf);
             return NULL;
         }
         if (e->flags1 & 0x80000000u) {
             if (!pkg_fake_key(pkg) || ((e->flags2 >> 12) & 0xf) != 3) {
-                free(buf);
+                mem_free(buf);
                 return NULL;
             }
             uint8_t seed[64], ivk[32];

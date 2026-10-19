@@ -18,10 +18,12 @@ mkdir -p build
     (cd tools && xxd -i -n k_pdb_patch_template pdb_patch_template.bin)
     (cd tools && xxd -i -n k_pdb_addcont_template pdb_addcont_template.bin)
 } > build/pdb_template.h
-[ -f build/sqlite3.o ] || $B/orbis-clang -O2 -w -c third_party/sqlite/sqlite3.c -o build/sqlite3.o \
-    -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAULT_MEMSTATUS=0
+# A small page cache (128 KB): the process the payload runs in has a libc heap of a few MB.
+SQ_FLAGS="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_DEFAULT_CACHE_SIZE=-128"
+SQ="build/sqlite3-$(echo "$SQ_FLAGS" | md5sum | cut -c1-8).o"
+[ -f "$SQ" ] || $B/orbis-clang -O2 -w -c third_party/sqlite/sqlite3.c -o "$SQ" $SQ_FLAGS
 $B/orbis-clang -O2 -Wall -Wextra -Ibuild -Ithird_party/sqlite -o build/ps4mount-ps4.elf \
-    src/main.c src/fw.c src/logts.c src/web.c src/pkg.c src/build.c src/check.c src/upload.c src/db.c src/origin.c src/crypto.c build/sqlite3.o \
+    src/main.c src/fw.c src/logts.c src/web.c src/pkg.c src/build.c src/check.c src/upload.c src/mem.c src/db.c src/origin.c src/crypto.c "$SQ" \
     -lSceUserService -lSceAppInstUtil -lSceSystemService -lkernel_sys
 # Payload Guest only lists .bin payloads (and hands them to GoldHEN's BinLoader,
 # which takes the ELF as it is).

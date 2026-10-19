@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "pkg.h"
+#include "mem.h"
 
 void ver_text(uint32_t v, char *out, size_t n) {
     unsigned major = ((v >> 28) & 0xf) * 10 + ((v >> 24) & 0xf), minor = ((v >> 20) & 0xf) * 10 + ((v >> 16) & 0xf);
@@ -29,9 +30,9 @@ static void str_item(const sfo_t *sfo, const char *key, char *out, size_t n) {
 
 int pkg_check(const char *path, uint32_t fw, pkg_check_t *out) {
     memset(out, 0, sizeof(*out));
-    pkg_t *pkg = malloc(sizeof(*pkg)); /* large, and the panel's uploads check from their own thread */
+    pkg_t *pkg = mem_alloc(sizeof(*pkg)); /* large, and the panel's uploads check from their own thread */
     if (!pkg || pkg_open(pkg, path)) {
-        free(pkg);
+        mem_free(pkg);
         return -1;
     }
     snprintf(out->content_id, sizeof(out->content_id), "%s", pkg->content_id);
@@ -40,13 +41,13 @@ int pkg_check(const char *path, uint32_t fw, pkg_check_t *out) {
     out->fake = pkg_fake_key(pkg);
     size_t len;
     uint8_t *d = pkg_entry(pkg, 0x1000, &len);
-    sfo_t *sfo = malloc(sizeof(*sfo));
+    sfo_t *sfo = mem_alloc(sizeof(*sfo));
     int have_sfo = d && sfo && !sfo_parse(d, len, sfo);
-    free(d);
+    mem_free(d);
     pkg_close(pkg);
-    free(pkg);
+    mem_free(pkg);
     if (!have_sfo) {
-        free(sfo);
+        mem_free(sfo);
         snprintf(out->problem, sizeof(out->problem), "param.sfo cannot be read: the pkg is damaged");
         return 0;
     }
@@ -60,7 +61,7 @@ int pkg_check(const char *path, uint32_t fw, pkg_check_t *out) {
     str_item(sfo, "VERSION", out->version, sizeof(out->version));
     const sfo_item_t *sv = sfo_get(sfo, "SYSTEM_VER");
     out->system_ver = sv && sv->is_int ? sv->ival : 0;
-    free(sfo);
+    mem_free(sfo);
 
     char need[16], have[16];
     if (out->kind == PKG_KIND_OTHER)

@@ -3,6 +3,7 @@
  * Pkgs sent from the panel (src/upload.c), over a real socket: a good pkg lands under its
  * name, a bad one is stopped and leaves nothing behind. Run with: bash test/run.sh */
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -119,6 +120,7 @@ static int status_has(const char *s) {
 }
 
 int main(void) {
+    signal(SIGPIPE, SIG_IGN); /* as the daemon: a refused sender writes into a closed socket */
     snprintf(g_dir, sizeof(g_dir), "/tmp/ps4mount-upload-XXXXXX");
     if (!mkdtemp(g_dir))
         return 1;

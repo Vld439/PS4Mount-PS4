@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "crypto.h"
+#include "mem.h"
 #include "pdb_template.h"
 
 #define BLK 0x10000ull
@@ -20,7 +21,10 @@ void buf_put(buf_t *b, const void *data, size_t len) {
         size_t cap = b->cap ? b->cap : 256;
         while (cap < b->len + len + 1)
             cap *= 2;
-        b->data = realloc(b->data, cap);
+        uint8_t *grown = mem_realloc(b->data, cap);
+        if (!grown)
+            return; /* out of memory: the text stays short, the daemon stays up */
+        b->data = grown;
         b->cap = cap;
     }
     memcpy(b->data + b->len, data, len);
@@ -39,7 +43,7 @@ void buf_printf(buf_t *b, const char *fmt, ...) {
 }
 
 void buf_free(buf_t *b) {
-    free(b->data);
+    mem_free(b->data);
     memset(b, 0, sizeof(*b));
 }
 

@@ -42,6 +42,7 @@
 #include "db.h"
 #include "fw.h"
 #include "logts.h"
+#include "mem.h"
 #include "origin.h"
 #include "pkg.h"
 #include "web.h"
@@ -218,7 +219,7 @@ static int write_entry(pkg_t *pkg, uint32_t id, const char *path) {
     if (!data)
         return 1; /* absent entry is fine */
     int rc = write_file(path, data, len, 0777);
-    free(data);
+    mem_free(data);
     return rc;
 }
 
@@ -252,7 +253,7 @@ static int read_sfo(pkg_t *pkg, sfo_t *sfo) {
     size_t len;
     uint8_t *d = pkg_entry(pkg, 0x1000, &len);
     int rc = d ? sfo_parse(d, len, sfo) : -1;
-    free(d);
+    mem_free(d);
     return rc;
 }
 
@@ -419,7 +420,7 @@ static void write_meta(pkg_t *pkg, const char *meta_dir, int *rc) {
         else
             snprintf(q, sizeof(q), "%s/changeinfo/changeinfo_%02u.xml", meta_dir, id - 0x1261);
         *rc |= write_file(q, d, len, 0777);
-        free(d);
+        mem_free(d);
     }
 }
 
@@ -479,9 +480,9 @@ static uint8_t *read_all(const char *path, size_t *len) {
     int fd = open(path, O_RDONLY);
     if (fd < 0)
         return NULL;
-    uint8_t *d = malloc((size_t)st.st_size);
+    uint8_t *d = mem_alloc((size_t)st.st_size);
     if (d && read(fd, d, (size_t)st.st_size) != st.st_size) {
-        free(d);
+        mem_free(d);
         d = NULL;
     }
     close(fd);
@@ -496,7 +497,7 @@ static int place_license(pkg_t *pkg) {
     size_t lic_len, rl, il;
     uint8_t *lic = pkg_entry(pkg, 0x400, &lic_len);
     if (!lic || lic_len != 0x400) {
-        free(lic);
+        mem_free(lic);
         printf("[reg] %s: no license.dat\n", pkg->content_id);
         return -1;
     }
@@ -508,9 +509,9 @@ static int place_license(pkg_t *pkg) {
     buf_t rif = {0}, idx = {0};
     build_license(&rif, &idx, old_rif, rl, old_idx, il, pkg->content_id, lic);
     int rc = write_buf(rp, &rif) | write_buf(ip, &idx);
-    free(lic);
-    free(old_rif);
-    free(old_idx);
+    mem_free(lic);
+    mem_free(old_rif);
+    mem_free(old_idx);
     buf_free(&rif);
     buf_free(&idx);
     return rc ? -1 : 0;
@@ -659,7 +660,7 @@ static uint32_t bgft_find(const char *tid) {
         uint8_t *data = read_all(p, &len);
         if (data && contains(data, len, want))
             found = (uint32_t)id;
-        free(data);
+        mem_free(data);
     }
     if (d)
         closedir(d);
@@ -711,7 +712,7 @@ static int place_bgft(title_src_t *t, const buf_t *json, const patch_ref_t *pr) 
         for (int i = 7; i >= 0; i--)
             now = now << 8 | old[164 + i];
     }
-    free(old);
+    mem_free(old);
     const char *name = strrchr(t->app_path, '/');
     name = name ? name + 1 : t->app_path;
     for (int d1 = 0; d1 < 2; d1++) {
@@ -811,8 +812,8 @@ static int place_files(title_src_t *t) {
         rm_tree(hold);
     }
 out:
-    free(pg);
-    free(ppg);
+    mem_free(pg);
+    mem_free(ppg);
     buf_free(&json);
     buf_free(&pbm);
     buf_free(&xml);
@@ -1126,16 +1127,16 @@ static void enforce_patch_sfo(title_src_t *t) {
     snprintf(path, sizeof(path), "/system_data/priv/appmeta/%s/param.sfo", t->app.title_id);
     int fd = open(path, O_RDONLY), same = 0;
     if (fd >= 0) {
-        uint8_t *cur = malloc(len + 1);
+        uint8_t *cur = mem_alloc(len + 1);
         same = cur && read(fd, cur, len + 1) == (ssize_t)len && !memcmp(cur, sfo, len);
-        free(cur);
+        mem_free(cur);
         close(fd);
     }
     if (!same) {
         printf("[reg] %s: priv param.sfo was not the update's, rewritten\n", t->app.title_id);
         write_file(path, sfo, len, 0777);
     }
-    free(sfo);
+    mem_free(sfo);
 }
 
 /* Registration method: see fw.h. */
@@ -2443,18 +2444,18 @@ static int app_art(const char *tid, const char *name, uint32_t id, buf_t *out) {
     static const char *files[] = {"patch.pkg", "app.pkg"};
     for (int i = 0; i < 2; i++) {
         snprintf(p, sizeof(p), "%s/ps4/%s/%s", root, tid, files[i]);
-        pkg_t *pkg = malloc(sizeof(*pkg));
+        pkg_t *pkg = mem_alloc(sizeof(*pkg));
         if (!pkg || pkg_open(pkg, p)) {
-            free(pkg);
+            mem_free(pkg);
             continue;
         }
         size_t len;
         uint8_t *png = pkg_entry(pkg, id, &len);
         pkg_close(pkg);
-        free(pkg);
+        mem_free(pkg);
         if (png) {
             buf_put(out, png, len);
-            free(png);
+            mem_free(png);
             return 0;
         }
     }
@@ -3304,9 +3305,9 @@ static int same_file(const char *path, const void *data, size_t size) {
     int fd = open(path, O_RDONLY);
     if (fd < 0)
         return 0;
-    uint8_t *tmp = malloc(size);
+    uint8_t *tmp = mem_alloc(size);
     int same = tmp && read(fd, tmp, size) == (ssize_t)size && !memcmp(tmp, data, size);
-    free(tmp);
+    mem_free(tmp);
     close(fd);
     return same;
 }

@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include "check.h"
+#include "mem.h"
 
 #define PART_NAME ".ps4mount-upload.part"
 #define CHUNK (1u << 20)
@@ -154,7 +155,7 @@ static void *receive(void *arg) {
     char msg[512] = "";
     int out = open(j->part, O_WRONLY | O_CREAT | O_TRUNC, 0666), checked = 0, rc = 0;
     uint64_t got = 0;
-    uint8_t *buf = malloc(CHUNK);
+    uint8_t *buf = mem_alloc(CHUNK);
     if (out < 0 || !buf) {
         snprintf(msg, sizeof(msg), "cannot write %.300s: %s", j->part, strerror(errno));
         rc = -1;
@@ -187,7 +188,7 @@ static void *receive(void *arg) {
             rc = check_part(j, msg, sizeof(msg)); /* stops a doomed transfer early */
         }
     }
-    free(buf);
+    mem_free(buf);
     if (out >= 0 && close(out) && !rc) {
         snprintf(msg, sizeof(msg), "%s: write failed (%s)", j->name, strerror(errno));
         rc = -1;
@@ -217,7 +218,7 @@ static void *receive(void *arg) {
             j->done(j->final);
     }
     close(j->fd);
-    free(j->pre);
+    mem_free(j->pre);
     free(j);
     return NULL;
 }
@@ -245,7 +246,7 @@ int upload_start(int fd, const char *dir, const char *name, uint64_t length, con
     snprintf(j->part, sizeof(j->part), "%s/" PART_NAME, dir);
     snprintf(j->final, sizeof(j->final), "%s", dir);
     if (pre_len) {
-        j->pre = malloc(pre_len);
+        j->pre = mem_alloc(pre_len);
         memcpy(j->pre, pre, pre_len);
         j->pre_len = pre_len;
     }

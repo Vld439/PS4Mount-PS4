@@ -22,10 +22,10 @@ FLAGS="-g -O1 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all -Isr
 } > "$B/page_data.h"
 
 declare -A SRC=(
-    [sfo]="src/pkg.c src/crypto.c"
-    [pkg]="src/pkg.c src/check.c src/crypto.c"
+    [sfo]="src/pkg.c src/mem.c src/crypto.c"
+    [pkg]="src/pkg.c src/mem.c src/check.c src/crypto.c"
     [origin]="src/origin.c"
-    [http]="src/web.c src/build.c src/crypto.c test/stubs.c"
+    [http]="src/web.c src/build.c src/mem.c src/crypto.c test/stubs.c"
 )
 fail=0
 for t in $TARGETS; do

@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "check.h"
+#include "mem.h"
 #include "pkg.h"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
@@ -32,7 +33,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 static sfo_t sfo;
                 sfo_parse(e, len, &sfo);
             }
-            free(e);
+            mem_free(e);
         }
         pkg_close(&pkg);
     }

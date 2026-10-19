@@ -27,10 +27,10 @@ fi
 # SQLite once per compiler and flags (it is large)
 SQ="$B/sqlite3-$(echo "$CC $FLAGS" | md5sum | cut -c1-8).o"
 [ -f "$SQ" ] || $CC $FLAGS -w -c third_party/sqlite/sqlite3.c -o "$SQ" \
-    -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAULT_MEMSTATUS=0
+    -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_DEFAULT_CACHE_SIZE=-128
 
 echo "== unit"
-$CC $FLAGS -o "$B/unit" test/unit.c src/build.c src/check.c src/crypto.c src/pkg.c src/origin.c
+$CC $FLAGS -o "$B/unit" test/unit.c src/build.c src/mem.c src/check.c src/crypto.c src/pkg.c src/origin.c
 "$B/unit"
 
 echo "== firmware simulation"
@@ -42,11 +42,11 @@ $CC $FLAGS -Ithird_party/sqlite -DAPP_DB="\"$B/app.db\"" -o "$B/db_test" test/db
 "$B/db_test"
 
 echo "== web panel server"
-$CC $FLAGS -Itest -o "$B/http_test" test/http_test.c test/stubs.c src/web.c src/build.c src/crypto.c -lpthread
+$CC $FLAGS -Itest -o "$B/http_test" test/http_test.c test/stubs.c src/web.c src/build.c src/mem.c src/crypto.c -lpthread
 "$B/http_test"
 
 echo "== pkgs sent from the panel"
-$CC $FLAGS -Itest -o "$B/upload_test" test/upload_test.c src/upload.c src/check.c src/pkg.c src/build.c src/crypto.c -lpthread
+$CC $FLAGS -Itest -o "$B/upload_test" test/upload_test.c src/upload.c src/mem.c src/check.c src/pkg.c src/build.c src/crypto.c -lpthread
 "$B/upload_test"
 
 echo "== log with times"

@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include "page_data.h"
+#include "mem.h"
 
 #define LOG_PATH "/data/ps4mount/log.txt"
 #define CHECK_MAX (16u << 20) /* most a pkg check is given */
@@ -141,7 +142,7 @@ static int may_write(int fd, const char *req) {
 
 /* The body after what was read with the headers, up to len bytes. NULL on a short read. */
 static uint8_t *read_body(int fd, const char *pre, size_t pre_len, size_t len) {
-    uint8_t *b = malloc(len ? len : 1);
+    uint8_t *b = mem_alloc(len ? len : 1);
     if (!b)
         return NULL;
     size_t have = pre_len < len ? pre_len : len;
@@ -149,7 +150,7 @@ static uint8_t *read_body(int fd, const char *pre, size_t pre_len, size_t len) {
     while (have < len) {
         ssize_t m = read(fd, b + have, len - have);
         if (m <= 0) {
-            free(b);
+            mem_free(b);
             return NULL;
         }
         have += (size_t)m;
@@ -277,7 +278,7 @@ void web_handle(int fd) {
             reply(fd, "200 OK", "application/json; charset=utf-8", b.data, b.len);
             buf_free(&b);
         }
-        free(data);
+        mem_free(data);
     } else if (post && !strncmp(path, "/api/upload", 11) && (path[11] == 0 || path[11] == '?')) {
         if (!may_write(fd, req))
             reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
