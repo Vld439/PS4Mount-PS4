@@ -136,6 +136,7 @@ function parses(code, version) {
   p = page('index.html', { dialog: true }); ({ w, d, reqs } = p);
   await tick();
   const sent = [], checks = [];
+  let hold = false; // the next upload stays in flight until cancelled
   const DESTS = [{ id: 'usb0', label: 'usb0', folder: '/mnt/usb0/pmscan', free: 67108864 + 1500, fits: true },
     { id: 'internal', label: 'internal storage', folder: '/data/pkg', free: 1e12, fits: true }];
   w.fetch = (url, o) => {
@@ -143,7 +144,7 @@ function parses(code, version) {
       checks.push({ url, headers: (o && o.headers) || {} });
       const size = +url.split('size=')[1];
       const j = size === 1100 ? { ok: false, problem: 'needs firmware 14.00 or newer; this console has 13.52', kind: 'game', title_id: 'CUSA00002', dests: DESTS }
-        : { ok: true, problem: '', kind: size === 2000 ? 'update' : 'game', title: 'Game ' + size, title_id: 'CUSA00001', app_ver: '01.00', notes: [], dests: DESTS };
+        : { ok: true, problem: '', kind: size === 2000 || size === 2100 ? 'update' : 'game', title: 'Game ' + size, title_id: 'CUSA00001', app_ver: '01.00', notes: [], dests: DESTS };
       return Promise.resolve({ ok: true, json: () => Promise.resolve(j) });
     }
     return Promise.resolve({ ok: true, json: () => Promise.resolve(reply(url)) });
@@ -155,6 +156,7 @@ function parses(code, version) {
     x.setRequestHeader = (k, v) => { hdr[k] = v; };
     x.send = (b) => {
       sent.push({ url: x.u, method: x.m, headers: hdr, size: b.size });
+      if (hold) return;
       setTimeout(() => { if (x.upload.onprogress) x.upload.onprogress({ loaded: b.size / 2 }); }, 1);
       setTimeout(() => { x.status = 200; x.responseText = JSON.stringify({ ok: true, message: 'received' }); x.onload(); }, 5);
     };
@@ -186,6 +188,25 @@ function parses(code, version) {
   items = d.querySelectorAll('#queue .item');
   ok(items[0].textContent.includes('Sent') && items[2].textContent.includes('Sent') && items[1].textContent.includes('Cannot be used'), 'both sent, the refused one stays refused');
   ok(d.getElementById('send-go').disabled && d.getElementById('send-cancel').hidden, 'nothing left to send');
+  // an update dropped before its game still goes after it; a cancelled one can be sent again
+  sent.length = 0;
+  d.getElementById('drop').ondrop({ preventDefault() {}, dataTransfer: { files: [file('Upd2.pkg', 2100), file('Game2.pkg', 3000)] } });
+  await tick(); await tick();
+  hold = true;
+  d.getElementById('send-go').click(); await tick();
+  ok(sent.length === 1 && sent[0].url.includes('name=Game2.pkg'), 'the game is sent before the update dropped first');
+  d.getElementById('send-cancel').click(); await tick();
+  items = d.querySelectorAll('#queue .item');
+  ok(items[4].textContent.includes('Failed') && items[4].textContent.includes('cancelled'), 'a cancelled send says so');
+  ok(sent.length === 1, 'cancelling does not start the next one (its update)');
+  const again = items[4].querySelector('button[data-again]');
+  ok(again && !items[3].querySelector('button[data-again]'), 'Send again is offered for the failed one only');
+  hold = false; checks.length = 0;
+  again.click(); await tick(); await tick();
+  ok(checks.length === 1 && checks[0].url === '/api/check?size=3000', 'sending again checks the pkg again');
+  d.getElementById('send-go').click();
+  for (let i = 0; i < 10; i++) await tick();
+  ok(sent.length === 3 && sent[1].url.includes('name=Game2.pkg') && sent[2].url.includes('name=Upd2.pkg'), 'then the game, then its update');
   // the settings have the internal storage switch
   d.getElementById('settingsbtn').click(); await tick();
   ok(d.getElementById('s-internal') !== null, 'settings have the /data/pkg switch');

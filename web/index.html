@@ -407,7 +407,9 @@ function renderQueue() {
       '<span class="st st-' + cls + '">' + st + '</span></div>' + info + notes +
       (bad ? '<div class="bad">' + esc(bad) + '</div>' : '') +
       (it.state === 'sending' ? '<progress max="' + it.file.size + '" value="' + it.sent + '"></progress>' : '') +
-      (!sending && it.state !== 'sent' ? '<div style="margin-top:6px"><button type="button" data-rm="' + i + '">Remove</button></div>' : '') +
+      (!sending && it.state !== 'sent' ? '<div style="margin-top:6px">' +
+        (it.state === 'failed' ? '<button type="button" class="primary" data-again="' + i + '">Send again</button> ' : '') +
+        '<button type="button" data-rm="' + i + '">Remove</button></div>' : '') +
       '</div>';
   }).join('');
   var ready = queue.some(function (it) { return it.state === 'checked' && !blocker(it); });
@@ -432,9 +434,14 @@ function addFiles(list) {
   }
   renderQueue();
 }
+/* games first, then updates, then add-ons: an update never arrives before its game */
+var sendOrder = {game: 0, update: 1, 'add-on': 2};
 function sendNext() {
   var it = null;
-  for (var i = 0; i < queue.length && !it; i++) if (queue[i].state === 'checked' && !blocker(queue[i])) it = queue[i];
+  queue.forEach(function (q) {
+    if (q.state !== 'checked' || blocker(q)) return;
+    if (!it || (sendOrder[q.check.kind] || 0) < (sendOrder[it.check.kind] || 0)) it = q;
+  });
   if (!it) { sending = null; renderQueue(); load(); return; }
   var x = new XMLHttpRequest();
   sending = x;
@@ -470,8 +477,10 @@ $('drop').ondragleave = function () { this.className = 'drop'; };
 $('drop').ondrop = function (e) { e.preventDefault(); this.className = 'drop'; addFiles(e.dataTransfer.files); };
 $('dest').onchange = renderQueue;
 $('queue').onclick = function (e) {
-  var b = e.target.closest('button[data-rm]');
+  var b = e.target.closest('button[data-rm]'), a = e.target.closest('button[data-again]');
   if (b && !sending) { queue.splice(+b.getAttribute('data-rm'), 1); renderQueue(); }
+  /* checked again: the console may have changed since (space, a game added) */
+  if (a && !sending) checkFile(queue[+a.getAttribute('data-again')]);
 };
 $('send-go').onclick = function () { if (!sending) sendNext(); };
 $('send-cancel').onclick = function () { if (sending && confirm('Cancel the transfer in progress?')) sending.abort(); };
