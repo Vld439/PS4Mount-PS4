@@ -158,6 +158,32 @@ int main(void) {
     post("/api/restored/forget", "");
     CHECK(!strcmp(g_stub_call, "forget"));
 
+    printf("sending pkgs\n");
+    /* writing files needs the panel's header (no other site can send it) */
+    before = g_stub_calls;
+    r = post("/api/check?size=12345", "0123456789");
+    CHECK(status(r, "403") && g_stub_calls == before);
+    r = post("/api/upload?dest=usb0&name=x.pkg", "0123456789");
+    CHECK(status(r, "403") && g_stub_calls == before);
+    r = ask("POST /api/check?size=12345 HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 10\r\n\r\n0123456789");
+    CHECK(status(r, "200") && !strcmp(g_stub_call, "check") && !strcmp(g_stub_arg, "10 12345"));
+    r = ask("POST /api/check HTTP/1.1\r\nx-ps4mount: 1\r\nContent-Length: 3\r\n\r\nabc");
+    CHECK(status(r, "200") && !strcmp(g_stub_arg, "3 0")); /* the header name in any case */
+    /* a body bigger than the first MB is refused before it is read */
+    before = g_stub_calls;
+    r = ask("POST /api/check HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 999999999\r\n\r\nabc");
+    CHECK(status(r, "400") && g_stub_calls == before);
+    /* a body that does not arrive whole */
+    r = ask("POST /api/check HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 100\r\n\r\nabc");
+    CHECK(status(r, "400") && g_stub_calls == before);
+    r = ask("POST /api/upload?dest=usb0&name=My%20Game.pkg HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 10\r\n\r\n"
+            "0123456789");
+    CHECK(status(r, "400") && !strcmp(g_stub_call, "upload") && strstr(g_stub_arg, "name=My%20Game.pkg"));
+    r = ask("GET /api/check HTTP/1.1\r\n\r\n");
+    CHECK(status(r, "404"));
+    r = ask("GET /api/uploads HTTP/1.1\r\n\r\n");
+    CHECK(status(r, "200") && strstr(r, "\"state\""));
+
     printf("a body that arrives after the headers\n");
     const char *head = "POST /api/config HTTP/1.1\r\nContent-Length: 15\r\n\r\n";
     ask2(head, strlen(head), "restore_batch=7");

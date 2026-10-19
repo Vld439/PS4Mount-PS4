@@ -37,6 +37,7 @@
 
 #include "build.h"
 #include "check.h"
+#include "upload.h"
 #include "crypto.h"
 #include "db.h"
 #include "fw.h"
@@ -3071,6 +3072,157 @@ int app_config_set(const char *body, char *msg, size_t cap) {
     snprintf(msg, cap, "Settings saved");
     return 0;
 }
+
+/* --- pkgs sent from the panel --- */
+
+/* Free bytes for a new file in dir (or its drive when dir does not exist yet). */
+static uint64_t free_bytes(const char *dir) {
+    struct statfs sf;
+    char p[PATH_MAX];
+    snprintf(p, sizeof(p), "%s", dir);
+    while (statfs(p, &sf)) {
+        char *slash = strrchr(p, '/');
+        if (!slash || slash == p)
+            return 0;
+        *slash = 0;
+    }
+    return (uint64_t)sf.f_bavail * (uint64_t)sf.f_bsize;
+}
+
+/* The folder a pkg sent to dest ("usb0".."usb7", "ext0", "ext1", "internal") goes to: the
+ * first scan folder of the drive, or /data/pkg. -1 when dest is not usable now. */
+static int upload_dir(const char *dest, char *dir, size_t n) {
+    char root[32];
+    for (int i = 0; i < NROOTS; i++) {
+        root_path(i, root, sizeof(root));
+        const char *id = is_internal(root) ? "internal" : root + 5;
+        if (!strcmp(dest, id) && root_present(root)) {
+            scan_dir(dir, n, root, 0);
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static void dests_json(buf_t *out, uint64_t need) {
+    char root[32], dir[PATH_MAX];
+    int first = 1;
+    buf_printf(out, "[");
+    for (int i = 0; i < NROOTS; i++) {
+        root_path(i, root, sizeof(root));
+        if (!root_present(root))
+            continue;
+        scan_dir(dir, sizeof(dir), root, 0);
+        uint64_t fb = free_bytes(dir);
+        buf_printf(out, "%s{\"id\":", first ? "" : ",");
+        json_str(out, is_internal(root) ? "internal" : root + 5);
+        buf_printf(out, ",\"label\":");
+        json_str(out, root_label(root));
+        buf_printf(out, ",\"folder\":");
+        json_str(out, dir);
+        buf_printf(out, ",\"free\":%llu,\"fits\":%s}", (unsigned long long)fb, fb > need ? "true" : "false");
+        first = 0;
+    }
+    buf_printf(out, "]");
+}
+
+void app_check(const void *data, size_t len, uint64_t size, buf_t *out) {
+    static const char *tmp = STATE_DIR "/check.part";
+    pkg_check_t c;
+    mkdirs(STATE_DIR, 0777);
+    int rc = write_file(tmp, data, len, 0666) ? -1 : pkg_check(tmp, g_fw, &c);
+    unlink(tmp);
+    if (rc) {
+        buf_printf(out, "{\"ok\":false,\"problem\":\"not a PS4 pkg\"}");
+        return;
+    }
+    char problem[256], notes[3][200], sv[16], fw[16], where[32];
+    int nnotes = 0;
+    snprintf(problem, sizeof(problem), "%s", c.problem);
+    if (!problem[0] && size && size != c.pkg_size)
+        snprintf(problem, sizeof(problem), "the file is %llu bytes but its header says %llu: it is incomplete or damaged",
+                 (unsigned long long)size, (unsigned long long)c.pkg_size);
+    if (!problem[0] && c.kind != PKG_KIND_ADDON && installed_internally(c.title_id))
+        snprintf(problem, sizeof(problem), "%s is installed on the console the normal way: PS4Mount leaves it alone",
+                 c.title_id);
+    if (c.kind == PKG_KIND_ADDON && !g_cfg.dlc)
+        snprintf(notes[nnotes++], sizeof(notes[0]), "add-ons are turned off in the settings: it will wait in the folder");
+    if (c.kind == PKG_KIND_UPDATE && find_root(c.title_id, where, sizeof(where)) && !db_is_registered(c.title_id))
+        snprintf(notes[nnotes++], sizeof(notes[0]), "the game of this update is not on a drive yet: send it too");
+    if (c.kind == PKG_KIND_GAME && !find_root(c.title_id, where, sizeof(where)))
+        snprintf(notes[nnotes++], sizeof(notes[0]), "%s already has a game in %s: this copy will be left where it is",
+                 c.title_id, root_label(where));
+    ver_text(c.system_ver, sv, sizeof(sv));
+    ver_text(g_fw, fw, sizeof(fw));
+    buf_printf(out, "{\"ok\":%s,\"problem\":", problem[0] ? "false" : "true");
+    json_str(out, problem);
+    buf_printf(out, ",\"kind\":\"%s\",\"title\":", pkg_kind_name(c.kind));
+    json_str(out, c.title);
+    buf_printf(out, ",\"title_id\":");
+    json_str(out, c.title_id);
+    buf_printf(out, ",\"content_id\":");
+    json_str(out, c.content_id);
+    buf_printf(out, ",\"app_ver\":");
+    json_str(out, c.app_ver);
+    buf_printf(out, ",\"version\":");
+    json_str(out, c.version);
+    buf_printf(out, ",\"system_ver\":");
+    json_str(out, c.system_ver ? sv : "");
+    buf_printf(out, ",\"console_fw\":");
+    json_str(out, fw);
+    buf_printf(out, ",\"pkg_size\":%llu,\"notes\":[", (unsigned long long)c.pkg_size);
+    for (int i = 0; i < nnotes; i++) {
+        buf_printf(out, "%s", i ? "," : "");
+        json_str(out, notes[i]);
+    }
+    buf_printf(out, "],\"dests\":");
+    dests_json(out, c.pkg_size);
+    buf_printf(out, "}");
+}
+
+static void upload_done(const char *path) {
+    (void)path;
+    app_rescan(); /* the scan picks it up now */
+}
+
+int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint64_t length, char *msg, size_t cap) {
+    char dest[16] = "", raw[512] = "", name[256], dir[PATH_MAX];
+    const char *q = strchr(query, '?');
+    for (const char *p = q ? q + 1 : ""; *p;) {
+        const char *amp = strchr(p, '&'), *eq = strchr(p, '=');
+        size_t l = amp ? (size_t)(amp - p) : strlen(p);
+        if (eq && eq < p + l) {
+            size_t k = (size_t)(eq - p);
+            if (k == 4 && !strncmp(p, "dest", 4))
+                url_decode(eq + 1, (size_t)(p + l - eq - 1), dest, sizeof(dest));
+            else if (k == 4 && !strncmp(p, "name", 4))
+                url_decode(eq + 1, (size_t)(p + l - eq - 1), raw, sizeof(raw));
+        }
+        p = amp ? amp + 1 : p + l;
+    }
+    if (upload_clean_name(raw, name, sizeof(name))) {
+        snprintf(msg, cap, "no file name");
+        return -1;
+    }
+    if (upload_dir(dest, dir, sizeof(dir))) {
+        snprintf(msg, cap, "%s is not available", dest[0] ? dest : "the destination");
+        return -1;
+    }
+    mkdirs(dir, 0777);
+    uint64_t fb = free_bytes(dir), margin = 64ull << 20;
+    if (fb < length + margin) {
+        snprintf(msg, cap, "not enough space in %s: %llu MB free, %llu MB needed", dir,
+                 (unsigned long long)(fb >> 20), (unsigned long long)((length + margin) >> 20));
+        return -1;
+    }
+    if (upload_start(fd, dir, name, length, pre, pre_len, g_fw, upload_done)) {
+        snprintf(msg, cap, "another pkg is being received: wait for it to finish");
+        return -1;
+    }
+    return 0;
+}
+
+void app_uploads_json(buf_t *out) { upload_status_json(out); }
 
 /* --- Media tab shortcut (category 65536 + deeplinkUri, as other PS5 web panels) --- */
 

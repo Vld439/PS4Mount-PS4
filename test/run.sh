@@ -45,6 +45,10 @@ echo "== web panel server"
 $CC $FLAGS -Itest -o "$B/http_test" test/http_test.c test/stubs.c src/web.c src/build.c src/crypto.c -lpthread
 "$B/http_test"
 
+echo "== pkgs sent from the panel"
+$CC $FLAGS -Itest -o "$B/upload_test" test/upload_test.c src/upload.c src/check.c src/pkg.c src/build.c src/crypto.c -lpthread
+"$B/upload_test"
+
 echo "== log with times"
 $CC $FLAGS -o "$B/log_test" test/log_test.c src/logts.c -lpthread
 "$B/log_test"

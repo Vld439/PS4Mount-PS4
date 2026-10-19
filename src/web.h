@@ -23,6 +23,16 @@ void app_config_json(buf_t *out);
 int app_config_set(const char *body, char *msg, size_t cap);
 /* Fills an icon0.png for tid; 0 on success. */
 int app_icon(const char *tid, buf_t *out);
+/* /api/check: data holds the first bytes of a pkg the panel is about to send, size is the
+ * size of the whole file. Fills out (JSON) with what it is, whether it can be used and
+ * where it can go. */
+void app_check(const void *data, size_t len, uint64_t size, buf_t *out);
+/* /api/upload?dest=<id>&name=<file name>: starts receiving the pkg (pre: body bytes already
+ * read, length: the whole body) and takes fd, which it answers. Returns -1 when it did not
+ * start: msg says why and fd is the caller's. */
+int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint64_t length, char *msg, size_t cap);
+/* /api/uploads: the state of the upload. */
+void app_uploads_json(buf_t *out);
 
 int web_listen(void);
 /* Serves one connection on the listening socket. */

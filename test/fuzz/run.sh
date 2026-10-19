@@ -23,7 +23,7 @@ FLAGS="-g -O1 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all -Isr
 
 declare -A SRC=(
     [sfo]="src/pkg.c src/crypto.c"
-    [pkg]="src/pkg.c src/crypto.c"
+    [pkg]="src/pkg.c src/check.c src/crypto.c"
     [origin]="src/origin.c"
     [http]="src/web.c src/build.c src/crypto.c test/stubs.c"
 )

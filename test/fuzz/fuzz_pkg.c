@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 gasb07
- * Fuzz target: pkg header and entry table reader (any file on a USB drive). */
+ * Fuzz target: pkg header and entry table reader, and pkg_check (any file on a USB drive,
+ * and the start of a pkg sent to the panel). */
 #define _GNU_SOURCE
 #include <stdint.h>
 #include <stdio.h>
@@ -8,6 +9,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include "check.h"
 #include "pkg.h"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
@@ -34,6 +36,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         }
         pkg_close(&pkg);
     }
+    pkg_check_t c;
+    pkg_check(path, 0x13520001, &c);
     close(fd);
     return 0;
 }

@@ -39,3 +39,16 @@ int app_icon(const char *tid, buf_t *out) {
     buf_put(out, "PNG", 3);
     return 0;
 }
+void app_check(const void *data, size_t len, uint64_t size, buf_t *out) {
+    char arg[64], m[8];
+    (void)data;
+    snprintf(arg, sizeof(arg), "%zu %llu", len, (unsigned long long)size);
+    record("check", arg, m, sizeof(m));
+    buf_printf(out, "{\"ok\":true}");
+}
+int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint64_t length, char *msg, size_t cap) {
+    (void)fd, (void)pre, (void)pre_len, (void)length;
+    record("upload", query, msg, cap);
+    return -1; /* refused: the panel answers with msg */
+}
+void app_uploads_json(buf_t *out) { buf_printf(out, "{\"state\":\"idle\"}"); }

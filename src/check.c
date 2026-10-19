@@ -28,34 +28,39 @@ static void str_item(const sfo_t *sfo, const char *key, char *out, size_t n) {
 }
 
 int pkg_check(const char *path, uint32_t fw, pkg_check_t *out) {
-    static pkg_t pkg;
     memset(out, 0, sizeof(*out));
-    if (pkg_open(&pkg, path))
+    pkg_t *pkg = malloc(sizeof(*pkg)); /* large, and the panel's uploads check from their own thread */
+    if (!pkg || pkg_open(pkg, path)) {
+        free(pkg);
         return -1;
-    snprintf(out->content_id, sizeof(out->content_id), "%s", pkg.content_id);
-    snprintf(out->title_id, sizeof(out->title_id), "%s", pkg.title_id);
-    out->pkg_size = pkg.pkg_size;
-    out->fake = pkg_fake_key(&pkg);
+    }
+    snprintf(out->content_id, sizeof(out->content_id), "%s", pkg->content_id);
+    snprintf(out->title_id, sizeof(out->title_id), "%s", pkg->title_id);
+    out->pkg_size = pkg->pkg_size;
+    out->fake = pkg_fake_key(pkg);
     size_t len;
-    uint8_t *d = pkg_entry(&pkg, 0x1000, &len);
-    sfo_t sfo;
-    int have_sfo = d && !sfo_parse(d, len, &sfo);
+    uint8_t *d = pkg_entry(pkg, 0x1000, &len);
+    sfo_t *sfo = malloc(sizeof(*sfo));
+    int have_sfo = d && sfo && !sfo_parse(d, len, sfo);
     free(d);
-    pkg_close(&pkg);
+    pkg_close(pkg);
+    free(pkg);
     if (!have_sfo) {
+        free(sfo);
         snprintf(out->problem, sizeof(out->problem), "param.sfo cannot be read: the pkg is damaged");
         return 0;
     }
     char cat[8];
-    str_item(&sfo, "CATEGORY", cat, sizeof(cat));
+    str_item(sfo, "CATEGORY", cat, sizeof(cat));
     out->kind = !strcmp(cat, "gd") ? PKG_KIND_GAME : !strcmp(cat, "gp") ? PKG_KIND_UPDATE
                                                     : !strcmp(cat, "ac") ? PKG_KIND_ADDON
                                                                          : PKG_KIND_OTHER;
-    str_item(&sfo, "TITLE", out->title, sizeof(out->title));
-    str_item(&sfo, "APP_VER", out->app_ver, sizeof(out->app_ver));
-    str_item(&sfo, "VERSION", out->version, sizeof(out->version));
-    const sfo_item_t *sv = sfo_get(&sfo, "SYSTEM_VER");
+    str_item(sfo, "TITLE", out->title, sizeof(out->title));
+    str_item(sfo, "APP_VER", out->app_ver, sizeof(out->app_ver));
+    str_item(sfo, "VERSION", out->version, sizeof(out->version));
+    const sfo_item_t *sv = sfo_get(sfo, "SYSTEM_VER");
     out->system_ver = sv && sv->is_int ? sv->ival : 0;
+    free(sfo);
 
     char need[16], have[16];
     if (out->kind == PKG_KIND_OTHER)
