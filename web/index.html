@@ -55,6 +55,18 @@ form.settings input.num{width:6em}
 .picker .meta{font-size:12px}
 .pickwrap{max-height:55vh;overflow:auto;margin:10px 0}
 .note{color:#f0c060;font-size:13px}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;color:var(--muted);cursor:pointer}
+.drop.over{border-color:var(--accent);color:var(--fg)}
+.queue{display:flex;flex-direction:column;gap:10px;margin:14px 0;max-height:50vh;overflow:auto}
+.item{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#0b0d11}
+.item .top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.item .file{font-weight:600;word-break:break-all}
+.item .st{font-size:13px;white-space:nowrap}
+.st-ok{color:#5fd38a}.st-bad{color:#ff8a80}.st-wait{color:var(--muted)}.st-send{color:#8fb4ff}
+.bad{color:#ff8a80;font-size:13px;background:#3a1d1b;border:1px solid #5c2c28;border-radius:8px;padding:6px 8px;margin-top:6px}
+progress{width:100%;height:10px;margin-top:8px;accent-color:var(--accent)}
+.sendbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.sendbar select{background:#0b0d11;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
 #toast{position:fixed;right:20px;bottom:20px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 16px;display:none;max-width:420px}
 </style>
 </head>
@@ -64,6 +76,7 @@ form.settings input.num{width:6em}
   <div class="bar">
     <input id="q" type="search" placeholder="Search game or CUSA">
     <button id="rescan" class="primary">Scan for games</button>
+    <button id="sendbtn" hidden>Send games</button>
     <button id="settingsbtn">Settings</button>
     <button id="logbtn">Log</button>
     <button id="stop" class="danger">Stop</button>
@@ -72,7 +85,7 @@ form.settings input.num{width:6em}
 <main>
   <div class="summary" id="summary"></div>
   <div class="grid" id="grid"></div>
-  <div class="empty" id="empty" hidden>No PS4 games found. Put the .pkg files (game and update) in the root of a USB drive.</div>
+  <div class="empty" id="empty" hidden>No PS4 games found. Put the .pkg files (game and update) in the root of a USB drive, or send them with Send games.</div>
 </main>
 <dialog id="setdlg"><h3>Settings</h3>
 <form class="settings" id="setform">
@@ -86,6 +99,9 @@ form.settings input.num{width:6em}
     <span class="hint">Smaller groups are gentler on the system when many games are added at once.</span>
   </label>
   <label class="check"><input type="checkbox" id="s-dlc"> Install add-ons (DLC)</label>
+  <label class="check"><input type="checkbox" id="s-internal"> Also use pkgs in the console's /data/pkg</label>
+  <span class="hint" style="margin-top:-8px">Pkgs sent to the console's storage are added from there, with no install to wait
+    for. They still take internal space.</span>
   <fieldset><legend>Restore games to the original path</legend>
     <span class="hint">Moves the pkgs of a game (game, update and all its add-ons) back to where they came from,
       with their original names, and takes the game out of the library. No pkg is deleted. The open game is closed first.</span>
@@ -109,6 +125,17 @@ form.settings input.num{width:6em}
 <div class="hint" id="p-info"></div>
 <div class="row" style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
   <button type="button" id="p-cancel">Cancel</button><button type="button" class="danger" id="p-go" disabled>Move selected back</button>
+</div></dialog>
+<dialog id="senddlg"><h3>Send games</h3>
+<div class="hint" style="color:var(--muted);font-size:13px;margin-bottom:10px">Pick the pkgs on this computer. Each one is
+  checked first (it takes a second): only pkgs this console can use are sent, so no transfer ends in a game that does not
+  start. They are added to the library when they arrive.</div>
+<div class="drop" id="drop">Drop .pkg files here, or click to pick them<input type="file" id="files" accept=".pkg" multiple hidden></div>
+<div class="queue" id="queue"></div>
+<div class="sendbar">
+  <label>Send to <select id="dest"></select></label>
+  <div class="bar"><button type="button" id="send-close">Close</button><button type="button" id="send-cancel" hidden>Cancel transfer</button>
+    <button type="button" class="primary" id="send-go" disabled>Send</button></div>
 </div></dialog>
 <dialog id="logdlg"><h3>Log</h3><pre id="log"></pre><form method="dialog"><button>Close</button></form></dialog>
 <div id="toast"></div>
@@ -202,6 +229,7 @@ $('settingsbtn').onclick = function () {
     $('s-batch').checked = c.batch;
     $('s-size').value = c.batch_size;
     $('s-dlc').checked = c.dlc;
+    $('s-internal').checked = c.internal;
     $('s-size').disabled = !c.batch;
     maxRestore = c.max_restore_batch || 10;
     $('s-rsize').value = c.restore_batch || 5;
@@ -288,12 +316,123 @@ $('setform').onsubmit = function (e) {
   var size = $('s-size').value;
   if (!/^[0-9]+$/.test(size) || +size < 1 || +size > 50) { toast('Games per group must be a number from 1 to 50'); return; }
   var body = 'batch=' + ($('s-batch').checked ? 1 : 0) + '&batch_size=' + encodeURIComponent($('s-size').value) +
-    '&dlc=' + ($('s-dlc').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&paths=' + encodeURIComponent($('s-paths').value);
+    '&dlc=' + ($('s-dlc').checked ? 1 : 0) + '&internal=' + ($('s-internal').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&paths=' + encodeURIComponent($('s-paths').value);
   fetch('/api/config', {method: 'POST', cache: 'no-store', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: body})
     .then(function (r) { return r.json(); })
     .then(function (j) { toast(j.message || j.error); if (j.ok) $('setdlg').close(); })
     .catch(function (err) { toast('Error: ' + err.message); });
 };
+/* --- sending pkgs from this computer --- */
+var queue = [], dests = [], sending = null;
+function mb(n) { return n >= 1073741824 ? gb(n) : Math.max(1, Math.round(n / 1048576)) + ' MB'; }
+function destById(id) { for (var i = 0; i < dests.length; i++) if (dests[i].id === id) return dests[i]; return null; }
+function fillDests(list) {
+  var cur = $('dest').value;
+  dests = list || [];
+  $('dest').innerHTML = dests.map(function (d) {
+    return '<option value="' + esc(d.id) + '">' + esc(d.label) + ' — ' + esc(d.folder) + ' (' + mb(d.free) + ' free)</option>';
+  }).join('') || '<option value="">No drive connected</option>';
+  if (destById(cur)) $('dest').value = cur;
+}
+/* Why it cannot be sent to the chosen place, or '' when it can. */
+function blocker(it) {
+  if (!it.check) return '';
+  if (!it.check.ok) return it.check.problem;
+  var d = destById($('dest').value);
+  if (!d) return 'no place to send it to';
+  if (d.free < it.file.size + 67108864) return 'not enough space in ' + d.label + ': ' + mb(d.free) + ' free, ' + mb(it.file.size) + ' needed';
+  return '';
+}
+function renderQueue() {
+  $('queue').innerHTML = queue.map(function (it, i) {
+    var c = it.check, st, cls, why = blocker(it), info = '';
+    if (it.state === 'checking') { st = 'Checking…'; cls = 'wait'; }
+    else if (it.state === 'sending') { st = 'Sending ' + Math.floor(100 * it.sent / it.file.size) + '%'; cls = 'send'; }
+    else if (it.state === 'sent') { st = 'Sent'; cls = 'ok'; }
+    else if (it.state === 'failed') { st = 'Failed'; cls = 'bad'; }
+    else if (why) { st = 'Cannot be used'; cls = 'bad'; }
+    else { st = 'Ready to send'; cls = 'ok'; }
+    if (c && c.title_id)
+      info = '<div class="meta">' + esc(c.title || c.title_id) + ' · ' + esc(c.kind) + ' · ' + esc(c.title_id) +
+        (c.app_ver ? ' · v' + esc(c.app_ver) : '') + (c.system_ver ? ' · needs firmware ' + esc(c.system_ver) : '') +
+        ' · ' + mb(it.file.size) + '</div>';
+    var notes = c && c.notes ? c.notes.map(function (n) { return '<div class="warn">' + esc(n) + '</div>'; }).join('') : '';
+    var bad = it.state === 'failed' ? it.error : it.state === 'sent' ? '' : why;
+    return '<div class="item"><div class="top"><span class="file">' + esc(it.file.name) + '</span>' +
+      '<span class="st st-' + cls + '">' + st + '</span></div>' + info + notes +
+      (bad ? '<div class="bad">' + esc(bad) + '</div>' : '') +
+      (it.state === 'sending' ? '<progress max="' + it.file.size + '" value="' + it.sent + '"></progress>' : '') +
+      (!sending && it.state !== 'sent' ? '<div style="margin-top:6px"><button type="button" data-rm="' + i + '">Remove</button></div>' : '') +
+      '</div>';
+  }).join('');
+  var ready = queue.some(function (it) { return it.state === 'checked' && !blocker(it); });
+  $('send-go').disabled = !!sending || !ready;
+  $('send-cancel').hidden = !sending;
+}
+function checkFile(it) {
+  it.state = 'checking';
+  renderQueue();
+  var head = it.file.slice(0, Math.min(it.file.size, 4194304));
+  return fetch('/api/check?size=' + it.file.size, {method: 'POST', cache: 'no-store', body: head,
+      headers: {'X-PS4Mount': '1', 'Content-Type': 'application/octet-stream'}})
+    .then(function (r) { return r.json(); })
+    .then(function (j) { it.check = j; if (j.dests) fillDests(j.dests); it.state = 'checked'; })
+    .catch(function (e) { it.check = {ok: false, problem: 'could not be checked: ' + e.message}; it.state = 'checked'; })
+    .then(renderQueue);
+}
+function addFiles(list) {
+  for (var i = 0; i < list.length; i++) {
+    var f = list[i], dup = queue.some(function (it) { return it.file.name === f.name && it.file.size === f.size && it.state !== 'sent'; });
+    if (!dup) { var it = {file: f, state: 'new', sent: 0}; queue.push(it); checkFile(it); }
+  }
+  renderQueue();
+}
+function sendNext() {
+  var it = null;
+  for (var i = 0; i < queue.length && !it; i++) if (queue[i].state === 'checked' && !blocker(queue[i])) it = queue[i];
+  if (!it) { sending = null; renderQueue(); load(); return; }
+  var x = new XMLHttpRequest();
+  sending = x;
+  it.state = 'sending';
+  it.sent = 0;
+  x.open('POST', '/api/upload?dest=' + encodeURIComponent($('dest').value) + '&name=' + encodeURIComponent(it.file.name));
+  x.setRequestHeader('X-PS4Mount', '1');
+  x.setRequestHeader('Content-Type', 'application/octet-stream');
+  x.upload.onprogress = function (e) { it.sent = e.loaded; renderQueue(); };
+  function failed(msg) {
+    it.state = 'failed';
+    /* the console says why it stopped (a check that failed midway, a full drive...) */
+    api('/api/uploads').then(function (s) { it.error = s.state === 'failed' && s.message ? s.message : msg; })
+      .catch(function () { it.error = msg; }).then(function () { renderQueue(); sendNext(); });
+  }
+  x.onload = function () {
+    var j = {};
+    try { j = JSON.parse(x.responseText); } catch (e) { /* not JSON */ }
+    if (x.status === 200 && j.ok) { it.state = 'sent'; toast(j.message); renderQueue(); sendNext(); }
+    else failed(j.error || ('HTTP ' + x.status));
+  };
+  x.onerror = function () { failed('the connection to the console was lost'); };
+  x.onabort = function () { it.state = 'failed'; it.error = 'cancelled'; sending = null; renderQueue(); };
+  renderQueue();
+  x.send(it.file);
+}
+if (window.File && window.Blob && window.FileReader && window.XMLHttpRequest) $('sendbtn').hidden = false;
+$('sendbtn').onclick = function () { renderQueue(); $('senddlg').showModal(); };
+$('drop').onclick = function () { $('files').click(); };
+$('files').onchange = function () { addFiles(this.files); this.value = ''; };
+$('drop').ondragover = function (e) { e.preventDefault(); this.className = 'drop over'; };
+$('drop').ondragleave = function () { this.className = 'drop'; };
+$('drop').ondrop = function (e) { e.preventDefault(); this.className = 'drop'; addFiles(e.dataTransfer.files); };
+$('dest').onchange = renderQueue;
+$('queue').onclick = function (e) {
+  var b = e.target.closest('button[data-rm]');
+  if (b && !sending) { queue.splice(+b.getAttribute('data-rm'), 1); renderQueue(); }
+};
+$('send-go').onclick = function () { if (!sending) sendNext(); };
+$('send-cancel').onclick = function () { if (sending && confirm('Cancel the transfer in progress?')) sending.abort(); };
+$('send-close').onclick = function () { $('senddlg').close(); };
+window.addEventListener('beforeunload', function (e) { if (sending) { e.preventDefault(); e.returnValue = ''; } });
+
 $('stop').onclick = function () {
   if (!confirm('Stop PS4Mount? The games stay unavailable until it is loaded again.')) return;
   api('/api/stop', 'POST').then(function (j) { toast(j.message); });

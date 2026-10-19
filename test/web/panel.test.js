@@ -116,6 +116,64 @@ function parses(code, version) {
   d.getElementById('setform').dispatchEvent(new w.Event('submit', { cancelable: true })); await tick();
   ok(reqs[0] && reqs[0].url === '/api/config' && reqs[0].body.includes('restore_batch=7'), 'Save sends restore_batch');
 
+  // --- sending pkgs: checked first, only usable ones sent, to the chosen place
+  p = page('index.html', { dialog: true }); ({ w, d, reqs } = p);
+  await tick();
+  const sent = [], checks = [];
+  const DESTS = [{ id: 'usb0', label: 'usb0', folder: '/mnt/usb0/pmscan', free: 67108864 + 1500, fits: true },
+    { id: 'internal', label: 'internal storage', folder: '/data/pkg', free: 1e12, fits: true }];
+  w.fetch = (url, o) => {
+    if (url.indexOf('/api/check') === 0) {
+      checks.push({ url, headers: (o && o.headers) || {} });
+      const size = +url.split('size=')[1];
+      const j = size === 1100 ? { ok: false, problem: 'needs firmware 14.00 or newer; this console has 13.52', kind: 'game', title_id: 'CUSA00002', dests: DESTS }
+        : { ok: true, problem: '', kind: size === 2000 ? 'update' : 'game', title: 'Game ' + size, title_id: 'CUSA00001', app_ver: '01.00', notes: [], dests: DESTS };
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(j) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(reply(url)) });
+  };
+  w.XMLHttpRequest = function () {
+    const x = this, hdr = {};
+    x.upload = {};
+    x.open = (m, u) => { x.m = m; x.u = u; };
+    x.setRequestHeader = (k, v) => { hdr[k] = v; };
+    x.send = (b) => {
+      sent.push({ url: x.u, method: x.m, headers: hdr, size: b.size });
+      setTimeout(() => { if (x.upload.onprogress) x.upload.onprogress({ loaded: b.size / 2 }); }, 1);
+      setTimeout(() => { x.status = 200; x.responseText = JSON.stringify({ ok: true, message: 'received' }); x.onload(); }, 5);
+    };
+    x.abort = () => x.onabort();
+  };
+  ok(!d.getElementById('sendbtn').hidden, 'Send games is offered where the browser can read files');
+  d.getElementById('sendbtn').click();
+  ok(d.getElementById('senddlg').hasAttribute('open'), 'send dialog opens');
+  const file = (name, n) => new w.File([new Uint8Array(n)], name);
+  d.getElementById('drop').ondrop({ preventDefault() {}, dataTransfer: { files: [file('Good.pkg', 1000), file('New.pkg', 1100), file('Upd.pkg', 2000)] } });
+  await tick(); await tick();
+  ok(checks.length === 3 && checks.every(c => c.headers['X-PS4Mount'] === '1'), 'each pkg is checked first, with the panel header');
+  ok(checks[0].url === '/api/check?size=1000', 'the check says the size of the whole file');
+  let items = d.querySelectorAll('#queue .item');
+  ok(items.length === 3, 'three pkgs in the list');
+  ok(items[0].textContent.includes('Ready to send') && items[0].textContent.includes('Game 1000'), 'a good pkg is ready, with its title');
+  ok(items[1].textContent.includes('Cannot be used') && items[1].textContent.includes('needs firmware 14.00'), 'a pkg for a newer firmware is refused with the reason');
+  ok(items[2].textContent.includes('not enough space in usb0'), 'a pkg that does not fit the chosen drive is refused');
+  ok(d.getElementById('dest').options.length === 2 && d.getElementById('dest').value === 'usb0', 'the places come from the check, first one chosen');
+  d.getElementById('dest').value = 'internal'; d.getElementById('dest').onchange(); await tick();
+  items = d.querySelectorAll('#queue .item');
+  ok(items[2].textContent.includes('Ready to send'), 'it fits the console storage');
+  ok(!d.getElementById('send-go').disabled, 'Send is enabled');
+  d.getElementById('send-go').click();
+  for (let i = 0; i < 10; i++) await tick();
+  ok(sent.length === 2, 'only the two usable pkgs are sent');
+  ok(sent[0].url === '/api/upload?dest=internal&name=Good.pkg' && sent[0].method === 'POST' && sent[0].headers['X-PS4Mount'] === '1', 'upload goes to the chosen place, with the panel header');
+  ok(sent[1].url.includes('name=Upd.pkg') && sent[1].size === 2000, 'then the next one, the whole file');
+  items = d.querySelectorAll('#queue .item');
+  ok(items[0].textContent.includes('Sent') && items[2].textContent.includes('Sent') && items[1].textContent.includes('Cannot be used'), 'both sent, the refused one stays refused');
+  ok(d.getElementById('send-go').disabled && d.getElementById('send-cancel').hidden, 'nothing left to send');
+  // the settings have the internal storage switch
+  d.getElementById('settingsbtn').click(); await tick();
+  ok(d.getElementById('s-internal') !== null, 'settings have the /data/pkg switch');
+
   // --- legacy page
   p = page('legacy.html', {}); ({ w, d, reqs } = p);
   await tick();
