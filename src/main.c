@@ -2443,13 +2443,55 @@ static void disagree_seen(const char *tid) {
         readd_queue(tid, "system file disagree");
 }
 
-/* A game of ours deleted on the console: out of the library until added again on the
- * panel. Its pkg was never reachable for writing (read-only view) and stays where it is. */
+/* Bytes of the files under path. */
+static unsigned long long tree_size(const char *path) {
+    struct stat st;
+    if (lstat(path, &st))
+        return 0;
+    if (!S_ISDIR(st.st_mode))
+        return (unsigned long long)st.st_size;
+    unsigned long long n = 0;
+    DIR *d = opendir(path);
+    struct dirent *e;
+    char p[PATH_MAX];
+    while (d && (e = readdir(d))) {
+        if (strcmp(e->d_name, ".") && strcmp(e->d_name, "..")) {
+            snprintf(p, sizeof(p), "%s/%s", path, e->d_name);
+            n += tree_size(p);
+        }
+    }
+    if (d)
+        closedir(d);
+    return n;
+}
+
+/* Deletes the library folder of tid, <root>/ps4/<tid> (its game, update and add-ons) and
+ * nothing else: any other path is refused. The system only reaches the pkgs read-only;
+ * deleting them is PS4Mount's own job. */
+static void delete_game_files(const char *dir, const char *tid, const char *name) {
+    for (int i = 0; i < NROOTS; i++) {
+        char root[32], want[64];
+        root_path(i, root, sizeof(root));
+        snprintf(want, sizeof(want), "%s/ps4/%s", root, tid);
+        if (strlen(tid) != 9 || strncmp(tid, "CUSA", 4) || strcmp(dir, want))
+            continue;
+        unsigned long long n = tree_size(dir);
+        rm_tree(dir);
+        printf("[delete] %s: %s deleted (%llu bytes)\n", tid, dir, n);
+        notify("%s deleted: %.1f GB freed on %s", name, (double)n / 1e9, root_label(root));
+        return;
+    }
+    printf("[delete] %s: %s is not its library folder, nothing deleted\n", tid, dir);
+}
+
+/* A game of ours deleted on the console's delete screens: deleted for real, as an
+ * installed game would be, files included (Remove from library on the panel is the way
+ * to take a game off the console and keep its pkgs). */
 static void title_deleted(managed_t *m) {
     char path[64];
-    snprintf(path, sizeof(path), STATE_DIR "/%s.removed", m->tid);
-    write_file(path, m->dir, strlen(m->dir), 0666);
     snprintf(path, sizeof(path), STATE_DIR "/%s.src", m->tid);
+    unlink(path);
+    snprintf(path, sizeof(path), STATE_DIR "/%s.removed", m->tid);
     unlink(path);
     char hold[PATH_MAX];
     hold_path(hold, sizeof(hold), "app", m->tid);
@@ -2457,7 +2499,7 @@ static void title_deleted(managed_t *m) {
     hold_path(hold, sizeof(hold), "patch", m->tid);
     rm_tree(hold);
     bgft_remove(m->tid);
-    notify("%s removed from the library. Its pkg stays in %s", m->name, m->dir);
+    delete_game_files(m->dir, m->tid, m->name);
     m->used = 0;
 }
 
@@ -3800,16 +3842,16 @@ int main(void) {
             continue;
         }
         if (g_delete_tid[0] && !g_deleting) {
-            char tid[10], msg[256], name[128];
-            managed_t *m = managed_by(g_delete_tid, NULL);
+            char tid[10], msg[256];
             snprintf(tid, sizeof(tid), "%s", g_delete_tid);
-            snprintf(name, sizeof(name), "%s", m ? m->name : tid);
             g_delete_tid[0] = 0;
             pump_events(2000); /* let the system close its error dialog */
-            if (!app_remove(tid, msg, sizeof(msg)))
-                notify("%s removed from the library. Its pkg stays on the drive", name);
-            else
+            /* the files went when the delete started: finish taking it off the console */
+            if (app_remove(tid, msg, sizeof(msg)))
                 notify("%s", msg);
+            char rm[64];
+            snprintf(rm, sizeof(rm), STATE_DIR "/%s.removed", tid);
+            unlink(rm);
             continue;
         }
         if (g_readd_tid[0] && !g_deleting) {
