@@ -255,7 +255,7 @@ function onAction(e) {
   if (!b) return;
   if ($('gamedlg').open) $('gamedlg').close();
   var tid = b.getAttribute('data-t'), a = b.getAttribute('data-a');
-  if (a === 'unmount' && !confirm('Remove ' + tid + ' from the library? The pkg stays on the USB drive.')) return;
+  if (a === 'unmount' && !confirm('Remove ' + tid + ' from the library? Its pkgs stay where they are (deleting it on the console deletes them).')) return;
   if (a === 'restore' && !confirm('Move the pkgs of ' + tid + ' (game, update and all its add-ons) back to where they came from, ' +
       'with their original names?\n\nThe open game is closed first. The game leaves the library and PS4Mount stops picking ' +
       'these pkgs up. No pkg is deleted.')) return;

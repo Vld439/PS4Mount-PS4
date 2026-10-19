@@ -2487,6 +2487,19 @@ static void disagree_seen(const char *tid) {
         readd_queue(tid, "system file disagree");
 }
 
+/* PS4Mount's own folders of a game that left the library (the pkgs are not in them). */
+static void clean_holds(const char *tid, char (*dtids)[10], int ndtids) {
+    char hold[PATH_MAX];
+    hold_path(hold, sizeof(hold), "app", tid);
+    rm_tree(hold);
+    hold_path(hold, sizeof(hold), "patch", tid);
+    rm_tree(hold);
+    for (int i = 0; i < ndtids; i++) {
+        snprintf(hold, sizeof(hold), HOLD_DIR "/addcont/%s", dtids[i]);
+        rm_tree(hold);
+    }
+}
+
 /* Bytes of the files under path. */
 static unsigned long long tree_size(const char *path) {
     struct stat st;
@@ -2537,11 +2550,7 @@ static void title_deleted(managed_t *m) {
     unlink(path);
     snprintf(path, sizeof(path), STATE_DIR "/%s.removed", m->tid);
     unlink(path);
-    char hold[PATH_MAX];
-    hold_path(hold, sizeof(hold), "app", m->tid);
-    rm_tree(hold);
-    hold_path(hold, sizeof(hold), "patch", m->tid);
-    rm_tree(hold);
+    clean_holds(m->tid, m->dlc_tids, m->ndlc_tids);
     bgft_remove(m->tid);
     delete_game_files(m->dir, m->tid, m->name);
     m->used = 0;
@@ -2911,13 +2920,15 @@ int app_remove(const char *tid, char *msg, size_t cap) {
     snprintf(path, sizeof(path), STATE_DIR "/%s.src", tid);
     unlink(path);
     int rc = db_is_registered(tid) ? uninstall_title(tid) : 0;
+    if (!rc)
+        clean_holds(tid, m ? m->dlc_tids : NULL, m ? m->ndlc_tids : 0);
     if (m)
         m->used = 0;
     printf("[web] remove %s: uninstall=0x%08x\n", tid, rc);
     if (rc == -2)
         snprintf(msg, cap, "The system did not finish removing %s yet; try again in a moment", tid);
     else
-        snprintf(msg, cap, rc ? "Failed to remove %s (0x%08x)" : "%s removed from the library. The pkg stays on the USB drive.",
+        snprintf(msg, cap, rc ? "Failed to remove %s (0x%08x)" : "%s removed from the library. Its pkgs stay where they are.",
                  tid, rc);
     return rc ? -1 : 0;
 }
