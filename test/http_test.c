@@ -132,6 +132,11 @@ int main(void) {
     }
     r = ask("GET /icon/CUSA00791 HTTP/1.1\r\n\r\n");
     CHECK(status(r, "200") && strstr(r, "image/png") && !strcmp(g_stub_arg, "CUSA00791"));
+    r = ask("GET /pic/CUSA00791 HTTP/1.1\r\n\r\n");
+    CHECK(status(r, "200") && !strcmp(g_stub_call, "pic") && !strcmp(g_stub_arg, "CUSA00791"));
+    int calls = g_stub_calls;
+    r = ask("GET /pic/../../../x HTTP/1.1\r\n\r\n");
+    CHECK(status(r, "404") && g_stub_calls == calls);
 
     printf("moving back\n");
     post("/api/restore", "");

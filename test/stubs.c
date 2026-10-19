@@ -39,6 +39,12 @@ int app_icon(const char *tid, buf_t *out) {
     buf_put(out, "PNG", 3);
     return 0;
 }
+int app_pic(const char *tid, buf_t *out) {
+    char m[8];
+    record("pic", tid, m, sizeof(m));
+    buf_put(out, "PNG", 3);
+    return 0;
+}
 void app_check(const void *data, size_t len, uint64_t size, buf_t *out) {
     char arg[64], m[8];
     (void)data;

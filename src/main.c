@@ -597,11 +597,41 @@ static int g_nreboot;
 
 static int same_file(const char *path, const void *data, size_t size);
 
+/* When the console booted (0 when unknown). */
+static long boot_time(void) {
+    struct timeval tv;
+    size_t len = sizeof(tv);
+    return sysctlbyname("kern.boottime", &tv, &len, NULL, 0) ? 0 : (long)tv.tv_sec;
+}
+
+/* STATE_DIR/<TID>.restart holds the boot time of when its task was written: the game
+ * needs a restart while the console has not booted since (a PS4Mount loaded again keeps
+ * knowing it). */
 static int needs_reboot(const char *tid) {
     for (int i = 0; i < g_nreboot; i++)
         if (!strcmp(g_reboot_tids[i], tid))
             return 1;
+    char p[64], buf[32] = "";
+    snprintf(p, sizeof(p), STATE_DIR "/%s.restart", tid);
+    int fd = open(p, O_RDONLY);
+    if (fd < 0)
+        return 0;
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    long boot = boot_time(), when = n > 0 ? atol(buf) : -1;
+    if (boot && when == boot)
+        return 1;
+    unlink(p); /* booted since: BGFT has read the task */
     return 0;
+}
+
+static void mark_reboot(const char *tid) {
+    if (!needs_reboot(tid) && g_nreboot < MAX_TITLES)
+        snprintf(g_reboot_tids[g_nreboot++], 10, "%s", tid);
+    char p[64], buf[32];
+    snprintf(p, sizeof(p), STATE_DIR "/%s.restart", tid);
+    int n = snprintf(buf, sizeof(buf), "%ld\n", boot_time());
+    write_file(p, buf, (size_t)n, 0666);
 }
 
 static int contains(const uint8_t *d, size_t n, const char *s) {
@@ -697,8 +727,7 @@ static int place_bgft(title_src_t *t, const buf_t *json, const patch_ref_t *pr) 
     }
     if (changed) {
         printf("[reg] %s: BGFT game task %08x %s\n", tid, id, fresh ? "written" : "updated");
-        if (!needs_reboot(tid) && g_nreboot < MAX_TITLES)
-            snprintf(g_reboot_tids[g_nreboot++], 10, "%s", tid);
+        mark_reboot(tid);
     }
     return rc ? -1 : 0;
 }
@@ -2354,7 +2383,7 @@ void app_games_json(buf_t *out) {
             else if (m && m->running)
                 state = "running";
             else if (mounted && db_is_registered(tid))
-                state = "ready";
+                state = needs_reboot(tid) ? "restart" : "ready";
             else
                 state = "pending";
             buf_printf(out, "%s{\"title_id\":\"%s\",\"name\":", first ? "" : ",", tid);
@@ -2367,6 +2396,19 @@ void app_games_json(buf_t *out) {
             json_str(out, t.dir);
             buf_printf(out, ",\"dlc\":%d,\"update_issue\":", t.ndlc);
             json_str(out, t.update_issue);
+            const sfo_item_t *av = sfo_get(&t.app_sfo, "APP_VER"), *sv = sfo_get(t.has_patch ? &t.patch_sfo : &t.app_sfo,
+                                                                                    "SYSTEM_VER");
+            char svt[16] = "";
+            if (sv && sv->is_int)
+                ver_text(sv->ival, svt, sizeof(svt));
+            buf_printf(out, ",\"content_id\":");
+            json_str(out, t.app.content_id);
+            buf_printf(out, ",\"game_version\":");
+            json_str(out, av && !av->is_int ? av->sval : "");
+            buf_printf(out, ",\"system_ver\":");
+            json_str(out, svt);
+            buf_printf(out, ",\"storage\":");
+            json_str(out, root_label(root));
             buf_printf(out, "}");
             first = 0;
             src_close(&t);
@@ -2376,9 +2418,17 @@ void app_games_json(buf_t *out) {
     buf_printf(out, "]}");
 }
 
-int app_icon(const char *tid, buf_t *out) {
+static int app_art(const char *tid, const char *name, uint32_t id, buf_t *out);
+
+int app_icon(const char *tid, buf_t *out) { return app_art(tid, "icon0.png", 0x1200, out); }
+
+int app_pic(const char *tid, buf_t *out) { return app_art(tid, "pic0.png", 0x1220, out); }
+
+/* Artwork of a game: the copy written into /user/appmeta when it was added, or the entry
+ * id of its pkgs (the update's first: its artwork wins, as with a real install). */
+static int app_art(const char *tid, const char *name, uint32_t id, buf_t *out) {
     char p[PATH_MAX], root[32];
-    snprintf(p, sizeof(p), "/user/appmeta/%s/icon0.png", tid);
+    snprintf(p, sizeof(p), "/user/appmeta/%s/%s", tid, name);
     int fd = open(p, O_RDONLY);
     if (fd >= 0) {
         char tmp[65536];
@@ -2390,18 +2440,25 @@ int app_icon(const char *tid, buf_t *out) {
     }
     if (find_root(tid, root, sizeof(root)))
         return -1;
-    snprintf(p, sizeof(p), "%s/ps4/%s/app.pkg", root, tid);
-    pkg_t pkg;
-    if (pkg_open(&pkg, p))
-        return -1;
-    size_t len;
-    uint8_t *png = pkg_entry(&pkg, 0x1200, &len);
-    pkg_close(&pkg);
-    if (!png)
-        return -1;
-    buf_put(out, png, len);
-    free(png);
-    return 0;
+    static const char *files[] = {"patch.pkg", "app.pkg"};
+    for (int i = 0; i < 2; i++) {
+        snprintf(p, sizeof(p), "%s/ps4/%s/%s", root, tid, files[i]);
+        pkg_t *pkg = malloc(sizeof(*pkg));
+        if (!pkg || pkg_open(pkg, p)) {
+            free(pkg);
+            continue;
+        }
+        size_t len;
+        uint8_t *png = pkg_entry(pkg, id, &len);
+        pkg_close(pkg);
+        free(pkg);
+        if (png) {
+            buf_put(out, png, len);
+            free(png);
+            return 0;
+        }
+    }
+    return -1;
 }
 
 int app_add(const char *tid, char *msg, size_t cap) {

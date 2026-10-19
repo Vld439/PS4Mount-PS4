@@ -202,10 +202,12 @@ void web_handle(int fd) {
         app_games_json(&b);
         reply(fd, "200 OK", "application/json; charset=utf-8", b.data, b.len);
         buf_free(&b);
-    } else if (!strncmp(path, "/icon/", 6)) {
+    } else if (!strncmp(path, "/icon/", 6) || !strncmp(path, "/pic/", 5)) {
         buf_t b = {0};
+        int pic = path[1] == 'p';
+        const char *id = path + (pic ? 5 : 6);
         /* the id becomes part of file paths: nothing but a title id */
-        if (strlen(path + 6) == 9 && !title_at(path + 6, tid) && !app_icon(tid, &b))
+        if (strlen(id) == 9 && !title_at(id, tid) && !(pic ? app_pic(tid, &b) : app_icon(tid, &b)))
             reply(fd, "200 OK", "image/png", b.data, b.len);
         else
             reply(fd, "404 Not Found", "text/plain", "no icon\n", 8);

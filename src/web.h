@@ -21,8 +21,9 @@ int app_restored_forget(char *msg, size_t cap);
 void app_config_json(buf_t *out);
 /* body: form-encoded settings; 0 when saved, msg says why not. */
 int app_config_set(const char *body, char *msg, size_t cap);
-/* Fills an icon0.png for tid; 0 on success. */
+/* Fills an icon0.png (pic0.png: the background) for tid; 0 on success. */
 int app_icon(const char *tid, buf_t *out);
+int app_pic(const char *tid, buf_t *out);
 /* /api/check: data holds the first bytes of a pkg the panel is about to send, size is the
  * size of the whole file. Fills out (JSON) with what it is, whether it can be used and
  * where it can go. */

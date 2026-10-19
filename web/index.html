@@ -24,12 +24,19 @@ button.danger{background:#3a1f1d;border-color:#5c2c28}
 button:disabled{opacity:.45;cursor:default}
 main{padding:20px;max-width:1400px;margin:0 auto}
 .summary{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px;color:var(--muted)}
-.summary span{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 12px}
+.summary span{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 12px;cursor:pointer}
+.summary span.on{border-color:var(--accent);color:var(--fg)}
+.card .art{cursor:pointer}
+.hero{height:220px;border-radius:10px;background:#0b0d11 center/cover no-repeat;margin:-4px 0 14px;position:relative}
+.hero .icon{position:absolute;left:14px;bottom:-26px;width:96px;height:96px;border-radius:12px;border:3px solid var(--panel);background:#0b0d11 center/cover no-repeat}
+#g-name{margin:0 0 0 124px;min-height:30px}
+.facts{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:24px 0 14px;font-size:14px}
+.facts dt{color:var(--muted)}.facts dd{margin:0;word-break:break-all}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
 .art{aspect-ratio:1/1;background:#0b0d11 center/cover no-repeat;position:relative}
 .badge{position:absolute;left:10px;top:10px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;background:#000a}
-.b-ready{background:var(--ok)}.b-running{background:var(--accent)}.b-removed{background:#555}.b-internal{background:var(--warn)}.b-pending{background:var(--warn)}.b-duplicate{background:#555}
+.b-restart{background:var(--warn)}.b-ready{background:var(--ok)}.b-running{background:var(--accent)}.b-removed{background:#555}.b-internal{background:var(--warn)}.b-pending{background:var(--warn)}.b-duplicate{background:#555}
 .info{padding:12px 14px;display:flex;flex-direction:column;gap:4px;flex:1}
 .name{font-weight:600;font-size:16px}
 .meta{color:var(--muted);font-size:13px;word-break:break-all}
@@ -137,11 +144,16 @@ progress{width:100%;height:10px;margin-top:8px;accent-color:var(--accent)}
   <div class="bar"><button type="button" id="send-close">Close</button><button type="button" id="send-cancel" hidden>Cancel transfer</button>
     <button type="button" class="primary" id="send-go" disabled>Send</button></div>
 </div></dialog>
+<dialog id="gamedlg"><div class="hero" id="g-hero"><div class="icon" id="g-icon"></div></div>
+<h3 id="g-name"></h3><dl class="facts" id="g-facts"></dl>
+<div class="actions" id="g-actions" style="padding:0"></div>
+<form method="dialog" style="display:flex;justify-content:flex-end;margin-top:10px"><button>Close</button></form></dialog>
 <dialog id="logdlg"><h3>Log</h3><pre id="log"></pre><form method="dialog"><button>Close</button></form></dialog>
 <div id="toast"></div>
 <script>
 var games = [], busy = {};
-var labels = {ready: 'Ready', running: 'Running', removed: 'Not in library', internal: 'Installed on console', pending: 'Adding', duplicate: 'On another drive'};
+var labels = {ready: 'Ready', restart: 'Restart to play', running: 'Running', removed: 'Not in library', internal: 'Installed on console', pending: 'Adding', duplicate: 'On another drive'};
+var filter = '';
 
 function $(id) { return document.getElementById(id); }
 
@@ -173,43 +185,74 @@ function startRestore(size, body) {
     .catch(function (err) { toast('Error: ' + err.message); });
 }
 
+function actions(g) {
+  var act = '';
+  if (g.state === 'removed') act = '<button class="primary" data-a="mount" data-t="' + g.title_id + '">Add to library</button>';
+  else if (g.state === 'ready' || g.state === 'restart') act = '<button class="danger" data-a="unmount" data-t="' + g.title_id + '">Remove from library</button>';
+  else if (g.state === 'running') act = '<button disabled>Close the game to remove it</button>';
+  if (g.state !== 'internal')
+    act += '<button data-a="restore" data-t="' + g.title_id + '">Move pkgs back</button>';
+  if (busy[g.title_id]) act = '<button disabled>Please wait…</button>';
+  return act;
+}
+function byName(a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0; }
 function render() {
   var q = $('q').value.toLowerCase(), html = '', shown = 0, counts = {};
-  games.forEach(function (g) {
+  games.slice().sort(byName).forEach(function (g) {
     counts[g.state] = (counts[g.state] || 0) + 1;
     if (q && (g.name + ' ' + g.title_id).toLowerCase().indexOf(q) < 0) return;
+    if (filter && g.state !== filter) return;
     shown++;
-    var act = '';
-    if (g.state === 'removed') act = '<button class="primary" data-a="mount" data-t="' + g.title_id + '">Add to library</button>';
-    else if (g.state === 'ready') act = '<button class="danger" data-a="unmount" data-t="' + g.title_id + '">Remove from library</button>';
-    else if (g.state === 'running') act = '<button disabled>Close the game to remove it</button>';
-    if (g.state !== 'internal')
-      act += '<button data-a="restore" data-t="' + g.title_id + '">Move pkgs back</button>';
-    if (busy[g.title_id]) act = '<button disabled>Please wait…</button>';
-    html += '<div class="card"><div class="art" style="background-image:url(/icon/' + g.title_id + ')">' +
+    var act = actions(g);
+    html += '<div class="card"><div class="art" data-g="' + g.title_id + '" style="background-image:url(/icon/' + g.title_id + ')">' +
       '<span class="badge b-' + g.state + '">' + esc(labels[g.state] || g.state) + '</span></div>' +
       '<div class="info"><div class="name">' + esc(g.name) + '</div>' +
       '<div class="meta">' + g.title_id + ' · v' + esc(g.version) + (g.has_patch ? ' (with update)' : '') +
         (g.dlc ? ' · ' + g.dlc + ' add-on' + (g.dlc > 1 ? 's' : '') : '') + ' · ' + gb(g.size) + '</div>' +
       '<div class="meta">' + esc(g.source) + (g.mount ? ' · mounted ' + g.mount : '') + '</div>' +
+      (g.state === 'restart' ? '<div class="warn">Added. Restart the console once to play it.</div>' : '') +
       (g.update_issue ? '<div class="warn">' + esc(g.update_issue) + '</div>' : '') + '</div>' +
       '<div class="actions">' + act + '</div></div>';
   });
   $('grid').innerHTML = html;
   $('empty').hidden = games.length > 0;
-  var s = '<span>' + games.length + ' game(s)</span>';
-  for (var k in counts) s += '<span>' + esc(labels[k] || k) + ': ' + counts[k] + '</span>';
+  var s = '<span data-f=""' + (filter ? '' : ' class="on"') + '>' + games.length + ' game(s)</span>';
+  for (var k in counts) s += '<span data-f="' + k + '"' + (filter === k ? ' class="on"' : '') + '>' + esc(labels[k] || k) + ': ' + counts[k] + '</span>';
   $('summary').innerHTML = s;
+  if (filter && !counts[filter]) { filter = ''; render(); }
 }
+function gameBy(tid) { for (var i = 0; i < games.length; i++) if (games[i].title_id === tid) return games[i]; return null; }
+function showGame(tid) {
+  var g = gameBy(tid);
+  if (!g) return;
+  $('g-hero').style.backgroundImage = 'url(/pic/' + tid + '), url(/icon/' + tid + ')';
+  $('g-icon').style.backgroundImage = 'url(/icon/' + tid + ')';
+  $('g-name').textContent = g.name;
+  var f = [['State', labels[g.state] || g.state], ['Title ID', g.title_id], ['Content ID', g.content_id || ''],
+    ['Version', 'v' + g.version + (g.has_patch ? ' (game v' + (g.game_version || '?') + ' with its update)' : '')],
+    ['Add-ons', g.dlc ? String(g.dlc) : 'none'], ['Needs firmware', g.system_ver || 'unknown'], ['Size', gb(g.size)],
+    ['On', (g.storage || '') + ' · ' + g.source]];
+  $('g-facts').innerHTML = f.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') +
+    (g.state === 'restart' ? '<dt></dt><dd class="warn">Added. Restart the console once to play it.</dd>' : '');
+  $('g-actions').innerHTML = actions(g);
+  $('gamedlg').showModal();
+}
+$('summary').addEventListener('click', function (e) {
+  var c = e.target.closest('span[data-f]');
+  if (c) { filter = c.getAttribute('data-f'); render(); }
+});
 
 function load() {
   api('/api/games').then(function (j) { games = j.games; $('ver').textContent = j.version; render(); })
     .catch(function (e) { toast('Could not read the list: ' + e.message); });
 }
 
-$('grid').addEventListener('click', function (e) {
+function onAction(e) {
+  var art = e.target.closest('[data-g]');
+  if (art) { showGame(art.getAttribute('data-g')); return; }
   var b = e.target.closest('button[data-a]');
   if (!b) return;
+  if ($('gamedlg').open) $('gamedlg').close();
   var tid = b.getAttribute('data-t'), a = b.getAttribute('data-a');
   if (a === 'unmount' && !confirm('Remove ' + tid + ' from the library? The pkg stays on the USB drive.')) return;
   if (a === 'restore' && !confirm('Move the pkgs of ' + tid + ' (game, update and all its add-ons) back to where they came from, ' +
@@ -219,7 +262,9 @@ $('grid').addEventListener('click', function (e) {
   api('/api/' + a + '?title_id=' + tid, 'POST').then(function (j) { toast(j.message); })
     .catch(function (err) { toast('Error: ' + err.message); })
     .then(function () { delete busy[tid]; load(); });
-});
+}
+$('grid').addEventListener('click', onAction);
+$('g-actions').addEventListener('click', onAction);
 $('q').addEventListener('input', render);
 $('rescan').onclick = function () { api('/api/rescan', 'POST').then(function (j) { toast(j.message); setTimeout(load, 3000); }); };
 $('logbtn').onclick = function () { api('/api/log').then(function (j) { $('log').textContent = j.log; $('logdlg').showModal(); }); };

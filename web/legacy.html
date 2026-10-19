@@ -29,7 +29,7 @@ textarea{width:100%;min-height:90px;font-family:monospace}
 .name{font-weight:bold;font-size:16px}
 .meta{color:#97a0ab;font-size:13px;word-wrap:break-word}
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:bold;background:#555;margin-bottom:4px}
-.b-ready{background:#2f9e57}.b-running{background:#3d7bfd}.b-internal,.b-pending{background:#c98b1f}
+.b-ready{background:#2f9e57}.b-running{background:#3d7bfd}.b-internal,.b-pending,.b-restart{background:#c98b1f}
 .actions{padding:0 12px 8px}
 .warn{color:#f0c060;font-size:13px;background:#3a2e12;border:1px solid #5c4818;border-radius:8px;padding:6px 8px;margin-top:4px}
 .box{border:1px solid #262c36;border-radius:10px;padding:12px 14px;margin:0 0 14px}
@@ -106,7 +106,7 @@ pre{white-space:pre-wrap;font-size:12px;background:#0b0d11;padding:12px;border-r
 
 <script>
 var games = [], busy = {}, maxRestore = 10, msgTimer = 0;
-var labels = {ready: 'Ready', running: 'Running', removed: 'Not in library', internal: 'Installed on console', pending: 'Adding', duplicate: 'On another drive'};
+var labels = {ready: 'Ready', restart: 'Restart to play', running: 'Running', removed: 'Not in library', internal: 'Installed on console', pending: 'Adding', duplicate: 'On another drive'};
 
 function $(id) { return document.getElementById(id); }
 function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
@@ -148,7 +148,7 @@ function render() {
     counts[g.state] = (counts[g.state] || 0) + 1;
     act = '';
     if (g.state === 'removed') act = '<button class="primary" data-a="mount" data-t="' + g.title_id + '">Add to library</button>';
-    else if (g.state === 'ready') act = '<button class="danger" data-a="unmount" data-t="' + g.title_id + '">Remove from library</button>';
+    else if (g.state === 'ready' || g.state === 'restart') act = '<button class="danger" data-a="unmount" data-t="' + g.title_id + '">Remove from library</button>';
     else if (g.state === 'running') act = '<button disabled>Close the game to remove it</button>';
     if (g.state !== 'internal') act += '<button data-a="restore" data-t="' + g.title_id + '">Move pkgs back</button>';
     if (busy[g.title_id]) act = '<button disabled>Please wait...</button>';
@@ -158,6 +158,7 @@ function render() {
       '<div class="meta">' + g.title_id + ' - v' + esc(g.version) + (g.has_patch ? ' (with update)' : '') +
         (g.dlc ? ' - ' + addons(g) : '') + ' - ' + gb(g.size) + '</div>' +
       '<div class="meta">' + esc(g.source) + (g.mount ? ' - mounted ' + g.mount : '') + '</div>' +
+      (g.state === 'restart' ? '<div class="warn">Added. Restart the console once to play it.</div>' : '') +
       (g.update_issue ? '<div class="warn">' + esc(g.update_issue) + '</div>' : '') + '</div>' +
       '<div class="actions">' + act + '</div></div>';
   }
