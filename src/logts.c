@@ -49,9 +49,10 @@ int log_write_lines(int fd, int *at_start, const char *buf, size_t len, const ch
     return 0;
 }
 
-static int g_pipe_read = -1, g_file = -1;
+static int g_pipe_read = -1, g_file = -1, g_saved_stdout = -1;
 static pthread_t g_thread;
 static int g_running;
+static volatile int g_done; /* the thread saw the end of the pipe */
 
 static void *copy_thread(void *arg) {
     (void)arg;
@@ -62,6 +63,7 @@ static void *copy_thread(void *arg) {
         log_stamp(stamp, sizeof(stamp));
         log_write_lines(g_file, &at_start, buf, (size_t)n, stamp);
     }
+    g_done = 1;
     return NULL;
 }
 
@@ -89,6 +91,7 @@ int log_start(const char *path) {
     }
     g_running = 1;
     fflush(stdout);
+    g_saved_stdout = dup(STDOUT_FILENO); /* given back by log_stop */
     dup2(fds[1], STDOUT_FILENO);
     close(fds[1]);
     return 0;
@@ -101,12 +104,21 @@ void log_stop(void) {
     fflush(stdout);
     /* the thread reads the rest, then sees the end once fd 1 no longer holds the pipe.
      * The PS5 refuses close(1) (EPERM), which left the thread waiting and the payload
-     * unable to exit: fd 1 is pointed at /dev/null instead. */
-    int null = open("/dev/null", O_WRONLY);
+     * unable to exit: fd 1 gets back what it was (the PS4 process outlives the payload)
+     * or /dev/null. */
+    int null = g_saved_stdout >= 0 ? g_saved_stdout : open("/dev/null", O_WRONLY);
     if (null < 0 || dup2(null, STDOUT_FILENO) < 0)
         close(STDOUT_FILENO);
     if (null > STDOUT_FILENO)
         close(null);
+    g_saved_stdout = -1;
+    /* waited for at most 2 s: on the PS4 the end of the pipe can fail to arrive, and a
+     * payload waiting here never exits (it keeps its ports, so it cannot be loaded again
+     * until the console restarts) */
+    for (int i = 0; i < 200 && !g_done; i++)
+        usleep(10000);
+    if (!g_done)
+        return; /* the thread keeps its descriptors; the exit takes them */
     pthread_join(g_thread, NULL);
     close(g_pipe_read);
     close(g_file);

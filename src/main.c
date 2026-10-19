@@ -3087,6 +3087,21 @@ __attribute__((unused)) static void install_panel_shortcut(void) {
         notify("PS4Mount added to the Media tab");
 }
 
+static int g_klog = -1, g_web = -1;
+
+/* Closes the ports and the log before main returns: the process stays (it is the
+ * loader's) and anything left open in it would keep the next PS4Mount out. */
+static void shutdown_daemon(int lock) {
+    if (g_web >= 0)
+        close(g_web);
+    if (g_klog >= 0)
+        close(g_klog);
+    if (lock >= 0)
+        close(lock);
+    g_web = g_klog = -1;
+    log_stop();
+}
+
 static int single_instance(void) {
     int s = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in a = {0};
@@ -3109,7 +3124,6 @@ static int still_listening(int s) {
     return s >= 0 && !getsockopt(s, SOL_SOCKET, SO_ACCEPTCONN, &on, &n) && on;
 }
 
-static int g_klog = -1, g_web = -1;
 static int g_live; /* klogsrv replays its backlog first: live after the first quiet 100 ms */
 
 /* Serves the panel and handles klog lines for up to ms milliseconds. */
@@ -3190,8 +3204,10 @@ int main(void) {
     mkdirs(STATE_DIR, 0777);
     /* the log goes to a file, every line with its time; when it cannot be opened, stdout
      * stays as it was */
-    if (!log_start(STATE_DIR "/log.txt"))
-        atexit(log_stop); /* the last lines reach the file before the payload exits */
+    /* the PS4 loader runs the payload in a process of its own and returning from main
+     * goes back to it: no exit, no atexit. What the payload opened is closed by
+     * shutdown() before main returns */
+    log_start(STATE_DIR "/log.txt");
     setvbuf(stdout, NULL, _IOLBF, 0);
     config_load();
     signal(SIGPIPE, SIG_IGN);
@@ -3216,6 +3232,7 @@ int main(void) {
         if (g_stop || exists(STATE_DIR "/stop")) {
             unlink(STATE_DIR "/stop");
             notify(VERSION " stopped");
+            shutdown_daemon(lock);
             return 0;
         }
         if (!still_listening(lock)) {
@@ -3223,6 +3240,7 @@ int main(void) {
             close(lock);
             if ((lock = single_instance()) < 0) {
                 notify(VERSION " stopped: another PS4Mount is running");
+                shutdown_daemon(-1);
                 return 0;
             }
             printf("[main] instance lock opened again\n");
