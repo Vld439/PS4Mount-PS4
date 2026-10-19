@@ -42,9 +42,8 @@ static void refresh(void) {
     sqlite3_stmt *st;
     int n = 0, ok = 0;
     /* the PS4 keeps one row per title and key in tbl_appinfo (the PS5 has tbl_contentinfo) */
-    if (sqlite3_prepare_v2(db,
-                           "SELECT a.titleId, b.val FROM tbl_appinfo a LEFT JOIN tbl_appinfo b "
-                           "ON b.titleId = a.titleId AND b.key = 'APP_VER' WHERE a.key = 'TITLE_ID'",
+    if (sqlite3_prepare_v2(db, "SELECT a.titleId, b.val FROM tbl_appinfo a LEFT JOIN tbl_appinfo b "
+                               "ON b.titleId = a.titleId AND b.key = 'APP_VER' WHERE a.key = 'TITLE_ID'",
                            -1, &st, NULL) == SQLITE_OK) {
         int rc;
         while ((rc = sqlite3_step(st)) == SQLITE_ROW) {

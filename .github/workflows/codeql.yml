@@ -20,6 +20,7 @@ jobs:
     name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-24.04
     permissions:
+      actions: read # a private repository needs it
       contents: read
       security-events: write
     strategy:
@@ -60,12 +61,15 @@ jobs:
       - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           category: /language:${{ matrix.language }}
+          # code scanning results of a private repository need GitHub Advanced Security:
+          # analyzed there, uploaded once the repository is public
+          upload: ${{ github.event.repository.private && 'never' || 'always' }}
 
       - name: Check that the payload sources were analyzed
         if: matrix.language == 'c-cpp'
         run: |
           zip="$RUNNER_TEMP/codeql_databases/cpp/src.zip"
           unzip -l "$zip" | grep -oE 'src/[a-z]+\.c$' | sort -u | tee analyzed.txt
-          for f in main fw web pkg db origin build crypto; do
+          for f in main fw web pkg db origin build crypto check upload; do
             grep -qx "src/$f.c" analyzed.txt || { echo "::error::src/$f.c was not analyzed by CodeQL"; exit 1; }
           done
