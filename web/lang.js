@@ -16,10 +16,10 @@ var LANGS = {
     'Save': 'Guardar',
     'Cancel': 'Cancelar',
     'Close': 'Cerrar',
-    'No PS4 games found. Put the .pkg files (game and update) in the root of a USB drive, or send them with Send games.':
-      'No hay juegos de PS4. Pon los .pkg (juego y actualización) en la raíz de un USB, o envíalos con Enviar juegos.',
-    'No PS4 games found. Put the .pkg files (game and update) in the root of a USB drive.':
-      'No hay juegos de PS4. Pon los .pkg (juego y actualización) en la raíz de un USB.',
+    'No PS4 games found. Put the .pkg files (game, update and add-ons) in the PS4Mount folder of a USB drive, or send them with Send games.':
+      'No hay juegos de PS4. Pon los .pkg (juego, actualización y DLC) en la carpeta PS4Mount de un USB, o envíalos con Enviar juegos.',
+    'No PS4 games found. Put the .pkg files (game, update and add-ons) in the PS4Mount folder of a USB drive.':
+      'No hay juegos de PS4. Pon los .pkg (juego, actualización y DLC) en la carpeta PS4Mount de un USB.',
     'Adding games': 'Añadir juegos',
     'Folders to search for pkgs (one per line, relative to each drive)':
       'Carpetas donde buscar pkgs (una por línea, dentro de cada unidad)',
@@ -30,7 +30,7 @@ var LANGS = {
     'Smaller groups are gentler on the system when many games are added at once.':
       'Los grupos pequeños cargan menos el sistema cuando se añaden muchos juegos a la vez.',
     'Install add-ons (DLC)': 'Instalar DLC',
-    "Also use pkgs in the console's /data/pkg": 'Usar también los pkgs de /data/pkg de la consola',
+    "Also use pkgs in the console's /data/PS4Mount": 'Usar también los pkgs de /data/PS4Mount de la consola',
     "Pkgs sent to the console's storage are added from there, with no install to wait for. They still take internal space.":
       'Los pkgs enviados a la memoria de la consola se añaden desde ahí, sin esperar una instalación. Ocupan espacio interno.',
     'Language': 'Idioma',

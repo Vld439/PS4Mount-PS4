@@ -8,7 +8,7 @@ First version of the PS4 port. Tested on a PS4 on firmware 13.52 with GoldHEN.
 
 **Español**
 
-- Juega pkgs fake de PS4 sin instalarlos, desde un USB exFAT (también pkgs de más de 4 GB) o desde la memoria de la consola (`/data/pkg`).
+- Juega pkgs fake de PS4 sin instalarlos, desde un USB exFAT (también pkgs de más de 4 GB) o desde la memoria de la consola. Solo usa lo que pongas en su carpeta `PS4Mount` de cada disco (y `/data/PS4Mount`): el resto, incluido `/data/pkg`, no lo toca.
 - Actualizaciones, y DLC de hasta 256 MB instalados con el instalador del sistema en segundos (aparecen en la información del juego).
 - Panel web (`http://<IP de la PS4>:8770`) con la biblioteca, portadas y una ficha por juego, también desde el navegador de la PS4.
 - Enviar juegos desde el PC por la red, comprobando cada pkg antes de enviarlo (pkg fake, firmware, si está completo, si cabe), con cancelar y enviar de nuevo.
@@ -20,7 +20,7 @@ First version of the PS4 port. Tested on a PS4 on firmware 13.52 with GoldHEN.
 
 **English**
 
-- Plays PS4 fake pkgs without installing them, from an exFAT USB drive (pkgs over 4 GB too) or from the console's storage (`/data/pkg`).
+- Plays PS4 fake pkgs without installing them, from an exFAT USB drive (pkgs over 4 GB too) or from the console's storage. Only what you put in its `PS4Mount` folder of each drive (and `/data/PS4Mount`) is used: nothing else, `/data/pkg` included, is touched.
 - Updates, and add-ons up to 256 MB installed with the system's installer in seconds (they show in the game's information).
 - Web panel (`http://<PS4 IP>:8770`) with the library, artwork and a page per game, also from the PS4's browser.
 - Sending games from a computer over the network, every pkg checked before it is sent (fake pkg, firmware, complete, fits), with cancel and send again.

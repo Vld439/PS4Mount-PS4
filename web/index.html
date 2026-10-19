@@ -93,7 +93,7 @@ progress{width:100%;height:10px;margin-top:8px;accent-color:var(--accent)}
 <main>
   <div class="summary" id="summary"></div>
   <div class="grid" id="grid"></div>
-  <div class="empty" id="empty" hidden>No PS4 games found. Put the .pkg files (game and update) in the root of a USB drive, or send them with Send games.</div>
+  <div class="empty" id="empty" hidden>No PS4 games found. Put the .pkg files (game, update and add-ons) in the PS4Mount folder of a USB drive, or send them with Send games.</div>
 </main>
 <dialog id="setdlg"><h3>Settings</h3>
 <form class="settings" id="setform">
@@ -107,7 +107,7 @@ progress{width:100%;height:10px;margin-top:8px;accent-color:var(--accent)}
     <span class="hint">Smaller groups are gentler on the system when many games are added at once.</span>
   </label>
   <label class="check"><input type="checkbox" id="s-dlc"> Install add-ons (DLC)</label>
-  <label class="check"><input type="checkbox" id="s-internal"> Also use pkgs in the console's /data/pkg</label>
+  <label class="check"><input type="checkbox" id="s-internal"> Also use pkgs in the console's /data/PS4Mount</label>
   <span class="hint" style="margin-top:-8px">Pkgs sent to the console's storage are added from there, with no install to wait
     for. They still take internal space.</span>
   <label>Language

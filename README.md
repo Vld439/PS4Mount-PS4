@@ -34,7 +34,7 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 | | Estado |
 | --- | --- |
 | Juegos desde un **USB exFAT** (también pkgs de más de 4 GB) | ✅ probado |
-| Juegos desde la **memoria interna** (`/data/pkg`) | ✅ probado |
+| Juegos desde la **memoria interna** (`/data/PS4Mount`) | ✅ probado |
 | **Actualizaciones** | ✅ probado |
 | **DLC** de hasta 256 MB (casi todos: trajes, packs, licencias) | ✅ probado: PS4Mount los instala con el instalador del sistema en segundos, y aparecen en la información del juego |
 | DLC de más de 256 MB | ⚠️ se montan sin instalar, pero el sistema puede no mostrarlos |
@@ -57,9 +57,9 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 1. **Descarga** `ps4mount-ps4.bin` de [Releases](https://github.com/Vld439/PS4Mount-PS4/releases) y cópialo en **`/data/payloads/`** de la consola (por FTP, o como copies tus otros payloads).
 2. **Después de cada arranque**, abre **Payload Guest** y elige PS4Mount. Aparece la notificación `PS4Mount 0.1.0-beta en marcha. Panel en http://<IP de la PS4>:8770`.
 3. **Pon los juegos**, de una de estas formas:
-   - **En un USB:** copia los pkgs en la **raíz** del disco (o en la carpeta que elijas en los ajustes) y conéctalo a la PS4. Puedes organizarlos en carpetas, hasta dos niveles: `Overcooked/Game/`, `Overcooked/Update/`, `Overcooked/DLC/`.
+   - **En un USB:** copia los pkgs en la carpeta **`PS4Mount`** del disco y conéctalo a la PS4. PS4Mount la crea la primera vez que ve el disco, o puedes crearla tú; solo usa lo que pongas ahí, el resto del disco no lo toca. Dentro puedes organizarlos en carpetas, hasta dos niveles: `PS4Mount/Overcooked/Game/`, `…/Update/`, `…/DLC/`.
    - **Desde el PC:** con **Enviar juegos** en el panel (ver más abajo).
-   - **En la memoria interna:** pkgs en `/data/pkg`.
+   - **En la memoria interna:** pkgs en `/data/PS4Mount` (por FTP o con Enviar juegos). `/data/pkg` sigue siendo del instalador normal: PS4Mount no lo toca.
 4. Espera las notificaciones: `usb0: 1 juego(s) de PS4 encontrado(s), 1 nuevo(s) o actualizado(s)` → `Añadiendo 1/1: <juego>` → `<juego> añadido. Reinicia la consola una vez para jugarlo`.
 5. **Reinicia la consola una vez**, vuelve a cargar PS4Mount y juega desde la pantalla de inicio.
 
@@ -113,10 +113,10 @@ En el panel, **Enviar juegos**: arrastra los pkgs y elige el destino (el USB o l
 
 | Ajuste | Por defecto | Significa |
 | --- | --- | --- |
-| Carpetas donde buscar pkgs | `/` | Carpetas de cada disco donde se buscan pkgs nuevos, una por línea (`/` es la raíz). Se miran hasta dos niveles de subcarpetas. `ps4` no se puede usar. |
+| Carpetas donde buscar pkgs | `/PS4Mount` | Carpetas de cada disco donde se buscan pkgs nuevos, una por línea (`/` es la raíz: todos los pkgs de juegos de la raíz se moverían a `ps4/`). Se miran hasta dos niveles de subcarpetas. `ps4` no se puede usar. |
 | Añadir los juegos nuevos por grupos / Juegos por grupo | Sí / 5 | Añade muchos juegos por grupos, para no saturar la consola. |
 | Instalar DLC | Sí | Instala los DLC (ver arriba). |
-| Usar también los pkgs de /data/pkg | Sí | Usa también los pkgs de la memoria interna. |
+| Usar también los pkgs de /data/PS4Mount | Sí | Usa también los pkgs de la memoria interna. |
 | Idioma | El de la consola | El idioma del panel y de las notificaciones: el de la consola, inglés o español. |
 
 Se guardan en `/data/ps4mount/config.txt`. Los ajustes también tienen **Devolver todos los juegos** y **Volver a usar los pkgs devueltos**.
@@ -204,7 +204,7 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 | | State |
 | --- | --- |
 | Games from an **exFAT USB drive** (pkgs over 4 GB too) | ✅ tested |
-| Games from the **console's storage** (`/data/pkg`) | ✅ tested |
+| Games from the **console's storage** (`/data/PS4Mount`) | ✅ tested |
 | **Updates** | ✅ tested |
 | **Add-ons (DLC)** up to 256 MB (almost all: costumes, packs, licenses) | ✅ tested: PS4Mount installs them with the system's installer in seconds, and they show in the game's information |
 | Add-ons over 256 MB | ⚠️ mounted without installing, but the system may not show them |
@@ -227,9 +227,9 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 1. **Download** `ps4mount-ps4.bin` from [Releases](https://github.com/Vld439/PS4Mount-PS4/releases) and copy it to **`/data/payloads/`** on the console (over FTP, or however you copy your other payloads).
 2. **After every boot**, open **Payload Guest** and pick PS4Mount. The notification `PS4Mount 0.1.0-beta running. Panel at http://<PS4 IP>:8770` shows up.
 3. **Add games**, one of these ways:
-   - **On a USB drive:** copy the pkgs to the **root** of the drive (or the folder chosen in the settings) and plug it into the PS4. They can be in folders, two levels down: `Overcooked/Game/`, `Overcooked/Update/`, `Overcooked/DLC/`.
+   - **On a USB drive:** copy the pkgs to the **`PS4Mount`** folder of the drive and plug it into the PS4. PS4Mount creates the folder the first time it sees the drive, or you create it; only what you put there is used, the rest of the drive is left alone. Inside, they can be in folders, two levels down: `PS4Mount/Overcooked/Game/`, `…/Update/`, `…/DLC/`.
    - **From a computer:** with **Send games** in the panel (see below).
-   - **In the console's storage:** pkgs in `/data/pkg`.
+   - **In the console's storage:** pkgs in `/data/PS4Mount` (over FTP or with Send games). `/data/pkg` stays the usual installer's: PS4Mount leaves it alone.
 4. Wait for the notifications: `usb0: 1 PS4 game(s) found, 1 new or updated` → `Adding 1/1: <game>` → `<game> added. Restart the console once to play it`.
 5. **Restart the console once**, load PS4Mount again and play from the home screen.
 
@@ -283,10 +283,10 @@ In the panel, **Send games**: drop the pkgs and pick where they go (the USB driv
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| Folders to search for pkgs | `/` | Folders of each drive where new pkgs are picked up, one per line (`/` is the root). Two levels of subfolders are looked into. `ps4` cannot be used. |
+| Folders to search for pkgs | `/PS4Mount` | Folders of each drive where new pkgs are picked up, one per line (`/` is the root: every game pkg in the root would be moved into `ps4/`). Two levels of subfolders are looked into. `ps4` cannot be used. |
 | Add new games in groups / Games per group | On / 5 | Adds many games in groups, which keeps the console stable. |
 | Install add-ons (DLC) | On | Installs add-ons (see above). |
-| Also use pkgs in the console's /data/pkg | On | Uses the pkgs in the console's storage too. |
+| Also use pkgs in the console's /data/PS4Mount | On | Uses the pkgs in the console's storage too. |
 | Language | The console's | The language of the panel and the notifications: the console's, English or Spanish. |
 
 They are saved in `/data/ps4mount/config.txt`. The settings also have **Move all games back** and **Pick up moved-back pkgs again**.

@@ -80,13 +80,17 @@ typedef struct {
     char paths[MAX_SCAN_PATHS][128]; /* folders searched for pkgs, relative to each drive; "" is the root */
     int npaths;
     int restore_batch; /* games removed from the library per group when moving pkgs back */
-    int internal;      /* pkgs in the console's /data/pkg are used too */
+    int internal;      /* pkgs in the console's /data/PS4Mount are used too */
     int lang;          /* LANG_* of notifications and the panel, -1: the console's */
 } config_t;
 
 #define MAX_RESTORE_BATCH 10
 
-static config_t g_cfg = {1, 5, 1, {""}, 1, 5, 1, -1};
+/* The folder searched by default: one of PS4Mount's own, so nothing else on a drive is
+ * moved until the user puts it there (the drive root, "", is still a choice). */
+#define DEFAULT_SCAN_PATH "PS4Mount"
+
+static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, -1};
 
 int sceSystemServiceParamGetInt(int param_id, int *value);
 
@@ -199,7 +203,7 @@ static int is_mountpoint(const char *path) {
 /* --- where games are looked for --- */
 
 /* The USB drives, the extended storage and, when turned on, the console's own storage:
- * pkgs sent to /data/pkg are registered from there (library /data/ps4), with no second
+ * pkgs sent to /data/PS4Mount are registered from there (library /data/ps4), with no second
  * copy and no install to wait for. They still take internal space. */
 #define NROOTS 11
 #define INTERNAL_ROOT "/data"
@@ -1981,7 +1985,8 @@ typedef struct {
  * Ventoy adds to a drive) are skipped without a notification. */
 static void scan_dir(char *out, size_t n, const char *root, int i) {
     if (is_internal(root))
-        snprintf(out, n, "%s", i ? "" : INTERNAL_ROOT "/pkg"); /* never /data itself */
+        /* PS4Mount's own folder: /data/pkg holds the pkgs people install the usual way */
+        snprintf(out, n, "%s", i ? "" : INTERNAL_ROOT "/" DEFAULT_SCAN_PATH); /* never /data itself */
     else if (g_cfg.paths[i][0])
         snprintf(out, n, "%s/%s", root, g_cfg.paths[i]);
     else
@@ -2069,6 +2074,8 @@ static int adopt_root_pkgs(const char *root) {
     g_lib_sig = lib_signature(root);
     for (int i = 0; i < g_cfg.npaths; i++) {
         scan_dir(dir, sizeof(dir), root, i);
+        if (dir[0] && strcmp(dir, root))
+            mkdir(dir, 0777); /* there to be seen: where the pkgs go */
         moved += adopt_dir_pkgs(root, dir);
     }
     /* said again only when the waiting add-ons change, not each time the payload starts:
@@ -3462,8 +3469,10 @@ static void config_load(void) {
         c.batch_size = 5;
     if (c.restore_batch < 1 || c.restore_batch > MAX_RESTORE_BATCH)
         c.restore_batch = 5;
-    if (!c.npaths)
-        c.npaths = 1; /* the root */
+    if (!c.npaths) {
+        snprintf(c.paths[0], sizeof(c.paths[0]), DEFAULT_SCAN_PATH);
+        c.npaths = 1;
+    }
     g_cfg = c;
     printf("[config] batch=%d batch_size=%d dlc=%d restore_batch=%d folders=%d\n", g_cfg.batch, g_cfg.batch_size,
            g_cfg.dlc, g_cfg.restore_batch, g_cfg.npaths);
@@ -3590,7 +3599,7 @@ static uint64_t free_bytes(const char *dir) {
 }
 
 /* The folder a pkg sent to dest ("usb0".."usb7", "ext0", "ext1", "internal") goes to: the
- * first scan folder of the drive, or /data/pkg. -1 when dest is not usable now. */
+ * first scan folder of the drive, or /data/PS4Mount. -1 when dest is not usable now. */
 static int upload_dir(const char *dest, char *dir, size_t n) {
     char root[32];
     for (int i = 0; i < NROOTS; i++) {
