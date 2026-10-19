@@ -74,6 +74,7 @@ int main(void) {
     CHECK(sqlite3_open(APP_DB, &w) == SQLITE_OK);
     exec(w, "CREATE TABLE tbl_appinfo(titleId TEXT, key INT, val);"
             "INSERT INTO tbl_appinfo VALUES('CUSA00001','TITLE_ID','CUSA00001'),('CUSA00001','TITLE','A'),"
+            "('CUSA00001','APP_VER','01.04'),"
             "('CUSA00002','TITLE_ID','CUSA00002'),('CUSA00003','TITLE','C');"); /* CUSA00003: no TITLE_ID row */
     next_second();
     CHECK(db_is_registered("CUSA00001"));
@@ -81,6 +82,9 @@ int main(void) {
     CHECK(!db_is_registered("CUSA00003"));
     CHECK(!db_is_registered(""));
     CHECK(!db_is_registered("CUSA0000")); /* no prefix match */
+    CHECK(db_app_ver("CUSA00001") && !strcmp(db_app_ver("CUSA00001"), "01.04"));
+    CHECK(db_app_ver("CUSA00002") && !strcmp(db_app_ver("CUSA00002"), "")); /* registered, no APP_VER */
+    CHECK(!db_app_ver("CUSA00003"));
 
     printf("never written or locked\n");
     uint8_t before[32], after[32];

@@ -1795,6 +1795,8 @@ static void clear_removed_dlc(void) {
     closedir(d);
 }
 
+static int readd_queue(const char *tid, const char *why);
+
 static void scan_root(const char *root, int fresh, int reconnected) {
     const char *label = root + 5; /* "usb0" / "ext0" */
     if (!has_candidates(root)) {
@@ -1861,6 +1863,14 @@ static void scan_root(const char *root, int fresh, int reconnected) {
             continue;
         enforce_patch_sfo(&src);
         manage(&src);
+        /* PS4: the system registered another version (the update came later) */
+        const char *rv = db_app_ver(t->tid);
+        if (rv && *rv && strcmp(rv, src.ver)) {
+            char why[64];
+            snprintf(why, sizeof(why), "registered as %s, the update is %s", rv, src.ver);
+            if (readd_queue(t->tid, why))
+                printf("[reg] %s: %s\n", t->tid, why);
+        }
         managed_t *m = managed_by(t->tid, NULL);
         int running = title_running(t->tid);
         if (m && running && !m->running) {
@@ -2110,22 +2120,33 @@ static void trace_klog(const char *line) {
 /* "system file disagree [<TID>]": the system refused to start a game with an update.
  * Removing the game from the library and adding it again made it start; this is done
  * once per title and daemon run, so a game that still fails is not removed again. */
-static char g_readd_tid[10];
+static char g_readd_tid[10], g_readd_why[64];
 static char g_readd_done[MAX_TITLES][10];
 static int g_nreadd_done;
+static char g_last_launch[10]; /* the PS4's "APP_VER disagree" line names no title */
+
+/* Asks the main loop to remove tid from the library and add it again (once per title
+ * and daemon run). Returns 1 when queued. */
+static int readd_queue(const char *tid, const char *why) {
+    for (int i = 0; i < g_nreadd_done; i++)
+        if (!strcmp(g_readd_done[i], tid)) {
+            printf("[reg] %s: %s again, it was already added again once\n", tid, why);
+            return 0;
+        }
+    if (g_readd_tid[0])
+        return 0;
+    snprintf(g_readd_tid, sizeof(g_readd_tid), "%s", tid);
+    snprintf(g_readd_why, sizeof(g_readd_why), "%s", why);
+    return 1;
+}
 
 static void disagree_seen(const char *tid) {
     managed_t *m = managed_by(tid, NULL);
     if (!m)
         return;
     m->running = 0; /* the launch was refused */
-    for (int i = 0; i < g_nreadd_done; i++)
-        if (!strcmp(g_readd_done[i], tid)) {
-            printf("[reg] %s: system file disagree again, it was already added again once\n", tid);
-            return;
-        }
-    if (m->has_patch && !g_readd_tid[0])
-        snprintf(g_readd_tid, sizeof(g_readd_tid), "%s", tid);
+    if (m->has_patch)
+        readd_queue(tid, "system file disagree");
 }
 
 static void handle_klog_line(const char *line) {
@@ -2147,6 +2168,7 @@ static void handle_klog_line(const char *line) {
         }
     } else if ((p = after(line, "launchApp("))) {
         snprintf(id, sizeof(id), "%.9s", p);
+        snprintf(g_last_launch, sizeof(g_last_launch), "%s", id);
         managed_t *m = managed_by(id, NULL);
         if (m) {
             m->running = 1;
@@ -2155,6 +2177,8 @@ static void handle_klog_line(const char *line) {
     } else if ((p = after(line, "system file disagree ["))) {
         snprintf(id, sizeof(id), "%.9s", p);
         disagree_seen(id);
+    } else if (after(line, "APP_VER disagree [") && g_last_launch[0]) {
+        disagree_seen(g_last_launch); /* PS4: registered and update versions differ */
     } else if ((p = after(line, "[PlayGoService][End] end ("))) {
         snprintf(id, sizeof(id), "%.9s", p);
         managed_t *m = managed_by(id, NULL);
@@ -2440,7 +2464,7 @@ static void readd_title(const char *tid) {
     if (g_nreadd_done < MAX_TITLES)
         snprintf(g_readd_done[g_nreadd_done++], 10, "%s", tid);
     pump_events(5000); /* let the system finish the refused launch */
-    notify("%s did not start (system file disagree): adding it to the library again", name);
+    notify("%s (%s): adding it to the library again", name, g_readd_why);
     int rc = app_remove(tid, msg, sizeof(msg));
     printf("[reg] %s: removed to add it again: %s\n", tid, msg);
     if (!rc)
