@@ -12,35 +12,25 @@ body:
     attributes:
       label: PS4Mount version
       description: Shown at the top of the web panel and in the startup notification.
-      placeholder: "0.4.2"
+      placeholder: "0.1.0-beta"
     validations:
       required: true
   - type: input
     id: firmware
     attributes:
-      label: PS5 firmware
-      description: Settings > System > System Software > Console Information.
-      placeholder: "13.20"
+      label: PS4 firmware
+      description: Settings > System > System Information.
+      placeholder: "13.52"
     validations:
       required: true
   - type: textarea
     id: jailbreak
     attributes:
-      label: Jailbreak / HEN and other payloads
-      description: The exploit, HEN and every payload you load (with versions), in the order you load them.
+      label: Jailbreak, GoldHEN and other payloads
+      description: The exploit, the GoldHEN version, how you load PS4Mount (Payload Guest, GoldHEN's autoload...) and every other payload you load.
       placeholder: |
-        etaHEN 2.x with kstuff 1.13
-        klogsrv, ftpsrv, ShadowMountPlus 1.7
-    validations:
-      required: true
-  - type: dropdown
-    id: klogsrv
-    attributes:
-      label: Is klogsrv running?
-      options:
-        - "Yes"
-        - "No"
-        - "I don't know"
+        Lapse, GoldHEN 2.4b18
+        PS4Mount from Payload Guest, AnyPad
     validations:
       required: true
   - type: textarea
@@ -54,9 +44,9 @@ body:
   - type: textarea
     id: drives
     attributes:
-      label: Drives
-      description: How many drives are connected, how they are formatted, and whether a drive has more than one partition.
-      placeholder: "1 USB HDD, exFAT, one partition"
+      label: Where the game is
+      description: A USB drive (how it is formatted, how many are connected) or the console's storage (/data/pkg).
+      placeholder: "1 USB SSD, exFAT, one partition"
     validations:
       required: true
   - type: textarea

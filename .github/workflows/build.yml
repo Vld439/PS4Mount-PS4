@@ -83,8 +83,10 @@ jobs:
         with:
           name: ps4mount-ps4
 
-      - name: Release notes from the commits since the previous release
+      - name: Release notes (the version's section of CHANGELOG.md, else the commits since the previous release)
         run: |
+          awk -v v="## ${GITHUB_REF_NAME#v}" '$0 == v {on = 1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
+          if [ -s notes.md ]; then cat notes.md; exit 0; fi
           prev=$(git describe --tags --abbrev=0 --match 'v*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)
           {
             echo "## Changes"

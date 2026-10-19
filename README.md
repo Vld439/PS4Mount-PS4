@@ -1,306 +1,354 @@
-# PS4Mount
+<p align="center"><img src="assets/ps4mount-ps4-512.png" width="180" alt="PS4Mount PS4"></p>
 
-> [!CAUTION]
-> **PS4Mount is a work in progress. Use it at your own risk.**
->
-> On some consoles and firmwares it can still make the system report that its **database is
-> corrupted**. When that happens the console rebuilds its database on the next start, games added by
-> PS4Mount can disappear from the library until PS4Mount runs again, and you may have to restart the
-> console to get out of repeated error prompts. A forced restart can lose data that was not saved yet.
-> **Back up your save data** (PS Plus cloud storage or a USB drive) before using PS4Mount, and
-> [report any problem](#reporting-problems) with the log.
+# PS4Mount PS4
 
-Play PS4 fake PKGs on a jailbroken PS5 straight from a USB drive, without installing them.
+**Juega pkgs fake de PS4 desde un USB o desde la memoria de la consola, sin instalarlos.**
+**Play PS4 fake pkgs from a USB drive or from the console's storage, without installing them.**
 
-Put the game (and its update) `.pkg` files on a USB drive, plug it in and load `ps4mount.elf`.
-PS4Mount finds the packages, adds the games to the home screen and lets you play them from the
-drive. Nothing is copied to the console storage, and deleting a game on the console only removes
-it from the library: the `.pkg` stays on the drive.
+**[Español](#español) · [English](#english)**
 
-![PS4Mount icon](assets/icon0.png)
+PS4Mount PS4 es un port, exclusivo para PS4, de [PS4Mount](https://github.com/gasb07/ps4mount) de **gasb07** (para PS5).
+PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount) by **gasb07** (for the PS5).
 
-## Screenshots
+*Proyecto no oficial, sin relación con Sony Interactive Entertainment. PlayStation y PS4 son marcas de Sony Interactive Entertainment. Úsalo solo con juegos que te pertenecen.*
+*Unofficial project, not affiliated with Sony Interactive Entertainment. PlayStation and PS4 are trademarks of Sony Interactive Entertainment. Only use it with games you own.*
 
-Notifications on the home screen while PS4Mount scans the USB drives:
+---
 
-![Scan notifications on the PS5 home screen](docs/notifications.png)
+<a name="español"></a>
+# Español
 
-The web panel, opened from the **Media** tab:
+PS4Mount es un payload para una PS4 con jailbreak. Pones los pkgs del juego (y su actualización y sus DLC) en un USB o en la memoria de la consola, y PS4Mount los añade a la pantalla de inicio para jugarlos **desde el pkg, sin instalarlos**: no hay que esperar a una instalación ni gastar espacio en una segunda copia.
 
-![PS4Mount web panel](docs/web-panel.png)
+Además tiene un **panel web** (desde el móvil, el PC o el navegador de la PS4) con tu biblioteca, portadas y fichas de cada juego, y **envío de juegos desde el PC por la red local**: cada pkg se comprueba antes de enviarlo, para no pasar horas enviando un juego que la consola no puede usar.
 
-## Features
+Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificaciones están en **español e inglés**: salen en el idioma de la consola (inglés si no es ninguno de los dos), y se puede cambiar en **Ajustes → Idioma**.
 
-- Detects PS4 fake PKGs (game, update and add-ons) in the root of any connected USB drive, or in other
-  folders chosen in the settings.
-- Adds the games to the home screen with their icon, name and update version.
-- Applies updates: put the update `.pkg` next to the game and it is picked up automatically.
-- Installs add-ons (DLC), with data or unlock-only. An add-on is matched to its game by title ID, or by
-  the add-on IDs the game lists (so add-ons of another region of the same game work too).
-- Adds many games in groups, so a drive with dozens of games does not overload the console.
-- Games run from the drive; no internal storage is used for the packages.
-- Deleting a game from the PS5 removes it from the library only. The `.pkg` is never deleted.
-- Notifications while scanning (how many games were found on each drive) and for added and removed
-  games.
-- A web panel, also available as **PS4Mount** in the **Media** tab, to see the games and add or
-  remove them from the library.
+> [!WARNING]
+> **Versión beta.** Haz una copia de seguridad de tus partidas guardadas antes de usarlo, y [cuéntanos cualquier problema](#problemas-frecuentes) con el log.
+
+![El panel de PS4Mount](docs/panel-main-es.png)
+
+## Qué funciona y qué no
+
+| | Estado |
+| --- | --- |
+| Juegos desde un **USB exFAT** (también pkgs de más de 4 GB) | ✅ probado |
+| Juegos desde la **memoria interna** (`/data/pkg`) | ✅ probado |
+| **Actualizaciones** | ✅ probado |
+| **DLC** de hasta 256 MB (casi todos: trajes, packs, licencias) | ✅ probado: PS4Mount los instala con el instalador del sistema en segundos, y aparecen en la información del juego |
+| DLC de más de 256 MB | ⚠️ se montan sin instalar, pero el sistema puede no mostrarlos |
+| **Enviar juegos desde el PC** por la red, con comprobación previa | ✅ probado (unos 16 MB/s por cable) |
+| **Borrar** un juego desde la consola | ✅ probado: borra también sus pkgs y libera el espacio |
+| Un juego **nuevo**, o una actualización que llega después del juego | ⚠️ necesita **reiniciar la consola una vez**; después se juega siempre |
+| Otros firmwares | ⚠️ sin probar todavía |
+| Pkgs **retail** (no fake) | ❌ |
+| Apps homebrew (tiendas, emuladores…) | ❌ instálalas de la forma normal; pesan poco |
+
+## Requisitos
+
+- Una PS4 con jailbreak y **GoldHEN** (con su BinLoader activado, el puerto 9090).
+- **Payload Guest** u otra forma de cargar payloads.
+- Pkgs **fake** de PS4 (`CUSA…`).
+- Para jugar desde un USB: un disco formateado en **exFAT**.
+
+## Uso
+
+1. **Descarga** `ps4mount-ps4.bin` de [Releases](https://github.com/Vld439/PS4Mount-PS4/releases) y cópialo en **`/data/payloads/`** de la consola (por FTP, o como copies tus otros payloads).
+2. **Después de cada arranque**, abre **Payload Guest** y elige PS4Mount. Aparece la notificación `PS4Mount 0.1.0-beta en marcha. Panel en http://<IP de la PS4>:8770`.
+3. **Pon los juegos**, de una de estas formas:
+   - **En un USB:** copia los pkgs en la **raíz** del disco (o en la carpeta que elijas en los ajustes) y conéctalo a la PS4. Puedes organizarlos en carpetas, hasta dos niveles: `Overcooked/Game/`, `Overcooked/Update/`, `Overcooked/DLC/`.
+   - **Desde el PC:** con **Enviar juegos** en el panel (ver más abajo).
+   - **En la memoria interna:** pkgs en `/data/pkg`.
+4. Espera las notificaciones: `usb0: 1 juego(s) de PS4 encontrado(s), 1 nuevo(s) o actualizado(s)` → `Añadiendo 1/1: <juego>` → `<juego> añadido. Reinicia la consola una vez para jugarlo`.
+5. **Reinicia la consola una vez**, vuelve a cargar PS4Mount y juega desde la pantalla de inicio.
+
+PS4Mount ordena los pkgs que usa en una carpeta por juego, en el mismo disco (es un cambio de nombre, sin copiar nada):
+
+```
+ps4/CUSAxxxxx/app.pkg                           juego
+ps4/CUSAxxxxx/patch.pkg                         actualización
+ps4/CUSAxxxxx/addcont/CUSAyyyyy/<LABEL>/ac.pkg  DLC
+```
+
+Mantén esa estructura. Para añadir más juegos, vuelve a ponerlos en la carpeta de búsqueda.
+
+### Por qué hay que reiniciar una vez
+
+La consola solo inicia un juego cuando su servicio de descargas (BGFT) conoce la tarea del juego, y ese servicio solo las lee al arrancar. PS4Mount escribe la tarea al añadir el juego, así que el primer arranque del juego necesita un reinicio. Hemos probado a cerrar la sesión y a terminar una instalación real, y ninguna de las dos lo evita. Los DLC no necesitan reinicio.
+
+### El panel
+
+Abre `http://<IP de la PS4>:8770` en el navegador de un móvil o un PC de la **misma red**, o en el navegador de la propia PS4 (que recibe una versión más sencilla).
+
+| Estado | Significa |
+| --- | --- |
+| Listo | En la biblioteca, listo para jugar |
+| Reinicia para jugar | Añadido en este arranque: reinicia una vez |
+| Abierto | El juego está abierto |
+| Añadiéndose | Se está añadiendo |
+| Fuera de la biblioteca | Quitado de la biblioteca; sus pkgs siguen en el disco |
+| Unidad no conectada | Su disco no está conectado: conéctalo para jugar |
+| Instalado en la consola | Hay una instalación normal de ese juego: PS4Mount no lo toca |
+| En otra unidad | El mismo juego está en otro disco conectado, que es el que se usa |
+
+Cada juego tiene una ficha (pulsa su portada) con su versión, el firmware que necesita, su tamaño y dónde está.
+
+![Ficha de un juego](docs/panel-game-es.png)
+
+Botones: **Quitar de la biblioteca** (lo quita de la consola y conserva sus pkgs), **Añadir a la biblioteca**, **Devolver los pkgs** (los devuelve a donde estaban, con su nombre original), **Buscar juegos**, **Enviar juegos**, **Ajustes**, **Log** y **Detener**.
+
+### Enviar juegos desde el PC
+
+En el panel, **Enviar juegos**: arrastra los pkgs y elige el destino (el USB o la memoria interna).
+
+- Cada pkg se **comprueba antes de enviarse**, en un segundo, con sus primeros 4 MB: si es un pkg de PS4 fake, si es juego, actualización o DLC, si tu firmware basta, si está completo y si cabe. Solo se envían los que la consola puede usar.
+- Se envían primero los juegos, luego las actualizaciones y al final los DLC.
+- Si cortas o falla un envío, no queda ningún archivo a medias, y puedes pulsar **Enviar de nuevo**.
+- Al llegar, el juego se añade solo.
+
+![Enviar juegos](docs/panel-send-es.png)
+
+### Ajustes
+
+| Ajuste | Por defecto | Significa |
+| --- | --- | --- |
+| Carpetas donde buscar pkgs | `/` | Carpetas de cada disco donde se buscan pkgs nuevos, una por línea (`/` es la raíz). Se miran hasta dos niveles de subcarpetas. `ps4` no se puede usar. |
+| Añadir los juegos nuevos por grupos / Juegos por grupo | Sí / 5 | Añade muchos juegos por grupos, para no saturar la consola. |
+| Instalar DLC | Sí | Instala los DLC (ver arriba). |
+| Usar también los pkgs de /data/pkg | Sí | Usa también los pkgs de la memoria interna. |
+| Idioma | El de la consola | El idioma del panel y de las notificaciones: el de la consola, inglés o español. |
+
+Se guardan en `/data/ps4mount/config.txt`. Los ajustes también tienen **Devolver todos los juegos** y **Volver a usar los pkgs devueltos**.
+
+### Quitar y borrar juegos
+
+- **Borrar desde la consola** (Options → Eliminar, o Ajustes → Almacenamiento): borra el juego **y sus pkgs** (juego, actualización y DLC), y libera el espacio, como con un juego instalado. Solo cuando confirmas el borrado en esas pantallas, y solo la carpeta de ese juego.
+- **Quitar de la biblioteca** en el panel: quita el juego de la consola y **conserva sus pkgs**, para volver a añadirlo con **Añadir a la biblioteca**.
+
+El sistema nunca puede escribir ni vaciar los pkgs: los juegos los leen a través de una vista de solo lectura.
+
+### Bueno saber
+
+- **Carga PS4Mount después de cada arranque.** Sin él, los juegos no pueden iniciarse (siguen en la pantalla de inicio).
+- **Cierra los juegos de PS4Mount antes de poner la consola en reposo**: el reposo apaga el USB.
+- Si **desconectas el USB**, sus juegos se quedan en la pantalla de inicio y el panel los muestra como *Unidad no conectada*. Al reconectarlo, espera la notificación `usb0: … encontrado(s)` antes de abrirlos.
+- Si GoldHEN carga PS4Mount automáticamente y luego lo cargas tú, verás `PS4Mount … ya está en marcha`: es normal, el segundo se cierra solo.
+- El panel no tiene contraseña: cualquiera en tu red local puede abrirlo. No expongas el puerto 8770 a Internet.
+
+### Problemas frecuentes
+
+| Problema | Qué hacer |
+| --- | --- |
+| CE-32930-7 al abrir un juego recién añadido | Reinicia la consola una vez y vuelve a cargar PS4Mount. |
+| "No se puede iniciar la aplicación" | Comprueba que PS4Mount está en marcha y que el disco del juego está conectado (PS4Mount avisa si no lo está). |
+| El panel no abre | Usa la IP de la **consola**, con `http://` delante y `:8770`, desde la misma red. |
+| Un pkg no se añade | Mira el log (panel → **Log**): dice por qué (no es fake, necesita otro firmware, está incompleto…). |
+| El panel o las notificaciones salen en otro idioma | Cámbialo en **Ajustes → Idioma**. |
+| Un juego falla o pierde partidas también instalado de forma normal | Es el pkg (o su backport), no PS4Mount: prueba otro dump. |
+
+Para informar de un problema, abre un [issue](https://github.com/Vld439/PS4Mount-PS4/issues) con la versión de PS4Mount, el firmware, el juego (`CUSA…`), qué pasó y el log (panel → **Log**, o `/data/ps4mount/log.txt` por FTP). No adjuntes pkgs ni enlaces a ellos.
+
+### Ficheros en la consola
+
+| Fichero | Para qué |
+| --- | --- |
+| `/data/ps4mount/log.txt` | El log |
+| `/data/ps4mount/config.txt` | Los ajustes |
+| `/data/ps4mount/stop` | Vacío: para PS4Mount |
+| `/data/ps4mount/klog_all` | Vacío: copia todo el log del sistema en el log de PS4Mount (diagnóstico) |
+| `/system_data/ps4mount/` | Las carpetas internas de los juegos y las vistas de solo lectura |
+
+## Compilar
+
+```
+bash test/run.sh        # tests en el ordenador (SANITIZE=1 para ASan/UBSan)
+bash test/policy.sh     # reglas del proyecto
+cd test/web && npm test # el panel
+PS4_PAYLOAD_SDK=/ruta/al/sdk bash build.sh   # build/ps4mount-ps4.elf y .bin
+```
+
+Necesitas el [ps4-payload-sdk](https://github.com/ps4-payload-dev/sdk) **compilado desde git**: la release v0.9 no arranca en 13.52 (su runtime solo conoce hasta 13.50). La CI usa el commit indicado en `SDK_COMMIT` de `.github/workflows/build.yml`. [AI-WORKFLOW.md](AI-WORKFLOW.md) explica cómo trabajar en PS4Mount con un asistente de IA.
+
+## Créditos
+
+- **[PS4Mount](https://github.com/gasb07/ps4mount)**, de **gasb07**: el proyecto del que nace este port (la lectura de pkgs, los ficheros de instalación, el montaje, el panel). Su historial está en el proyecto original y en el historial de git de este repositorio.
+- **[LibOrbisPkg](https://github.com/maxton/LibOrbisPkg)** (maxton, LGPL-3.0): la clave de los pkgs fake (`src/keys.h`) y la referencia del formato.
+- **[ps4-payload-sdk](https://github.com/ps4-payload-dev/sdk)** (John Törnblom, GPL-3.0-or-later): el toolchain y el runtime del payload.
+- **flatz**: la interfaz de BGFT documentada en [ps4_stub_lib_maker_v2](https://github.com/flatz/ps4_stub_lib_maker_v2), y **[ps4-ipi](https://github.com/0x199/ps4-ipi)** como referencia de su uso, para instalar los DLC.
+- **[SQLite](https://sqlite.org)** (dominio público): la lectura de la base de datos de la consola.
+- **[ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus)** (drakmor): inspiración del original para montar juegos desde USB.
+
+## Licencia
+
+GPL-3.0-or-later (ver [LICENSE](LICENSE)). Si publicas tu propia versión, conserva los avisos, distribuye los cambios con la misma licencia y, por favor, menciona a gasb07 y enlaza el proyecto original.
+
+---
+
+<a name="english"></a>
+# English
+
+PS4Mount is a payload for a jailbroken PS4. Put the game pkgs (with their update and add-ons) on a USB drive or in the console's storage, and PS4Mount adds them to the home screen so they are played **from the pkg, without installing them**: no install to wait for, no space spent on a second copy.
+
+It also has a **web panel** (from a phone, a computer or the PS4's browser) with your library, artwork and a page per game, and **sending games from a computer over the local network**: every pkg is checked before it is sent, so no one spends hours sending a game the console cannot use.
+
+Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notifications are in **English and Spanish**: they follow the console's language (English for any other), and **Settings → Language** changes it.
+
+> [!WARNING]
+> **Beta version.** Back up your saved data before using it, and [tell us about any problem](#troubleshooting) with the log.
+
+![The PS4Mount panel](docs/panel-main.png)
+
+## What works and what does not
+
+| | State |
+| --- | --- |
+| Games from an **exFAT USB drive** (pkgs over 4 GB too) | ✅ tested |
+| Games from the **console's storage** (`/data/pkg`) | ✅ tested |
+| **Updates** | ✅ tested |
+| **Add-ons (DLC)** up to 256 MB (almost all: costumes, packs, licenses) | ✅ tested: PS4Mount installs them with the system's installer in seconds, and they show in the game's information |
+| Add-ons over 256 MB | ⚠️ mounted without installing, but the system may not show them |
+| **Sending games from a computer** over the network, checked first | ✅ tested (about 16 MB/s over a cable) |
+| **Deleting** a game on the console | ✅ tested: its pkgs are deleted too and the space is freed |
+| A **new** game, or an update that arrives after its game | ⚠️ needs **one console restart**; it plays every time after that |
+| Other firmwares | ⚠️ not tested yet |
+| **Retail** (not fake) pkgs | ❌ |
+| Homebrew apps (stores, emulators…) | ❌ install them the usual way; they are small |
 
 ## Requirements
 
-- A jailbroken PS5 with fake PKG support (for example etaHEN with kstuff).
-  Any firmware with fake PKG support. From 6.00 the games are registered the usual way (reported
-  working on 6.50, tested on 13.20). Below 6.00 that made the console report a corrupted database
-  (5.50), so there PS4Mount registers each game on its own (confirmed working on 5.50), and does not
-  add games if the firmware lacks that function. The startup notification and the log say which one
-  is used.
-- An ELF loader listening on port **9021** to send the payload.
-- Access to the kernel log: either **klogsrv** running on port 3232, or no other payload reading
-  `/dev/klog`. PS4Mount reads the system log to know when a game starts and when a delete is
-  confirmed. Without it, games cannot start (see [How it works](#how-it-works)).
-- A USB drive formatted as **exFAT**.
-- PS4 **fake** PKGs (game, and optionally its update and add-ons). Retail PKGs are not supported.
+- A jailbroken PS4 with **GoldHEN** (its BinLoader on, port 9090).
+- **Payload Guest** or another way to load payloads.
+- PS4 **fake** pkgs (`CUSA…`).
+- To play from USB: a drive formatted as **exFAT**.
 
-## Usage
+## Use
 
-Download `ps4mount.elf` from the [Releases](https://github.com/gasb07/ps4mount/releases) page
-(or [build it](#building)).
+1. **Download** `ps4mount-ps4.bin` from [Releases](https://github.com/Vld439/PS4Mount-PS4/releases) and copy it to **`/data/payloads/`** on the console (over FTP, or however you copy your other payloads).
+2. **After every boot**, open **Payload Guest** and pick PS4Mount. The notification `PS4Mount 0.1.0-beta running. Panel at http://<PS4 IP>:8770` shows up.
+3. **Add games**, one of these ways:
+   - **On a USB drive:** copy the pkgs to the **root** of the drive (or the folder chosen in the settings) and plug it into the PS4. They can be in folders, two levels down: `Overcooked/Game/`, `Overcooked/Update/`, `Overcooked/DLC/`.
+   - **From a computer:** with **Send games** in the panel (see below).
+   - **In the console's storage:** pkgs in `/data/pkg`.
+4. Wait for the notifications: `usb0: 1 PS4 game(s) found, 1 new or updated` → `Adding 1/1: <game>` → `<game> added. Restart the console once to play it`.
+5. **Restart the console once**, load PS4Mount again and play from the home screen.
 
-1. Copy the PS4 game `.pkg` (and its update and add-on `.pkg` files, if you have them) to the **root**
-   of the USB drive. The file names do not matter.
-2. Plug the drive into the PS5.
-3. Send `ps4mount.elf` to the ELF loader (port 9021). Do this after every console boot, or add it to
-   the payloads your jailbreak loads automatically.
-4. Wait for the notifications:
-   - `Scanning usb0 for PS4 games...`
-   - `usb0: 2 PS4 game(s) found, 2 new or updated`
-   - `Adding 1/2: <game name> (CUSAxxxxx)`
-   - `<game name> ready to play`
-5. Start the game from the home screen.
-
-On the first run PS4Mount moves every package it uses into a folder per game on the same drive:
+PS4Mount keeps the pkgs it uses in a folder per game on the same drive (a rename, nothing is copied):
 
 ```
-/ps4/CUSAxxxxx/app.pkg                          game
-/ps4/CUSAxxxxx/patch.pkg                        update (optional)
-/ps4/CUSAxxxxx/addcont/CUSAyyyyy/<LABEL>/ac.pkg add-on (optional)
+ps4/CUSAxxxxx/app.pkg                           game
+ps4/CUSAxxxxx/patch.pkg                         update
+ps4/CUSAxxxxx/addcont/CUSAyyyyy/<LABEL>/ac.pkg  add-on
 ```
 
-A game is reported as ready only after its add-ons are installed too. An add-on whose game is not on the
-same drive stays where it is and waits: it is moved and installed as soon as its game is on the drive.
-The scan notification says how many add-ons are waiting.
+Keep this layout. To add more games, put them in the scan folder again.
 
-Keep this layout. To add more games later, copy their `.pkg` files to the root of the drive again.
+### Why one restart
 
-### Web panel
+The console only starts a game when its background transfer service (BGFT) knows the game's task, and the service reads its tasks at boot only. PS4Mount writes the task when it adds the game, so the game's first start needs a restart. Logging out and finishing a real install were both tried: neither avoids it. Add-ons need no restart.
 
-Open **PS4Mount** in the **Media** tab, or browse to `http://<PS5 IP>:8770` from any device on
-the same network. The panel shows every game found on the connected drives, with its state:
+### The panel
+
+Open `http://<PS4 IP>:8770` in the browser of a phone or computer on the **same network**, or in the PS4's own browser (which gets a simpler page).
 
 | State | Meaning |
 | --- | --- |
-| Ready | In the library and ready to play |
-| Running | The game is open |
-| Not in library | Removed from the library; the `.pkg` is still on the drive |
-| Adding | Being added to the library |
-| Installed on console | A normal installation of this game exists; PS4Mount leaves it alone |
-| On another drive | The same game is also on another connected drive, which is the one used |
+| Ready | In the library, ready to play |
+| Restart to play | Added in this boot: restart once |
+| Running | Open |
+| Adding | Being added |
+| Not in library | Out of the library; its pkgs are still on the drive |
+| Drive not connected | Its drive is not connected: connect it to play |
+| Installed on console | A normal install of this game exists: PS4Mount leaves it alone |
+| On another drive | The same game is on another connected drive, which is the one used |
 
-Buttons:
+Each game has a page (click its artwork) with its version, the firmware it needs, its size and where it is.
 
-- **Remove from library**: removes the game from the home screen. The `.pkg` stays on the drive.
-- **Move pkgs back**: removes the game from the library and moves its `.pkg` files back to where they
-  came from (see [Moving pkgs back](#moving-pkgs-back)).
-- **Add to library**: adds a removed game back.
-- **Scan for games**: checks the drives now and shows how many games were found on each one.
-- **Settings**: see below.
-- **Log**: shows the PS4Mount log.
-- **Stop**: stops PS4Mount. Its games cannot start until it is loaded again.
+![A game's page](docs/panel-game.png)
+
+Buttons: **Remove from library** (takes it off the console and keeps its pkgs), **Add to library**, **Move pkgs back** (moves the pkgs back to where they came from, with their original names), **Scan for games**, **Send games**, **Settings**, **Log** and **Stop**.
+
+### Sending games from a computer
+
+In the panel, **Send games**: drop the pkgs and pick where they go (the USB drive or the console's storage).
+
+- Every pkg is **checked before it is sent**, in a second, from its first 4 MB: whether it is a fake PS4 pkg, a game, an update or an add-on, whether your firmware is enough, whether it is complete and whether it fits. Only the pkgs the console can use are sent.
+- Games go first, then updates, then add-ons.
+- A cancelled or failed send leaves no half file behind, and **Send again** retries it.
+- When it arrives, the game is added by itself.
+
+![Sending games](docs/panel-send.png)
 
 ### Settings
 
-![PS4Mount settings](docs/settings.png)
-
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| Folders to search for pkgs | `/` | Folders, relative to each drive, where new `.pkg` files are picked up (one per line). `/` is the root. The `ps4` folder cannot be used: it holds the games already moved. |
-| Add new games in groups | On | Adds many new games in groups instead of one after the other, which keeps the console stable when a drive has a lot of games. |
-| Games per group | 5 | Size of each group (1 to 50). |
-| Install add-ons (DLC) | On | Moves and installs add-on `.pkg` files. When off, add-ons are left where they are. |
+| Folders to search for pkgs | `/` | Folders of each drive where new pkgs are picked up, one per line (`/` is the root). Two levels of subfolders are looked into. `ps4` cannot be used. |
+| Add new games in groups / Games per group | On / 5 | Adds many games in groups, which keeps the console stable. |
+| Install add-ons (DLC) | On | Installs add-ons (see above). |
+| Also use pkgs in the console's /data/pkg | On | Uses the pkgs in the console's storage too. |
+| Language | The console's | The language of the panel and the notifications: the console's, English or Spanish. |
 
-The settings also have **Move all games back** and **Pick up moved-back pkgs again** (see below).
+They are saved in `/data/ps4mount/config.txt`. The settings also have **Move all games back** and **Pick up moved-back pkgs again**.
 
-Settings are saved in `/data/ps4mount/config.txt`.
+### Removing and deleting games
 
-The panel has no password. Anyone on your local network can open it.
+- **Deleting on the console** (Options → Delete, or Settings → Storage): deletes the game **and its pkgs** (game, update and add-ons) and frees the space, as with an installed game. Only when the delete is confirmed on those screens, and only that game's folder.
+- **Remove from library** in the panel: takes the game off the console and **keeps its pkgs**, to add it again with **Add to library**.
 
-### Removing games
+The system can never write to or empty the pkgs: games read them through a read-only view.
 
-Deleting a game from the PS5 (Options > Delete on the home screen, or Settings > Storage), or using
-**Remove from library** in the panel, removes the game from the library and leaves the `.pkg` on the
-drive. A removed game comes back
-when you reconnect the drive or click **Add to library**.
+### Good to know
 
-To delete the game for good, delete its `/ps4/CUSAxxxxx` folder from the drive on a computer.
+- **Load PS4Mount after every boot.** Without it, games cannot start (they stay on the home screen).
+- **Close PS4Mount games before putting the console in rest mode**: rest mode powers the USB drive off.
+- If you **unplug the USB drive**, its games stay on the home screen and the panel shows them as *Drive not connected*. When you plug it back, wait for the `usb0: … found` notification before starting them.
+- If GoldHEN loads PS4Mount automatically and you load it again, you see `PS4Mount … is already running`: that is fine, the second one stops by itself.
+- The panel has no password: anyone on your local network can open it. Do not expose port 8770 to the Internet.
 
-### Moving pkgs back
+<a name="troubleshooting"></a>
+### Troubleshooting
 
-PS4Mount records where every `.pkg` came from in `ps4/CUSAxxxxx/origin.txt` on the drive: the folder
-(any of the scan folders) and the original file name. **Move pkgs back** on a game, or **Move all games
-back** in the settings, undoes the move:
+| Problem | What to do |
+| --- | --- |
+| CE-32930-7 when starting a game just added | Restart the console once and load PS4Mount again. |
+| "Cannot start the application" | Check that PS4Mount is running and that the game's drive is connected (PS4Mount says so when it is not). |
+| The panel does not open | Use the **console's** IP, with `http://` in front and `:8770`, from the same network. |
+| A pkg is not added | Read the log (panel → **Log**): it says why (not fake, needs another firmware, incomplete…). |
+| A game crashes or loses saves when installed the normal way too | It is the pkg (or its backport), not PS4Mount: try another dump. |
 
-- The game leaves the library (several games are handled in groups, like when adding).
-- The game, its update, older updates kept aside and its add-ons go back to their original folder with
-  their original name. A folder that no longer exists is created again, and an existing file is never
-  replaced: ` (1)` is added to the name.
-- `.pkg` files moved by versions before 0.5.0 have no record and go to the drive root as
-  `CUSAxxxxx - <game> - game.pkg`, `... - update.pkg` and `... - <add-on label>.pkg`.
-- The files PS4Mount created for the game are removed. Folders are only removed when empty, and no
-  `.pkg` is ever deleted.
+To report a problem, open an [issue](https://github.com/Vld439/PS4Mount-PS4/issues) with the PS4Mount version, the firmware, the game (`CUSA…`), what happened and the log (panel → **Log**, or `/data/ps4mount/log.txt` over FTP). Do not attach pkgs or links to them.
 
-The `.pkg` files moved back stay where they are on the next scans (they are listed in
-`/data/ps4mount/restored.txt`). To add them again, use **Pick up moved-back pkgs again** in the
-settings. A `.pkg` you move, rename or replace yourself is picked up as usual.
+### Files on the console
 
-## Good to know
-
-- Load PS4Mount soon after every boot. While it is not running, the console does not see the
-  packages and may hide the games; they come back as soon as PS4Mount runs again.
-- Do not unplug the drive while a game is running.
-- **Two or more drives connected at the same time can make the whole console interface slow** (home
-  screen, Control Center, game hubs), with or without PS4Mount: the system checks its storage devices
-  more often with each extra drive or partition. A drive with extra partitions (for example a boot
-  partition added by a multiboot tool) counts as several. If the interface gets slow, keep one drive
-  connected, ideally with a single partition.
-- For a game with an update, the library and the PS5's own "installed" notification show the version
-  of the game pkg (for example 01.00). The game runs with the update; the web panel shows its version.
-- Games already installed the normal way on the console are never touched, and their add-ons on the
-  drive are not installed.
-- **Close PS4Mount games before putting the console in rest mode.** Rest mode powers the drive off, and a
-  game left open cannot read its files from the drive after waking up: it locks up, and closing it can
-  hang on the "Closing" screen, which needs a console restart. Games that were not open stay in the
-  library and work normally after waking up.
-- **Games with more than about 29 add-ons:** while a game runs, the console mounts each of its packages (the game,
-  the update and every add-on) with two virtual devices: a PS4 package holds an outer filesystem with the
-  real content as a second filesystem inside it. The console has 64 of these devices, so a running game
-  can use at most about 30 packages: the game, its update and roughly 29 add-ons. A game with more
-  add-ons (for example Civilization VII with 35) starts normally but only sees the first add-ons, in
-  alphabetical order of their label. This is a console limit that applies to installed games too; it
-  does not limit how many games you can have.
-- If a game fails to start right after being added, start it again. The log (panel > **Log**) shows
-  what happened.
-
-## Reporting problems
-
-If something does not work, open an issue with the
-[bug report form](https://github.com/gasb07/ps4mount/issues/new?template=bug_report.yml). It asks for
-what is needed to find the cause:
-
-1. **PS4Mount version**: shown at the top of the web panel and in the startup notification.
-2. **PS5 firmware**, the **jailbreak / HEN** and every **payload** you load, with their versions.
-3. Whether **klogsrv** is running.
-4. **The game**: name and title ID (`CUSAxxxxx`), and whether it has an update and add-ons.
-5. **Your drives**: how many are connected, how they are formatted (exFAT) and whether a drive has
-   more than one partition.
-6. **What happened**: what you did, what you expected, and the exact message or error code shown on
-   the console.
-7. **The log**: open the web panel, click **Log** and copy the text, or download
-   `/data/ps4mount/log.txt` over FTP. Include the part from the moment the problem happened.
-
-Do not attach `.pkg` files or links to them.
-
-## How it works
-
-A PS4 PKG install on the PS5 is mostly a byte copy of the package to `/user/app/<TITLE_ID>/app.pkg`
-plus some metadata. PS4Mount skips the copy:
-
-1. It writes the files an install would leave on the console, generated from the package itself:
-   `app.json`, `app.pbm`, `app.xml`, `patch.*`, the PlayGo records (`/user/playgo/...`,
-   `/system_data/playgo/<TITLE_ID>/pfs.pbm`), the app metadata, and the fake license (`.rif`/`.idx`)
-   decrypted from the package.
-2. The game files go into an internal folder, `/system_data/ps4mount/app/<TITLE_ID>` (and
-   `/system_data/ps4mount/patch/<TITLE_ID>` for an update), where `app.pkg` and `patch.pkg` are
-   symbolic links to the packages on the drive. That folder is mounted over `/user/app/<TITLE_ID>`
-   (and `/user/patch/<TITLE_ID>`) with `nullfs`. The drive itself is never mounted there.
-3. It asks the system to register the title (`sceAppInstUtilAppInstallAll`), which adds it to the
-   library and refreshes the home screen. PS4Mount never writes to the system databases itself.
-4. A delete from the console can only remove the links, never the packages. While a delete screen
-   is open (on the home screen or in Settings > Storage) PS4Mount also unmounts the game folders,
-   so the system can remove `/user/app/<TITLE_ID>` without an error.
-
-State and log are kept in `/data/ps4mount/`. The Media tab shortcut is `PMNT00001`
-(`/user/app/PMNT00001`).
+| File | Use |
+| --- | --- |
+| `/data/ps4mount/log.txt` | The log |
+| `/data/ps4mount/config.txt` | The settings |
+| `/data/ps4mount/stop` | Empty: stops PS4Mount |
+| `/data/ps4mount/klog_all` | Empty: copies the whole system log into PS4Mount's log (diagnosis) |
+| `/system_data/ps4mount/` | The games' internal folders and the read-only views |
 
 ## Building
 
-Requirements: the [PS5 Payload SDK](https://github.com/ps5-payload-dev/sdk) in `/opt/ps5-payload-sdk`
-(or set `PS5_PAYLOAD_SDK`), `xxd` and bash.
-
-```sh
-./build.sh          # builds build/ps4mount.elf
+```
+bash test/run.sh        # tests on the computer (SANITIZE=1 for ASan/UBSan)
+bash test/policy.sh     # the project's rules
+cd test/web && npm test # the panel
+PS4_PAYLOAD_SDK=/path/to/sdk bash build.sh   # build/ps4mount-ps4.elf and .bin
 ```
 
-Unit tests (crypto, the generated install files and the `param.sfo` parser) run on the computer, with
-no console or SDK:
-
-```sh
-bash test/run.sh
-```
-
-GitHub Actions runs them before every build.
-
-Optional tools:
-
-```sh
-python3 tools/make_icon.py                                 # redraws assets/icon0.png (needs Pillow)
-python3 tools/gen_keys.py <LibOrbisPkg>/LibOrbisPkg/Util/Keys.cs   # regenerates src/keys.h
-```
-
-### Releases
-
-GitHub Actions (`.github/workflows/build.yml`) builds every push and pull request with the PS5
-Payload SDK release set in `SDK_VERSION`, and keeps `ps4mount.elf` as a build artifact.
-
-To publish a release:
-
-1. Set the new version in `src/main.c` (`#define VERSION "PS4Mount X.Y.Z"`) and commit it.
-2. Tag the commit and push the tag:
-   ```sh
-   git tag vX.Y.Z
-   git push origin vX.Y.Z
-   ```
-
-The workflow checks that the tag matches `VERSION`, builds the payload and creates the GitHub
-release with `ps4mount.elf` and its SHA-256 checksum attached.
-
-| Path | Content |
-| --- | --- |
-| `src/main.c` | Daemon: drive scan, registration, mounts, klog events, panel actions |
-| `src/pkg.c` | PKG reader and fake-key entry decryption |
-| `src/build.c` | Generators for the install files (app/patch metadata, PlayGo records, license) |
-| `src/db.c` | Library rows (`app.db`, `appinfo.db`) |
-| `src/crypto.c` | SHA-256, AES-128-CBC, CRC32C, RSA-2048 |
-| `src/web.c`, `web/index.html` | Web panel |
-| `test/` | Unit tests (`bash test/run.sh`) |
-| `tools/pdb_*_template.bin` | PlayGo record layouts (no title data) |
-| `third_party/sqlite/` | SQLite amalgamation |
+You need the [ps4-payload-sdk](https://github.com/ps4-payload-dev/sdk) **built from git**: the v0.9 release does not start on 13.52 (its runtime knows firmwares up to 13.50). CI uses the commit in `SDK_COMMIT` of `.github/workflows/build.yml`. [AI-WORKFLOW.md](AI-WORKFLOW.md) explains how to work on PS4Mount with an AI assistant.
 
 ## Credits
 
-PS4Mount does not contain code copied from other projects except where noted below.
-
-| Project | Author | License | Use |
-| --- | --- | --- | --- |
-| [PS5 Payload SDK](https://github.com/ps5-payload-dev/sdk) | John Törnblom | GPL-3.0-or-later | Toolchain, headers and runtime linked into the payload |
-| [LibOrbisPkg](https://github.com/maxton/LibOrbisPkg) | maxton | LGPL-3.0 | Source of the fake PKG key (`PkgDerivedKey3Keyset`, in `src/keys.h`) and reference for the PKG entry encryption, entry IDs and the `playgo-chunk.dat` layout |
-| [SQLite](https://sqlite.org) | SQLite authors | Public domain | `third_party/sqlite/` (amalgamation 3.46.1), used to write the library databases |
-| [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) | drakmor | GPL-3.0 | Inspiration for auto-mounting games from USB drives and for registering titles with `sceAppInstUtilAppInstallAll` on firmware 12.00+. No code was used. |
-| [ps5-app-dumper](https://github.com/EchoStretch/ps5-app-dumper) | EchoStretch | see project | Reference for the Media tab shortcut (`applicationCategoryType` 65536 with `deeplinkUri`). No code was used. |
+- **[PS4Mount](https://github.com/gasb07/ps4mount)** by **gasb07**: the project this port comes from (pkg reading, the install files, mounting, the panel). Its history is in the original project and in this repository's git history.
+- **[LibOrbisPkg](https://github.com/maxton/LibOrbisPkg)** (maxton, LGPL-3.0): the fake pkg key (`src/keys.h`) and the reference for the format.
+- **[ps4-payload-sdk](https://github.com/ps4-payload-dev/sdk)** (John Törnblom, GPL-3.0-or-later): the toolchain and the payload runtime.
+- **flatz**: the BGFT interface documented in [ps4_stub_lib_maker_v2](https://github.com/flatz/ps4_stub_lib_maker_v2), and **[ps4-ipi](https://github.com/0x199/ps4-ipi)** as a reference for its use, to install add-ons.
+- **[SQLite](https://sqlite.org)** (public domain): reading the console's database.
+- **[ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus)** (drakmor): the original's inspiration for mounting games from USB drives.
 
 ## License
 
-PS4Mount is licensed under the GNU General Public License v3.0 or later, see [LICENSE](LICENSE).
-It links the PS5 Payload SDK runtime (GPL-3.0-or-later). `src/keys.h` carries data published by
-LibOrbisPkg under the LGPL-3.0. SQLite is in the public domain.
-
-This project is not affiliated with or endorsed by Sony Interactive Entertainment. Only use it with
-games you own.
+GPL-3.0-or-later (see [LICENSE](LICENSE)). If you publish your own version, keep the notices, distribute the changes under the same license and, please, mention gasb07 and link the original project.
