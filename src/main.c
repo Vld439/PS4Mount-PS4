@@ -2308,12 +2308,15 @@ static void end_delete_window(void) {
  * cannot be removed). Returns 2 for a screen that opens the window, 1 for a screen
  * that keeps it open (menus and dialogs on the way), 0 otherwise. */
 static int delete_scene(const char *name) {
-    /* PS5 names, then the PS4's: Options > Delete asks with ConfirmContentDeleteScene and
-     * deletes under Parent_ContentDeleteScene */
+    /* PS5 names, then the PS4's. Options > Delete asks with ConfirmContentDeleteScene and
+     * deletes under Parent_ContentDeleteScene. Settings > Storage lists the games in
+     * storage_data#application (opened there: its menu, confirmation and delete pages,
+     * OptionMenu, Parent_NormalStack and storage_data#application_delete, follow fast) */
     static const char *opens[] = {"AppDeleteConfirmScene", "console storage delete content", "DeleteDialogScreen",
-                                  "ConfirmContentDeleteScene", NULL};
+                                  "ConfirmContentDeleteScene", "storage_data#application", NULL};
     static const char *keeps[] = {"AppDeletingScene", "ReactPopupMenu", "Noname", "Render.NPXS40021",
-                                  "storage management", "ContentDeleteScene", NULL};
+                                  "storage management", "ContentDeleteScene", "OptionMenu :", "Parent_NormalStack",
+                                  NULL};
     for (int i = 0; opens[i]; i++)
         if (strstr(name, opens[i]))
             return 2;
@@ -2494,10 +2497,10 @@ static void handle_klog_line(const char *line) {
     } else if ((p = after(line, "sceKernelOpen(/user/app/")) && strstr(p, "/app.pkg) failed")) {
         snprintf(id, sizeof(id), "%.9s", p);
         open_failed(id);
-    } else if ((p = after(line, "GameWillDelete(")) && g_deleting) {
+    } else if ((p = after(line, "GameWillDelete("))) {
         snprintf(id, sizeof(id), "%.9s", p);
-        managed_t *m = managed_by(id, NULL);
-        g_will_delete[0] = 0;
+        managed_t *m = g_deleting ? managed_by(id, NULL) : NULL;
+        g_will_delete[0] = 0; /* a delete that worked wrote nothing more: forget the last one */
         if (m) {
             printf("[delete] %s deleted on the console\n", id);
             snprintf(g_will_delete, sizeof(g_will_delete), "%s", id);
