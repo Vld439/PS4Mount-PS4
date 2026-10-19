@@ -1776,19 +1776,15 @@ static int adopt_dlc(const char *root, const char *name, const char *path, pkg_t
     return 1;
 }
 
-/* Moves PS4 game (gd) and update (gp) pkgs found in dir (the drive root or a scan
- * folder) into <root>/ps4/<TID>/app.pkg and patch.pkg, then add-ons (ac) next to
- * their game. */
-static int adopt_dir_pkgs(const char *root, const char *dir) {
+/* One pass over the pkgs in dir: pass 0 moves PS4 game (gd) and update (gp) pkgs into
+ * <root>/ps4/<TID>/app.pkg and patch.pkg, pass 1 the add-ons (ac) next to their game. */
+static int adopt_dir_pass(const char *root, const char *dir, int pass) {
     int moved = 0;
     DIR *d = opendir(dir);
     if (!d)
         return 0;
     struct dirent *e;
     char path[PATH_MAX], dst[PATH_MAX];
-    for (int pass = 0; pass < 2; pass++, rewinddir(d)) {
-    if (pass == 1)
-        g_lib_sig = lib_signature(root); /* games moved in pass 0 count */
     while ((e = readdir(d))) {
         size_t n = strlen(e->d_name);
         if (n < 5 || strcasecmp(e->d_name + n - 4, ".pkg"))
@@ -1906,8 +1902,56 @@ static int adopt_dir_pkgs(const char *root, const char *dir) {
             moved++;
         }
     }
-    }
     closedir(d);
+    return moved;
+}
+
+#define MAX_SCAN_DIRS 256
+
+/* Folders of a scan folder that are never looked into: the library itself (ps4, the same
+ * folder as the console's PS4 on exFAT), hidden ones and Windows' own. */
+static int skip_subdir(const char *name) {
+    return name[0] == '.' || !strcasecmp(name, "ps4") || !strcasecmp(name, "$RECYCLE.BIN") ||
+           !strcasecmp(name, "System Volume Information");
+}
+
+/* Adds the subfolders of dir to dirs (n so far, max MAX_SCAN_DIRS). */
+static void add_subdirs(const char *dir, char (*dirs)[PATH_MAX], int *n) {
+    DIR *d = opendir(dir);
+    struct dirent *e;
+    while (d && (e = readdir(d)) && *n < MAX_SCAN_DIRS) {
+        char p[PATH_MAX];
+        struct stat st;
+        snprintf(p, sizeof(p), "%s/%s", dir, e->d_name);
+        if (!skip_subdir(e->d_name) && !lstat(p, &st) && S_ISDIR(st.st_mode))
+            snprintf(dirs[(*n)++], PATH_MAX, "%s", p);
+    }
+    if (d)
+        closedir(d);
+}
+
+/* The pkgs of a scan folder and of its subfolders two levels down (Game/, Update/ and
+ * DLC/ in a folder per game): games and updates of all of them first, so an add-on in
+ * a sibling folder finds its game. Subfolders left empty are removed, the scan folder
+ * never. */
+static int adopt_dir_pkgs(const char *root, const char *dir) {
+    char (*dirs)[PATH_MAX] = mem_alloc(sizeof(*dirs) * MAX_SCAN_DIRS);
+    if (!dirs)
+        return 0;
+    int n = 0, moved = 0;
+    snprintf(dirs[n++], PATH_MAX, "%s", dir);
+    add_subdirs(dir, dirs, &n);
+    for (int i = 1, first_level = n; i < first_level; i++)
+        add_subdirs(dirs[i], dirs, &n);
+    for (int pass = 0; pass < 2; pass++) {
+        if (pass == 1)
+            g_lib_sig = lib_signature(root); /* games moved in pass 0 count */
+        for (int i = 0; i < n; i++)
+            moved += adopt_dir_pass(root, dirs[i], pass);
+    }
+    for (int i = n - 1; moved && i > 0; i--)
+        rmdir(dirs[i]); /* only an empty folder goes */
+    mem_free(dirs);
     return moved;
 }
 
