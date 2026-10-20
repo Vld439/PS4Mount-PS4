@@ -315,7 +315,12 @@ $('summary').addEventListener('click', function (e) {
 });
 
 function load() {
-  api('/api/games').then(function (j) { setLang(j.lang); games = j.games; $('ver').textContent = j.version; render(); })
+  api('/api/games').then(function (j) {
+    /* a new PS4Mount loaded while this page was open: its own page, not this one */
+    if (load.version && j.version !== load.version) { location.reload(); return; }
+    load.version = j.version;
+    setLang(j.lang); games = j.games; $('ver').textContent = j.version; render();
+  })
     .catch(function (e) { toast(t('Could not read the list: {0}', e.message)); });
 }
 

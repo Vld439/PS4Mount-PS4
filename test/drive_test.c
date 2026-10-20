@@ -910,6 +910,14 @@ int main(void) {
     wait_idle();
     usleep(200000);
     CHECK(g_revoked_calls == 1);
+    /* connected again: the old "disconnected" result is not shown any more */
+    g_token_polls = 0;
+    CHECK(drive_connect(msg, sizeof(msg)) == 0);
+    wait_idle();
+    result(res, sizeof(res), &ok);
+    CHECK(ok && !strstr(res, "disconnected"));
+    CHECK(drive_disconnect(msg, sizeof(msg)) == 0);
+    wait_idle();
     b = status();
     CHECK(strstr((char *)b.data, "\"connected\":false"));
     buf_free(&b);

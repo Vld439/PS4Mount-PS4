@@ -425,6 +425,8 @@ static void login_poll(void) {
         g_access_until = time(NULL) + jv_get_int(v, "expires_in", 3600);
         g_root[0] = g_email[0] = 0;
         g_login = 0;
+        g_result[0] = 0; /* "disconnected" and the like belong to the account before */
+        g_result_ok = 1;
         queue_locked(OP_LIST, "", "");
     } else if (!strcmp(e, "authorization_pending")) {
         ;

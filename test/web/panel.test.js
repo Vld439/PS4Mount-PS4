@@ -14,13 +14,14 @@ const GAMES = [
   { title_id: 'CUSA00069', name: 'Rayman Legends', version: '', has_patch: false, size: 0, state: 'offline', mount: '', source: '/mnt/usb1/ps4/CUSA00069', dlc: 0, update_issue: '', content_id: '', game_version: '', system_ver: '', storage: 'usb1' }];
 const CFG = { batch: true, batch_size: 5, dlc: true, restore_batch: 5, max_restore_batch: 10, paths: ['/'] };
 let REPLY_LANG; // the language the console reports (undefined: none, English)
+let GAMES_VERSION = 'PS4Mount test';
 let DRIVE = { configured: false }; // GET /api/drive (an object: the tests change it)
 const DESTS = { dests: [{ id: 'usb0', label: 'usb0', folder: '/mnt/usb0/PS4Mount', free: 5e11, fits: true }] };
 function reply(url) {
   if (url === '/api/drive') return DRIVE;
   if (url === '/api/dests') return DESTS;
   return url.indexOf('/api/log') === 0 ? { log: 'a\nb' } : url.indexOf('/api/config') === 0 ? CFG :
-    url.indexOf('/api/games') === 0 ? { version: 'PS4Mount test', lang: REPLY_LANG, games: GAMES } : { ok: true, message: 'ok ' + url };
+    url.indexOf('/api/games') === 0 ? { version: GAMES_VERSION, lang: REPLY_LANG, games: GAMES } : { ok: true, message: 'ok ' + url };
 }
 const tick = () => new Promise(r => setTimeout(r, 30));
 const ok = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) process.exitCode = 1; };
@@ -267,6 +268,20 @@ function tKeys(file) {
   // the settings have the internal storage switch
   d.getElementById('settingsbtn').click(); await tick();
   ok(d.getElementById('s-internal') !== null, 'settings have the /data/pkg switch');
+
+  // a new PS4Mount loaded while the page is open: the page reloads itself
+  {
+    let reloaded = false;
+    const q = page('index.html', { dialog: true });
+    await tick();
+    try { Object.defineProperty(q.w.location, 'reload', { value: () => { reloaded = true; } }); } catch (e) { q.w.location.reload = () => { reloaded = true; }; }
+    q.w.load(); await tick();
+    ok(!reloaded, 'the same version: no reload');
+    const old = GAMES_VERSION; GAMES_VERSION = 'PS4Mount 9.9.9';
+    q.w.load(); await tick();
+    GAMES_VERSION = old;
+    ok(reloaded || q.nav.length > 0, 'another version: the page reloads');
+  }
 
   // --- Google Drive
   ok(d.getElementById('drivebtn').hidden, 'no Drive button when this build has no Drive');
