@@ -161,6 +161,14 @@ PS4Mount no trae credenciales de Google: cada usuario usa **las suyas**, que se 
 | --- | --- |
 | ![Pegar el ID y el secreto](docs/panel-drive-setup-es.png) | ![El código de conexión](docs/panel-drive-code-es.png) |
 
+En google.com/device (en el móvil o el PC):
+
+| 1. Escribe el código | 2. "Google no verificó esta app": **Continuar** |
+| --- | --- |
+| ![Escribir el código](docs/google-1-code-es.png) | ![El aviso de app no verificada](docs/google-2-unverified-es.png) |
+| **3. El permiso: solo los archivos que crea PS4Mount → Continuar** | **4. Listo: vuelve al panel** |
+| ![El permiso que pide PS4Mount](docs/google-3-access-es.png) | ![Dispositivo conectado](docs/google-4-done-es.png) |
+
 Ya está: el panel muestra tu correo y tu espacio. La conexión se guarda en la consola y sobrevive a los reinicios. Google puede pedir a las apps en estado "Prueba" que vuelvan a conectarse pasado un tiempo: si pasa, PS4Mount muestra **en la pantalla de la PS4** un código nuevo para escribir en google.com/device, y lo que estaba transfiriendo sigue después. **Desconectar** (en la ventana de Google Drive) quita el acceso en Google y lo borra de la consola; también puedes quitarlo desde tu cuenta de Google (Seguridad → Conexiones de terceros).
 
 ### Ajustes
@@ -392,6 +400,14 @@ PS4Mount ships no Google credentials: each user uses **their own**, which stay o
 | Pasting your client | The code for google.com/device |
 | --- | --- |
 | ![Pasting the ID and the secret](docs/panel-drive-setup.png) | ![The sign-in code](docs/panel-drive-code.png) |
+
+At google.com/device (on a phone or a computer; these are in Spanish, yours follow your Google language):
+
+| 1. Type the code | 2. "Google hasn't verified this app": **Continue** |
+| --- | --- |
+| ![Typing the code](docs/google-1-code-es.png) | ![The unverified app warning](docs/google-2-unverified-es.png) |
+| **3. The permission: only the files PS4Mount creates → Continue** | **4. Done: back to the panel** |
+| ![The permission PS4Mount asks for](docs/google-3-access-es.png) | ![Device connected](docs/google-4-done-es.png) |
 
 That is all: the panel shows your email and your space. The connection is kept on the console across restarts. Google may ask apps in "Testing" to connect again after a while: if it does, PS4Mount shows a new code **on the PS4's screen** to type at google.com/device, and whatever was transferring goes on after. **Disconnect** (in the Google Drive window) removes the access at Google and deletes it from the console; you can also remove it from your Google account (Security → Third-party connections).
 
