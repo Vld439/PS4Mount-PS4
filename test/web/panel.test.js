@@ -290,6 +290,7 @@ function tKeys(file) {
   DRIVE = Object.assign({}, DRIVE, { client: true, client_id: '123-abc.apps.googleusercontent.com' });
   w.loadDrive(); await tick();
   ok(d.getElementById('d-setup').hidden && !d.getElementById('d-connect').hidden && d.getElementById('d-client-id').textContent.includes('123-abc'), 'with a client: Connect, and which client');
+  ok(w.getComputedStyle(d.getElementById('d-setup')).display === 'none', 'and the form is really out of sight (a display rule does not win over hidden)');
   d.getElementById('d-cchange').click();
   ok(!d.getElementById('d-setup').hidden && d.getElementById('d-cid').value === '123-abc.apps.googleusercontent.com' && d.getElementById('d-csecret').value === '', 'Change: the form again, the secret not shown');
   w.renderDrive.editing = false; w.renderDrive();

@@ -120,7 +120,9 @@ Opcional. Tus juegos en **tu propio Google Drive**, para liberar espacio o tener
 - **Enviar a Drive**, en la ficha de un juego: sube ese juego.
 - **Google Drive** (esquina): tu cuenta, el espacio usado y los juegos que tienes en Drive, cada uno con **Descargar** (eliges la unidad: el USB o la memoria interna) y **Borrar de Drive** (va a la papelera de Drive; lo de la consola no se toca).
 
-Mientras transfiere, el panel muestra el juego, el porcentaje, la velocidad y el tiempo que queda, y la PS4 avisa en pantalla al empezar, al 25, 50 y 75 % y al terminar. **La consola no entra en reposo** mientras haya una transferencia, y puedes jugar o usar el panel a la vez. Si algo la corta (la red, detener PS4Mount, apagar), **sigue sola** desde donde iba la próxima vez que cargues PS4Mount. Cada archivo se comprueba con su MD5 al subir y al bajar: un archivo dañado nunca se da por bueno.
+![La ventana de Google Drive](docs/panel-drive-es.png)
+
+Mientras transfiere, el panel muestra el juego, el porcentaje, la velocidad y el tiempo que queda (es la barra de la [primera captura](#español)), y la PS4 avisa en pantalla al empezar, al 25, 50 y 75 % y al terminar. **La consola no entra en reposo** mientras haya una transferencia, y puedes jugar o usar el panel a la vez. Si algo la corta (la red, detener PS4Mount, apagar), **sigue sola** desde donde iba la próxima vez que cargues PS4Mount. Cada archivo se comprueba con su MD5 al subir y al bajar: un archivo dañado nunca se da por bueno.
 
 Al descargar, el juego llega a `PS4Mount/<Juego> [CUSAxxxxx]/` de la unidad elegida y PS4Mount lo añade solo (con el reinicio de siempre). Un juego que ya está en la biblioteca no se descarga encima.
 
@@ -142,6 +144,10 @@ PS4Mount no trae credenciales de Google: cada usuario usa **las suyas**, que se 
 5. **Público** → **Usuarios de prueba** → **Add users** → tu correo de Google → **Guardar**. (La app se queda en estado "Prueba": no hace falta publicarla ni la sección de marca.)
 6. *(Opcional)* **Acceso a los datos** → **Agregar o quitar permisos** → marca `…/auth/drive.file` → **Actualizar** → **Guardar**.
 7. En el panel de PS4Mount: **Conectar Google Drive** → pega el ID y el secreto → **Guardar** → **Conectar**. Sale un código: en el móvil o el PC abre **google.com/device**, escríbelo con la cuenta de prueba y acepta. Google avisa de que la app no está verificada: es tu propia app, pulsa **Continuar**.
+
+| Pegar tu cliente | El código para google.com/device |
+| --- | --- |
+| ![Pegar el ID y el secreto](docs/panel-drive-setup-es.png) | ![El código de conexión](docs/panel-drive-code-es.png) |
 
 Ya está: el panel muestra tu correo y tu espacio. La conexión se guarda en la consola y sobrevive a los reinicios. Google puede pedir a las apps en estado "Prueba" que vuelvan a conectarse pasado un tiempo: si pasa, PS4Mount muestra **en la pantalla de la PS4** un código nuevo para escribir en google.com/device, y lo que estaba transfiriendo sigue después. **Desconectar** (en la ventana de Google Drive) quita el acceso en Google y lo borra de la consola; también puedes quitarlo desde tu cuenta de Google (Seguridad → Conexiones de terceros).
 
@@ -334,7 +340,9 @@ Optional. Your games in **your own Google Drive**, to free space or keep them sa
 - **Send to Drive**, on a game's page: uploads that game.
 - **Google Drive** (corner): your account, the space used and the games you have in Drive, each with **Download** (pick the drive: the USB drive or the console's storage) and **Delete from Drive** (to Drive's trash; nothing on the console is touched).
 
-While it transfers, the panel shows the game, the percentage, the speed and the time left, and the PS4 tells on its screen when it starts, at 25, 50 and 75% and when it ends. **The console does not go to rest mode** while a transfer runs, and you can play or use the panel meanwhile. If something cuts it (the network, stopping PS4Mount, a power off), **it goes on by itself** from where it was the next time PS4Mount loads. Every file is checked with its MD5 on the way up and down: a damaged file is never taken as good.
+![The Google Drive window](docs/panel-drive.png)
+
+While it transfers, the panel shows the game, the percentage, the speed and the time left (the bar in the [first screenshot](#english)), and the PS4 tells on its screen when it starts, at 25, 50 and 75% and when it ends. **The console does not go to rest mode** while a transfer runs, and you can play or use the panel meanwhile. If something cuts it (the network, stopping PS4Mount, a power off), **it goes on by itself** from where it was the next time PS4Mount loads. Every file is checked with its MD5 on the way up and down: a damaged file is never taken as good.
 
 A download arrives in `PS4Mount/<Game> [CUSAxxxxx]/` of the chosen drive and PS4Mount adds it by itself (with the usual restart). A game already in the library is not downloaded over itself.
 
@@ -356,6 +364,10 @@ PS4Mount ships no Google credentials: each user uses **their own**, which stay o
 5. **Audience** → **Test users** → **Add users** → your Google email → **Save**. (The app stays in "Testing": it does not need publishing or the branding section.)
 6. *(Optional)* **Data Access** → **Add or remove scopes** → tick `…/auth/drive.file` → **Update** → **Save**.
 7. In PS4Mount's panel: **Connect Google Drive** → paste the ID and the secret → **Save** → **Connect**. A code shows up: on your phone or computer open **google.com/device**, type it with the test account and allow it. Google warns that the app is not verified: it is your own app, click **Continue**.
+
+| Pasting your client | The code for google.com/device |
+| --- | --- |
+| ![Pasting the ID and the secret](docs/panel-drive-setup.png) | ![The sign-in code](docs/panel-drive-code.png) |
 
 That is all: the panel shows your email and your space. The connection is kept on the console across restarts. Google may ask apps in "Testing" to connect again after a while: if it does, PS4Mount shows a new code **on the PS4's screen** to type at google.com/device, and whatever was transferring goes on after. **Disconnect** (in the Google Drive window) removes the access at Google and deletes it from the console; you can also remove it from your Google account (Security → Third-party connections).
 

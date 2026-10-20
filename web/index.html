@@ -50,7 +50,8 @@ pre{white-space:pre-wrap;font-size:12px;max-height:60vh;overflow:auto;background
 form.settings{display:flex;flex-direction:column;gap:14px}
 form.settings label{display:flex;flex-direction:column;gap:6px}
 form.settings label.check{flex-direction:row;align-items:center;gap:10px}
-form.settings textarea,form.settings input[type=number],form.settings input[type=text]{background:#0b0d11;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+a{color:#8fb4ff}
+form.settings textarea,form.settings input[type=number],form.settings input[type=text],form.settings input[type=password]{background:#0b0d11;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
 form.settings textarea{min-height:90px;resize:vertical;font-family:ui-monospace,Consolas,monospace}
 form.settings .hint{color:var(--muted);font-size:13px}
 form.settings .row{display:flex;gap:8px;justify-content:flex-end}
@@ -74,7 +75,7 @@ form.settings input.num{width:6em}
 .bad{color:#ff8a80;font-size:13px;background:#3a1d1b;border:1px solid #5c2c28;border-radius:8px;padding:6px 8px;margin-top:6px}
 progress{width:100%;height:10px;margin-top:8px;accent-color:var(--accent)}
 .sendbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
-.sendbar select{background:#0b0d11;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+#d-dest,.sendbar select{background:#0b0d11;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
 button.small{padding:5px 10px;font-size:13px}
 .gd{display:inline-flex;align-items:center;gap:6px}
 .gd svg{width:16px;height:16px}
@@ -88,6 +89,9 @@ button.small{padding:5px 10px;font-size:13px}
 .quota div{height:100%;background:var(--accent)}
 .b-drive{position:absolute;right:10px;top:10px;padding:3px 8px;border-radius:999px;font-size:12px;font-weight:600;background:#1a73e8}
 #toast{position:fixed;right:20px;bottom:20px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 16px;display:none;max-width:420px}
+/* last: over any display rule (form.settings is flex), also where !important or
+ * specificity are not applied */
+[hidden],form.settings[hidden]{display:none!important}
 </style>
 </head>
 <body>
@@ -177,10 +181,10 @@ button.small{padding:5px 10px;font-size:13px}
     <div class="note">First, your own Google client (once). PS4Mount comes with none: yours stays on this console only.</div>
     <ol class="meta" style="margin:0;padding-left:20px;line-height:1.6">
       <li>Open <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a>, create a project and enable the Google Drive API.</li>
-      <li>In Google Auth Platform (OAuth consent screen): audience External, add the scope …/auth/drive.file, and publish the app (In production).</li>
+      <li>In Google Auth Platform (OAuth consent screen): audience External, and add your Google email in Audience → Test users (the app stays in Testing).</li>
       <li>In Clients (Credentials), create an OAuth client of type TVs and Limited Input devices, and copy its client ID and secret here.</li>
     </ol>
-    <label>Client ID<input type="text" id="d-cid" spellcheck="false" autocomplete="off" placeholder="123456789-abc.apps.googleusercontent.com"></label>
+    <label>Client ID<input type="text" id="d-cid" spellcheck="false" autocomplete="off" autofocus placeholder="123456789-abc.apps.googleusercontent.com"></label>
     <label>Client secret<input type="password" id="d-csecret" spellcheck="false" autocomplete="off"></label>
     <div class="row"><button type="submit" class="primary" id="d-csave">Save</button></div>
   </form>

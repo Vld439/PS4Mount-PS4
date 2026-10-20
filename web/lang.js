@@ -80,8 +80,8 @@ var LANGS = {
       'Primero, tu propio cliente de Google (una sola vez). PS4Mount no trae ninguno: el tuyo se queda solo en esta consola.',
     'Open': 'Abre',
     ', create a project and enable the Google Drive API.': ', crea un proyecto y activa la Google Drive API.',
-    'In Google Auth Platform (OAuth consent screen): audience External, add the scope …/auth/drive.file, and publish the app (In production).':
-      'En Google Auth Platform (pantalla de consentimiento OAuth): público Externo, añade el permiso …/auth/drive.file y publica la app (En producción).',
+    'In Google Auth Platform (OAuth consent screen): audience External, and add your Google email in Audience → Test users (the app stays in Testing).':
+      'En Google Auth Platform (pantalla de consentimiento OAuth): público Externo, y añade tu correo de Google en Público → Usuarios de prueba (la app se queda en Prueba).',
     'In Clients (Credentials), create an OAuth client of type TVs and Limited Input devices, and copy its client ID and secret here.':
       'En Clientes (Credenciales), crea un cliente OAuth de tipo TV y dispositivos de entrada limitada, y copia aquí su ID de cliente y su secreto.',
     'Client ID': 'ID de cliente',
