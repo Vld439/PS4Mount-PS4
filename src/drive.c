@@ -1418,6 +1418,15 @@ static void run_download(const char *tid, const char *dest) {
             g_total = rem[i].size;
             pthread_mutex_unlock(&g_mu);
             snprintf(part, sizeof(part), "%.3900s/%.127s.part", parts, rem[i].id);
+            /* already here whole (a download asked for twice, before the scan took it) */
+            char here[PATH_MAX];
+            struct stat hs;
+            snprintf(here, sizeof(here), "%.3800s/%.90s", final_dir, rem[i].name);
+            if (!stat(here, &hs) && (uint64_t)hs.st_size == rem[i].size) {
+                printf("[drive] %s: %s is already in %s\n", tid, rem[i].name, final_dir);
+                file_done(rem[i].size);
+                continue;
+            }
             printf("[drive] %s: downloading %s (%llu bytes) into %s\n", tid, rem[i].name, (unsigned long long)rem[i].size, part);
             if (download_file(&rem[i], part, err, sizeof(err)))
                 goto fail;
@@ -1570,6 +1579,8 @@ static void queue_locked(int op, const char *tid, const char *dest) {
     for (int i = 0; i < g_njobs; i++)
         if (g_jobs[i].op == op && !strcmp(g_jobs[i].tid, tid) && !strcmp(g_jobs[i].dest, dest))
             return; /* already waiting */
+    if (tid[0] && g_busy && g_op == op && !strcmp(g_cur_tid, tid) && op != OP_LIST)
+        return; /* that one is running now (a second press of the same button) */
     if (g_njobs == MAX_JOBS)
         return;
     job_t *j = &g_jobs[g_njobs++];

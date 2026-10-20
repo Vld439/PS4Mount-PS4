@@ -718,6 +718,27 @@ int main(void) {
         wait_idle();
     }
 
+    printf("== the same game asked for twice is downloaded once\n");
+    {
+        char dir4[200];
+        snprintf(dir4, sizeof(dir4), "%s/twice", g_root);
+        mkdir(dir4, 0777);
+        snprintf(g_dest, sizeof(g_dest), "%s", dir4);
+        g_ranges = 0;
+        CHECK(drive_download("CUSA00001", "usb0", msg, sizeof(msg)) == 0);
+        usleep(100000);
+        CHECK(drive_download("CUSA00001", "usb0", msg, sizeof(msg)) == 0); /* pressed again while it runs */
+        wait_idle();
+        CHECK(g_ranges == 6 + 3 + 1);
+        /* asked again once done, before the scan took the files: nothing is fetched again */
+        g_ranges = 0;
+        CHECK(drive_download("CUSA00001", "usb0", msg, sizeof(msg)) == 0);
+        wait_idle();
+        CHECK(g_ranges == 0);
+        snprintf(p, sizeof(p), "%s/Test Game [CUSA00001]/game (1).pkg", dir4);
+        CHECK(access(p, F_OK) != 0); /* no second copy */
+    }
+
     printf("== a download that arrives damaged is not kept\n");
     g_damage_download = 1;
     snprintf(p, sizeof(p), "%s/other", g_root);
