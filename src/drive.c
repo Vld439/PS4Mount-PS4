@@ -821,9 +821,6 @@ static int hash_range_r(int fd, br_md5_context *c, uint64_t from, uint64_t to, u
     return 0;
 }
 
-static int hash_range(int fd, br_md5_context *c, uint64_t from, uint64_t to, uint8_t *buf, size_t bn) {
-    return hash_range_r(fd, c, from, to, buf, bn, 0);
-}
 
 static int upload_file(const drive_file_t *f, const char *parent, const char *tid, const char *title, char *err, size_t n) {
     char url[2048];
@@ -1080,88 +1077,106 @@ out:
 
 /* The console's network gives one connection about 1.6 MB/s from the internet whatever the
  * line, and several together add up (8: ~13 MB/s on a 13.52 PS4): a file comes in blocks,
- * DL_THREADS at a time, each written where it goes. <part>.map says which blocks are in,
- * so a cut download goes on with the missing ones. */
-size_t g_drive_block = 32u << 20;
+ * DL_THREADS at a time. Each block arrives in memory and the blocks are written in order:
+ * written out of order, exFAT fills the gap before a block with zeros first, which held a
+ * download at 0.8 MB/s. In order, the MD5 is made as it goes and a cut download goes on
+ * from the end of its part file. */
+size_t g_drive_block = 8u << 20;
 #define DL_THREADS 8
+#define DL_SLOTS (DL_THREADS + 4) /* blocks that may wait in memory for an earlier one */
 
 typedef struct {
     const remote_file_t *f;
     int fd;
-    char map[PATH_MAX + 8];
-    uint8_t *state; /* per block: 0 to get, 1 being got, 2 in */
-    uint64_t nblocks, have;
+    uint64_t nblocks, next, written; /* next block to fetch; blocks written, in order */
+    uint8_t *buf[DL_SLOTS];
+    int ready[DL_SLOTS];
+    size_t len[DL_SLOTS];
+    uint64_t inflight; /* bytes in memory not written yet */
+    br_md5_context md5;
     pthread_mutex_t mu;
-    int fails, stop;
+    pthread_cond_t cv;
+    int fails, stop, slots;
     char err[512];
 } dl_t;
 
 typedef struct {
     dl_t *d;
-    uint64_t at, end;
+    uint8_t *buf;
+    size_t at, want;
 } piece_t;
 
-static void dl_progress(dl_t *d, uint64_t add) {
-    pthread_mutex_lock(&d->mu);
-    d->have += add;
-    uint64_t h = d->have;
-    pthread_mutex_unlock(&d->mu);
-    progress(h);
+static uint64_t dl_have_locked(const dl_t *d) {
+    uint64_t w = d->written * g_drive_block;
+    return (w < d->f->size ? w : d->f->size) + d->inflight;
 }
 
 static int piece_sink(void *ctx, const uint8_t *p, size_t len) {
     piece_t *pc = ctx;
-    if (len > pc->end - pc->at)
+    if (len > pc->want - pc->at)
         return -1; /* more than the range asked: a server that ignored it */
-    while (len) {
-        ssize_t w = pwrite(pc->d->fd, p, len, (off_t)pc->at);
-        if (w <= 0)
-            return -1;
-        pc->at += (uint64_t)w;
-        p += w;
-        len -= (size_t)w;
-        dl_progress(pc->d, (uint64_t)w);
-    }
-    return g_cancel || g_quit || pc->d->stop;
+    memcpy(pc->buf + pc->at, p, len);
+    pc->at += len;
+    dl_t *d = pc->d;
+    pthread_mutex_lock(&d->mu);
+    d->inflight += len;
+    uint64_t h = dl_have_locked(d);
+    pthread_mutex_unlock(&d->mu);
+    progress(h);
+    return g_cancel || g_quit || d->stop;
 }
 
-static void map_save(dl_t *d) {
-    char *m = mem_alloc(d->nblocks + 1);
-    if (!m)
-        return;
-    for (uint64_t i = 0; i < d->nblocks; i++)
-        m[i] = d->state[i] == 2 ? '1' : '0';
-    int fd = open(d->map, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-    if (fd >= 0) {
-        (void)!write(fd, m, d->nblocks);
-        close(fd);
+/* Writes the blocks that are next in order (with d->mu held). */
+static void dl_flush_locked(dl_t *d) {
+    for (;;) {
+        int s = (int)(d->written % (uint64_t)d->slots);
+        if (d->written >= d->nblocks || !d->ready[s] || d->stop)
+            return;
+        size_t len = d->len[s], o = 0;
+        off_t at = (off_t)(d->written * g_drive_block);
+        while (o < len) {
+            ssize_t w = pwrite(d->fd, d->buf[s] + o, len - o, at + (off_t)o);
+            if (w <= 0) {
+                d->stop = 1;
+                snprintf(d->err, sizeof(d->err), TR("write failed (%s): is the drive full?", "falló la escritura (%s): ¿está llena la unidad?"),
+                         strerror(errno));
+                pthread_cond_broadcast(&d->cv);
+                return;
+            }
+            o += (size_t)w;
+        }
+        br_md5_update(&d->md5, d->buf[s], len);
+        d->ready[s] = 0;
+        d->inflight -= len;
+        d->written++;
+        pthread_cond_broadcast(&d->cv);
     }
-    mem_free(m);
 }
 
 static void *dl_worker(void *arg) {
     dl_t *d = arg;
     for (;;) {
         pthread_mutex_lock(&d->mu);
-        uint64_t b = 0;
-        while (b < d->nblocks && d->state[b])
-            b++;
-        int stop = d->stop || g_cancel || g_quit;
-        if (b < d->nblocks && !stop)
-            d->state[b] = 1;
-        pthread_mutex_unlock(&d->mu);
-        if (b >= d->nblocks || stop)
+        /* no block further ahead than the slots can hold */
+        while (!d->stop && !g_cancel && !g_quit && d->next < d->nblocks && d->next >= d->written + (uint64_t)d->slots)
+            pthread_cond_wait(&d->cv, &d->mu);
+        if (d->stop || g_cancel || g_quit || d->next >= d->nblocks) {
+            pthread_mutex_unlock(&d->mu);
             return NULL;
+        }
+        uint64_t b = d->next++;
+        int s = (int)(b % (uint64_t)d->slots);
+        pthread_mutex_unlock(&d->mu);
         uint64_t from = b * g_drive_block, to = from + g_drive_block < d->f->size ? from + g_drive_block : d->f->size;
-        piece_t pc = {d, from, to};
+        piece_t pc = {d, d->buf[s], 0, (size_t)(to - from)};
         char url[512], range[80], err[512] = "";
         snprintf(url, sizeof(url), "%s/files/%s?alt=media", g_ep.api, d->f->id);
         http_resp_t r;
         int ok = 0, gone = 0;
         while (!ok && !d->stop && !g_cancel && !g_quit) {
-            snprintf(range, sizeof(range), "Range: bytes=%llu-%llu\r\n", (unsigned long long)pc.at,
+            snprintf(range, sizeof(range), "Range: bytes=%llu-%llu\r\n", (unsigned long long)(from + pc.at),
                      (unsigned long long)(to - 1));
-            uint64_t before = pc.at;
+            size_t before = pc.at;
             int q = api("GET", url, NULL, NULL, 0, range, piece_sink, &pc, &r, err, sizeof(err));
             if (!q && r.status != 206 && !(r.status == 200 && from == 0 && to == d->f->size)) {
                 gone = r.status == 404;
@@ -1172,7 +1187,7 @@ static void *dl_worker(void *arg) {
             }
             if (!q)
                 http_resp_free(&r);
-            ok = pc.at == to;
+            ok = pc.at == pc.want;
             if (ok || g_cancel || g_quit)
                 break;
             pthread_mutex_lock(&d->mu);
@@ -1181,6 +1196,7 @@ static void *dl_worker(void *arg) {
             if (gone || fails >= TRIES * 2) {
                 d->stop = 1;
                 snprintf(d->err, sizeof(d->err), "%s", gone ? TR("the file is no longer in Drive", "el archivo ya no está en Drive") : err);
+                pthread_cond_broadcast(&d->cv);
             }
             pthread_mutex_unlock(&d->mu);
             if (!d->stop && pc.at == before && pause_s(g_drive_retry_seconds << (fails < 5 ? fails : 5)))
@@ -1188,11 +1204,13 @@ static void *dl_worker(void *arg) {
         }
         pthread_mutex_lock(&d->mu);
         if (ok) {
-            d->state[b] = 2;
-            map_save(d);
+            d->len[s] = pc.want;
+            d->ready[s] = 1;
+            dl_flush_locked(d);
         } else {
-            d->state[b] = 0;
-            d->have -= pc.at - from; /* the block is fetched again whole */
+            d->inflight -= pc.at;
+            d->stop = 1; /* in order: a block that cannot come stops the file (it resumes later) */
+            pthread_cond_broadcast(&d->cv);
         }
         pthread_mutex_unlock(&d->mu);
     }
@@ -1202,53 +1220,68 @@ static int download_file(const remote_file_t *f, const char *part, char *err, si
     dl_t d;
     memset(&d, 0, sizeof(d));
     d.f = f;
-    snprintf(d.map, sizeof(d.map), "%s.map", part);
     d.nblocks = f->size ? (f->size + g_drive_block - 1) / g_drive_block : 0;
-    d.state = mem_alloc(d.nblocks + 1);
+    char map[PATH_MAX + 8];
+    snprintf(map, sizeof(map), "%s.map", part);
+    if (!access(map, F_OK)) {
+        /* a part file written out of order (0.2): not usable as a prefix */
+        unlink(map);
+        unlink(part);
+    }
     d.fd = open(part, O_RDWR | O_CREAT, 0666);
-    if (d.fd < 0 || !d.state) {
-        snprintf(err, n, TR("cannot write %s (%s)", "no se puede escribir %s (%s)"), part, d.fd < 0 ? strerror(errno) : "memory");
-        if (d.fd >= 0)
-            close(d.fd);
-        mem_free(d.state);
+    if (d.fd < 0) {
+        snprintf(err, n, TR("cannot write %s (%s)", "no se puede escribir %s (%s)"), part, strerror(errno));
         return -1;
     }
-    memset(d.state, 0, d.nblocks + 1);
-    pthread_mutex_init(&d.mu, NULL);
-    /* the blocks a cut download already has */
-    struct stat st;
-    char *m = mem_alloc(d.nblocks + 1);
-    int mfd = open(d.map, O_RDONLY);
-    if (m && mfd >= 0 && !fstat(d.fd, &st) && read(mfd, m, d.nblocks + 1) == (ssize_t)d.nblocks)
-        for (uint64_t i = 0; i < d.nblocks; i++)
-            if (m[i] == '1') {
-                d.state[i] = 2;
-                uint64_t from = i * g_drive_block;
-                d.have += (from + g_drive_block < f->size ? g_drive_block : f->size - from);
-            }
-    if (mfd >= 0)
-        close(mfd);
-    mem_free(m);
-    if (!d.have && ftruncate(d.fd, 0)) {
+    /* as many slots as memory gives, at least one a connection plus one */
+    for (d.slots = 0; d.slots < DL_SLOTS && d.slots < (int)d.nblocks + 1; d.slots++)
+        if (!(d.buf[d.slots] = mem_alloc(g_drive_block)))
+            break;
+    if (d.nblocks && d.slots < 2) {
+        for (int i = 0; i < d.slots; i++)
+            mem_free(d.buf[i]);
+        close(d.fd);
+        snprintf(err, n, "%s", TR("no memory for the download", "no hay memoria para la descarga"));
+        return -1;
     }
-    progress(d.have);
+    pthread_mutex_init(&d.mu, NULL);
+    pthread_cond_init(&d.cv, NULL);
+    br_md5_init(&d.md5);
+    int rc = 0;
+    /* a cut download: its whole blocks stay, read again for the MD5 */
+    struct stat st;
+    uint64_t keep = !fstat(d.fd, &st) ? (uint64_t)st.st_size / g_drive_block : 0;
+    if (keep > d.nblocks)
+        keep = 0;
+    if (ftruncate(d.fd, (off_t)(keep * g_drive_block)))
+        keep = 0;
+    if (keep) {
+        set_phase("checking");
+        if (hash_range_r(d.fd, &d.md5, 0, keep * g_drive_block, d.buf[0], g_drive_block, 0)) {
+            br_md5_init(&d.md5);
+            keep = 0;
+            if (ftruncate(d.fd, 0)) {
+            }
+        }
+        set_phase("receiving");
+    }
+    d.written = d.next = keep;
+    progress(dl_have_locked(&d));
     pthread_t th[DL_THREADS];
-    int nth = 0;
+    int nth = 0, want = d.slots - 1 < DL_THREADS ? d.slots - 1 : DL_THREADS;
     pthread_attr_t at;
     pthread_attr_init(&at);
     pthread_attr_setstacksize(&at, 256 << 10);
-    for (int i = 0; i < DL_THREADS && (uint64_t)i < d.nblocks; i++)
+    for (int i = 0; i < want && (uint64_t)i < d.nblocks - d.written; i++)
         if (!pthread_create(&th[nth], &at, dl_worker, &d))
             nth++;
     pthread_attr_destroy(&at);
-    if (!nth && d.nblocks)
+    if (!nth && d.written < d.nblocks)
         dl_worker(&d);
     for (int i = 0; i < nth; i++)
         pthread_join(th[i], NULL);
-    int rc = 0;
-    for (uint64_t i = 0; i < d.nblocks; i++)
-        if (d.state[i] != 2)
-            rc = -1;
+    if (d.written < d.nblocks)
+        rc = -1;
     if (g_cancel || g_quit)
         snprintf(err, n, "%s", TR("cancelled", "cancelado"));
     else if (rc)
@@ -1259,37 +1292,25 @@ static int download_file(const remote_file_t *f, const char *part, char *err, si
         rc = -1;
     }
     if (!rc && f->md5[0]) {
-        set_phase("checking");
-        /* the whole file read once more: what Drive has, byte for byte */
-        uint8_t *buf = mem_alloc(1u << 20);
-        br_md5_context c;
-        br_md5_init(&c);
         char got[33];
-        if (!buf || hash_range(d.fd, &c, 0, f->size, buf, 1u << 20)) {
-            snprintf(err, n, TR("%s cannot be read back", "%s no se puede volver a leer"), part);
-            rc = -1;
-        } else {
-            md5_hex(&c, got);
-            if (strcmp(got, f->md5)) {
-                snprintf(err, n, TR("%s arrived damaged (MD5 %s, should be %s): it will be downloaded again",
-                                    "%s llegó dañado (MD5 %s, debería ser %s): se descargará de nuevo"),
-                         f->name, got, f->md5);
-                unlink(d.map);
-                if (ftruncate(d.fd, 0)) {
-                }
-                rc = -1;
+        md5_hex(&d.md5, got);
+        if (strcmp(got, f->md5)) {
+            snprintf(err, n, TR("%s arrived damaged (MD5 %s, should be %s): it will be downloaded again",
+                                "%s llegó dañado (MD5 %s, debería ser %s): se descargará de nuevo"),
+                     f->name, got, f->md5);
+            if (ftruncate(d.fd, 0)) {
             }
+            rc = -1;
         }
-        mem_free(buf);
     }
     if (close(d.fd) && !rc) {
         snprintf(err, n, TR("cannot write %s (%s)", "no se puede escribir %s (%s)"), part, strerror(errno));
         rc = -1;
     }
-    if (!rc)
-        unlink(d.map);
+    for (int i = 0; i < d.slots; i++)
+        mem_free(d.buf[i]);
+    pthread_cond_destroy(&d.cv);
     pthread_mutex_destroy(&d.mu);
-    mem_free(d.state);
     return rc;
 }
 

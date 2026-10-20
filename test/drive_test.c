@@ -667,6 +667,30 @@ int main(void) {
     CHECK(access(p, F_OK) != 0); /* no part files left */
     CHECK(strstr(g_notified, "downloaded"));
 
+    printf("== a cut download goes on from the whole blocks it has\n");
+    {
+        gfile_t *g = remote("game.pkg");
+        char dir2[200], part[400];
+        snprintf(dir2, sizeof(dir2), "%s/resume", g_root);
+        mkdir(dir2, 0777);
+        snprintf(g_dest, sizeof(g_dest), "%s", dir2);
+        snprintf(part, sizeof(part), "%s/.ps4mount-drive", dir2);
+        mkdir(part, 0777);
+        snprintf(part, sizeof(part), "%s/.ps4mount-drive/%s.part", dir2, g->id);
+        FILE *pf = fopen(part, "wb");
+        fwrite(g->data, 1, (256u << 10) * 2, pf); /* two whole blocks */
+        fwrite("garbage", 1, 7, pf);               /* and the start of a third, not trusted */
+        fclose(pf);
+        g_ranges = 0;
+        CHECK(drive_download("CUSA00001", "usb0", msg, sizeof(msg)) == 0);
+        wait_idle();
+        result(res, sizeof(res), &ok);
+        CHECK(ok);
+        snprintf(p, sizeof(p), "%s/Test Game [CUSA00001]/game.pkg", dir2);
+        CHECK(same(p, g));
+        CHECK(g_ranges == 4 + 3 + 1); /* the game's 4 missing blocks, then the update and the add-on */
+    }
+
     printf("== a download that arrives damaged is not kept\n");
     g_damage_download = 1;
     snprintf(p, sizeof(p), "%s/other", g_root);
