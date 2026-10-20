@@ -166,6 +166,20 @@ PS4Mount no trae credenciales de Google: cada usuario usa **las suyas**, que se 
 
    </details>
 3. Menú ☰ → **APIs y servicios** → **Pantalla de consentimiento de OAuth** (Google Auth Platform) → **Comenzar**: nombre de la app **PS4Mount**, tu correo, público **Externo**, tu correo de contacto, acepta la política → **Crear**. No subas logo (con logo, Google pide verificar la app).
+
+   <details><summary>Ver capturas</summary>
+
+   ![Comenzar](docs/gcloud-3a-start-es.png)
+
+   ![Información de la app](docs/gcloud-3b-app-es.png)
+
+   ![Público: Usuarios externos](docs/gcloud-3c-audience-es.png)
+
+   ![Información de contacto](docs/gcloud-3d-contact-es.png)
+
+   ![Finalizar: aceptar la política](docs/gcloud-3e-finish-es.png)
+
+   </details>
 4. **Clientes** → **Crear cliente** → tipo **TV y dispositivos de entrada limitada** (no "App de escritorio" ni "Aplicación web": con esos la consola no puede iniciar sesión) → nombre **PS4Mount consola** → **Crear**. Copia el **ID de cliente** (termina en `.apps.googleusercontent.com`) y el **Secreto del cliente** (descarga el JSON: el secreto puede no volver a mostrarse).
 
    <details><summary>Ver capturas</summary>
@@ -442,6 +456,20 @@ PS4Mount ships no Google credentials: each user uses **their own**, which stay o
 
    </details>
 3. Menu ☰ → **APIs & Services** → **OAuth consent screen** (Google Auth Platform) → **Get started**: app name **PS4Mount**, your email, audience **External**, your contact email, agree to the policy → **Create**. Do not upload a logo (with one, Google asks to verify the app).
+
+   <details><summary>See the screenshots</summary>
+
+   ![Get started](docs/gcloud-3a-start-es.png)
+
+   ![App information](docs/gcloud-3b-app-es.png)
+
+   ![Audience: External](docs/gcloud-3c-audience-es.png)
+
+   ![Contact information](docs/gcloud-3d-contact-es.png)
+
+   ![Finish: agree to the policy](docs/gcloud-3e-finish-es.png)
+
+   </details>
 4. **Clients** → **Create client** → type **TVs and Limited Input devices** (not "Desktop app" or "Web application": with those the console cannot sign in) → name **PS4Mount console** → **Create**. Copy the **Client ID** (it ends in `.apps.googleusercontent.com`) and the **Client secret** (download the JSON: the secret may not be shown again).
 
    <details><summary>See the screenshots</summary>
