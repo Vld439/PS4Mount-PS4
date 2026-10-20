@@ -4,7 +4,7 @@ PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount
 
 ## 0.2.0-beta
 
-Google Drive backups. Tested on a PS4 on firmware 13.52 with GoldHEN, uploading a 7.2 GB game to Drive, deleting it from the console, downloading it back and playing it.
+Google Drive backups. Tested on a PS4 on firmware 13.52 with GoldHEN, uploading a 7.2 GB game to Drive, deleting it from the console, downloading it back and playing it, and a game with its update and add-on the same way.
 
 **Español**
 
@@ -14,6 +14,7 @@ Google Drive backups. Tested on a PS4 on firmware 13.52 with GoldHEN, uploading 
 - Una transferencia cortada (red, detener PS4Mount, apagar) sigue sola desde donde iba la próxima vez que cargas PS4Mount. Mientras transfiere, la consola no entra en reposo.
 - Progreso en el panel (porcentaje, velocidad, tiempo que queda) y avisos en la pantalla de la PS4 al empezar, cada 25 % y al terminar. Si Google pide conectar de nuevo, el código sale en la pantalla.
 - Política de privacidad: [PRIVACY.md](PRIVACY.md).
+- Arreglos: un DLC que el instalador rechaza ya no impide añadir su juego (se avisa una vez y se reintenta la próxima vez); los DLC se instalan después de registrar el juego; un juego bajado de Drive se añade una sola vez, con todos sus pkgs; el aviso de reiniciar se mantiene al recargar PS4Mount; todos los avisos salen en el idioma de la consola.
 
 **English**
 
@@ -23,6 +24,7 @@ Google Drive backups. Tested on a PS4 on firmware 13.52 with GoldHEN, uploading 
 - A cut transfer (network, stopping PS4Mount, a power off) goes on by itself from where it was the next time PS4Mount loads. While it transfers, the console does not go to rest mode.
 - Progress in the panel (percentage, speed, time left) and notices on the PS4's screen when it starts, every 25% and when it ends. If Google asks to connect again, the code shows on the screen.
 - Privacy policy: [PRIVACY.md](PRIVACY.md).
+- Fixes: an add-on the installer refuses no longer keeps its game out (one notice, retried the next time); add-ons are installed after their game is registered; a game downloaded from Drive is added once, with all its pkgs; the restart notice survives a reload of PS4Mount; every notice is in the console's language.
 
 Load `ps4mount-ps4.bin` with Payload Guest (copy it to `/data/payloads/`), or send `ps4mount-ps4.elf` to GoldHEN's payloader (port 9090).
 
