@@ -12,7 +12,7 @@ body:
     attributes:
       label: PS4Mount version
       description: Shown at the top of the web panel and in the startup notification.
-      placeholder: "0.1.0-beta"
+      placeholder: "0.2.0-beta"
     validations:
       required: true
   - type: input

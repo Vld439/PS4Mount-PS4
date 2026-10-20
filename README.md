@@ -20,7 +20,7 @@ PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount
 
 PS4Mount es un payload para una PS4 con jailbreak. Pones los pkgs del juego (y su actualización y sus DLC) en un USB o en la memoria de la consola, y PS4Mount los añade a la pantalla de inicio para jugarlos **desde el pkg, sin instalarlos**: no hay que esperar a una instalación ni gastar espacio en una segunda copia.
 
-Además tiene un **panel web** (desde el móvil o el PC) con tu biblioteca, portadas y fichas de cada juego, y **envío de juegos desde el PC por la red local**: cada pkg se comprueba antes de enviarlo, para no pasar horas enviando un juego que la consola no puede usar. Hay una versión sencilla para navegadores antiguos, sin probar todavía en el de la PS4.
+Además tiene un **panel web** (desde el móvil o el PC) con tu biblioteca, portadas y fichas de cada juego, **envío de juegos desde el PC por la red local** (cada pkg se comprueba antes de enviarlo, para no pasar horas enviando un juego que la consola no puede usar) y **copias en tu Google Drive**: la consola sube tus juegos a tu Drive y los vuelve a bajar, sin PC. Hay una versión sencilla del panel para navegadores antiguos, sin probar todavía en el de la PS4.
 
 Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificaciones están en **español e inglés**: salen en el idioma de la consola (inglés si no es ninguno de los dos), y se puede cambiar en **Ajustes → Idioma**.
 
@@ -40,6 +40,7 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 | DLC de más de 256 MB | ⚠️ se montan sin instalar, pero el sistema puede no mostrarlos |
 | **Enviar juegos desde el PC** por la red, con comprobación previa | ✅ probado (unos 16 MB/s por cable) |
 | **Borrar** un juego desde la consola | ✅ probado: borra también sus pkgs y libera el espacio |
+| **Copias en Google Drive**: subir y volver a bajar juegos desde la consola | ✅ probado: la subida va a la velocidad de tu conexión, la bajada a unos 15 MB/s (el máximo de la PS4) |
 | Un juego **nuevo**, o una actualización que llega después del juego | ⚠️ necesita **reiniciar la consola una vez**; después se juega siempre |
 | Otros firmwares | ⚠️ sin probar todavía |
 | Pkgs **retail** (no fake) | ❌ |
@@ -55,7 +56,7 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 ## Uso
 
 1. **Descarga** `ps4mount-ps4.bin` de [Releases](https://github.com/Vld439/PS4Mount-PS4/releases) y cópialo en **`/data/payloads/`** de la consola (por FTP, o como copies tus otros payloads).
-2. **Después de cada arranque**, abre **Payload Guest** y elige PS4Mount. Aparece la notificación `PS4Mount 0.1.0-beta en marcha. Panel en http://<IP de la PS4>:8770`.
+2. **Después de cada arranque**, abre **Payload Guest** y elige PS4Mount. Aparece la notificación `PS4Mount 0.2.0-beta en marcha. Panel en http://<IP de la PS4>:8770`.
 3. **Pon los juegos**, de una de estas formas:
    - **En un USB:** copia los pkgs en la carpeta **`PS4Mount`** del disco y conéctalo a la PS4. PS4Mount la crea la primera vez que ve el disco, o puedes crearla tú; solo usa lo que pongas ahí, el resto del disco no lo toca. Dentro puedes organizarlos en carpetas, hasta dos niveles: `PS4Mount/Overcooked/Game/`, `…/Update/`, `…/DLC/`.
    - **Desde el PC:** con **Enviar juegos** en el panel (ver más abajo).
@@ -96,7 +97,7 @@ Cada juego tiene una ficha (pulsa su portada) con su versión, el firmware que n
 
 ![Ficha de un juego](docs/panel-game-es.png)
 
-Botones: **Quitar de la biblioteca** (lo quita de la consola y conserva sus pkgs), **Añadir a la biblioteca**, **Buscar juegos**, **Enviar juegos**, **Ajustes**, **Log** y **Detener**.
+Botones: **Quitar de la biblioteca** (lo quita de la consola y conserva sus pkgs), **Añadir a la biblioteca**, **Buscar juegos**, **Enviar juegos**, **Ajustes**, **Log**, **Detener** y, en la esquina, **Conectar Google Drive** (ver más abajo).
 
 En la ficha del juego también está **Restaurar archivos originales**: deshace lo que PS4Mount hizo con sus archivos. Quita el juego de la consola y vuelve a dejar sus pkgs donde estaban, con el nombre que tenían (por ejemplo, `ps4/CUSA00092/app.pkg` vuelve a ser `PS4Mount/Flower/Flower.pkg`). Sirve para recuperar tus archivos tal como los tenías, por ejemplo para instalar el juego de la forma normal. No borra nada, y PS4Mount no vuelve a tomar esos pkgs.
 
@@ -110,6 +111,39 @@ En el panel, **Enviar juegos**: arrastra los pkgs y elige el destino (el USB o l
 - Al llegar, el juego se añade solo.
 
 ![Enviar juegos](docs/panel-send-es.png)
+
+### Copias en Google Drive
+
+Opcional. Tus juegos en **tu propio Google Drive**, para liberar espacio o tenerlos a salvo, y para volver a bajarlos a la consola cuando quieras. La consola sube y baja ella sola: no hace falta PC, el panel se puede usar desde el móvil.
+
+- **Copia en Drive** (arriba, una vez conectado): sube toda la biblioteca, cada juego con su actualización y sus DLC. Lo que ya está en Drive se salta.
+- **Enviar a Drive**, en la ficha de un juego: sube ese juego.
+- **Google Drive** (esquina): tu cuenta, el espacio usado y los juegos que tienes en Drive, cada uno con **Descargar** (eliges la unidad: el USB o la memoria interna) y **Borrar de Drive** (va a la papelera de Drive; lo de la consola no se toca).
+
+Mientras transfiere, el panel muestra el juego, el porcentaje, la velocidad y el tiempo que queda, y la PS4 avisa en pantalla al empezar, al 25, 50 y 75 % y al terminar. **La consola no entra en reposo** mientras haya una transferencia, y puedes jugar o usar el panel a la vez. Si algo la corta (la red, detener PS4Mount, apagar), **sigue sola** desde donde iba la próxima vez que cargues PS4Mount. Cada archivo se comprueba con su MD5 al subir y al bajar: un archivo dañado nunca se da por bueno.
+
+Al descargar, el juego llega a `PS4Mount/<Juego> [CUSAxxxxx]/` de la unidad elegida y PS4Mount lo añade solo (con el reinicio de siempre). Un juego que ya está en la biblioteca no se descarga encima.
+
+En Drive quedan en la carpeta `PS4Mount/<Juego> [CUSAxxxxx]/`, como `game.pkg`, `update.pkg` y `addon-….pkg`. PS4Mount usa el permiso `drive.file` de Google: **solo ve los archivos que él crea**, nada más de tu Drive (por eso tampoco ve pkgs que subas a Drive por tu cuenta). Ver [PRIVACY.md](PRIVACY.md).
+
+| | Velocidad medida (PS4 13.52, por cable) |
+| --- | --- |
+| Subida | La de tu conexión (2,8 MB/s en una línea de 2,8 MB/s: 7,2 GB en 45 min) |
+| Bajada | ~15 MB/s, el máximo de la PS4 (12 conexiones a la vez): 60 GB en ~1 h 10 min |
+
+#### Conectar tu Google Drive (una vez)
+
+PS4Mount no trae credenciales de Google: cada usuario usa **las suyas**, que se quedan solo en su consola. Se crean gratis en unos minutos:
+
+1. Abre **[console.cloud.google.com](https://console.cloud.google.com/)** con tu cuenta de Google, pulsa el selector de proyectos (arriba a la izquierda) → **Proyecto nuevo**, nombre **PS4Mount** → **Crear**. Comprueba que arriba está elegido PS4Mount.
+2. En el buscador de arriba escribe **Google Drive API** → **Habilitar**.
+3. Menú ☰ → **APIs y servicios** → **Pantalla de consentimiento de OAuth** (Google Auth Platform) → **Comenzar**: nombre de la app **PS4Mount**, tu correo, público **Externo**, tu correo de contacto, acepta la política → **Crear**. No subas logo (con logo, Google pide verificar la app).
+4. **Clientes** → **Crear cliente** → tipo **TV y dispositivos de entrada limitada** (no "App de escritorio" ni "Aplicación web": con esos la consola no puede iniciar sesión) → nombre **PS4Mount consola** → **Crear**. Copia el **ID de cliente** (termina en `.apps.googleusercontent.com`) y el **Secreto del cliente** (descarga el JSON: el secreto puede no volver a mostrarse).
+5. **Público** → **Usuarios de prueba** → **Add users** → tu correo de Google → **Guardar**. (La app se queda en estado "Prueba": no hace falta publicarla ni la sección de marca.)
+6. *(Opcional)* **Acceso a los datos** → **Agregar o quitar permisos** → marca `…/auth/drive.file` → **Actualizar** → **Guardar**.
+7. En el panel de PS4Mount: **Conectar Google Drive** → pega el ID y el secreto → **Guardar** → **Conectar**. Sale un código: en el móvil o el PC abre **google.com/device**, escríbelo con la cuenta de prueba y acepta. Google avisa de que la app no está verificada: es tu propia app, pulsa **Continuar**.
+
+Ya está: el panel muestra tu correo y tu espacio. La conexión se guarda en la consola y sobrevive a los reinicios. Google puede pedir a las apps en estado "Prueba" que vuelvan a conectarse pasado un tiempo: si pasa, PS4Mount muestra **en la pantalla de la PS4** un código nuevo para escribir en google.com/device, y lo que estaba transfiriendo sigue después. **Desconectar** (en la ventana de Google Drive) quita el acceso en Google y lo borra de la consola; también puedes quitarlo desde tu cuenta de Google (Seguridad → Conexiones de terceros).
 
 ### Ajustes
 
@@ -147,6 +181,9 @@ Mientras están abiertas las pantallas de borrado, PS4Mount desmonta las carpeta
 | El panel no abre | Usa la IP de la **consola**, con `http://` delante y `:8770`, desde la misma red. |
 | Un pkg no se añade | Mira el log (panel → **Log**): dice por qué (no es fake, necesita otro firmware, está incompleto…). |
 | El panel o las notificaciones salen en otro idioma | Cámbialo en **Ajustes → Idioma**. |
+| Google Drive: `invalid_client` al conectar | El cliente no es del tipo **TV y dispositivos de entrada limitada**, o el ID/secreto están mal copiados: crea uno de ese tipo y pégalo de nuevo. |
+| Google Drive: "acceso bloqueado" o "access_denied" | Añade tu correo en **Público → Usuarios de prueba** del proyecto. |
+| Google Drive: la descarga dice "llegó dañado" | PS4Mount ya lo ha intentado dos veces desde cero; vuelve a pulsar Descargar más tarde. |
 | Un juego falla o pierde partidas también instalado de forma normal | Es el pkg (o su backport), no PS4Mount: prueba otro dump. |
 
 Para informar de un problema, abre un [issue](https://github.com/Vld439/PS4Mount-PS4/issues) con la versión de PS4Mount, el firmware, el juego (`CUSA…`), qué pasó y el log (panel → **Log**, o `/data/ps4mount/log.txt` por FTP). No adjuntes pkgs ni enlaces a ellos.
@@ -159,6 +196,10 @@ Para informar de un problema, abre un [issue](https://github.com/Vld439/PS4Mount
 | `/data/ps4mount/config.txt` | Los ajustes |
 | `/data/ps4mount/stop` | Vacío: para PS4Mount |
 | `/data/ps4mount/klog_all` | Vacío: copia todo el log del sistema en el log de PS4Mount (diagnóstico) |
+| `/data/ps4mount/drive_client.txt` | Tu ID de cliente y secreto de Google |
+| `/data/ps4mount/drive.txt` | La conexión con tu cuenta de Google |
+| `/data/ps4mount/drive_queue.txt`, `drive_upload.txt` | Las transferencias de Drive a medias (para seguir con ellas) |
+| `<carpeta de búsqueda>/.ps4mount-drive/` | Descargas de Drive a medias |
 | `/system_data/ps4mount/` | Las carpetas internas de los juegos |
 
 ## Compilar
@@ -179,6 +220,7 @@ Necesitas el [ps4-payload-sdk](https://github.com/ps4-payload-dev/sdk) **compila
 - **[ps4-payload-sdk](https://github.com/ps4-payload-dev/sdk)** (John Törnblom, GPL-3.0-or-later): el toolchain y el runtime del payload.
 - **flatz**: la interfaz de BGFT documentada en [ps4_stub_lib_maker_v2](https://github.com/flatz/ps4_stub_lib_maker_v2), y **[ps4-ipi](https://github.com/0x199/ps4-ipi)** como referencia de su uso, para instalar los DLC.
 - **[SQLite](https://sqlite.org)** (dominio público): la lectura de la base de datos de la consola.
+- **[BearSSL](https://bearssl.org)** (Thomas Pornin, MIT): el TLS con el que la consola habla con Google Drive.
 - **[ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus)** (drakmor): inspiración del original para montar juegos desde USB.
 
 ## Licencia
@@ -192,7 +234,7 @@ GPL-3.0-or-later (ver [LICENSE](LICENSE)). Si publicas tu propia versión, conse
 
 PS4Mount is a payload for a jailbroken PS4. Put the game pkgs (with their update and add-ons) on a USB drive or in the console's storage, and PS4Mount adds them to the home screen so they are played **from the pkg, without installing them**: no install to wait for, no space spent on a second copy.
 
-It also has a **web panel** (from a phone or a computer) with your library, artwork and a page per game, and **sending games from a computer over the local network**: every pkg is checked before it is sent, so no one spends hours sending a game the console cannot use. There is a simpler page for older browsers, not yet tested on the PS4's own browser.
+It also has a **web panel** (from a phone or a computer) with your library, artwork and a page per game, **sending games from a computer over the local network** (every pkg is checked before it is sent, so no one spends hours sending a game the console cannot use) and **backups in your Google Drive**: the console uploads your games to your Drive and downloads them back, no computer needed. There is a simpler panel page for older browsers, not yet tested on the PS4's own browser.
 
 Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notifications are in **English and Spanish**: they follow the console's language (English for any other), and **Settings → Language** changes it.
 
@@ -212,6 +254,7 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 | Add-ons over 256 MB | ⚠️ mounted without installing, but the system may not show them |
 | **Sending games from a computer** over the network, checked first | ✅ tested (about 16 MB/s over a cable) |
 | **Deleting** a game on the console | ✅ tested: its pkgs are deleted too and the space is freed |
+| **Google Drive backups**: uploading games and downloading them back from the console | ✅ tested: uploads go at your line's speed, downloads at about 15 MB/s (the PS4's most) |
 | A **new** game, or an update that arrives after its game | ⚠️ needs **one console restart**; it plays every time after that |
 | Other firmwares | ⚠️ not tested yet |
 | **Retail** (not fake) pkgs | ❌ |
@@ -227,7 +270,7 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 ## Use
 
 1. **Download** `ps4mount-ps4.bin` from [Releases](https://github.com/Vld439/PS4Mount-PS4/releases) and copy it to **`/data/payloads/`** on the console (over FTP, or however you copy your other payloads).
-2. **After every boot**, open **Payload Guest** and pick PS4Mount. The notification `PS4Mount 0.1.0-beta running. Panel at http://<PS4 IP>:8770` shows up.
+2. **After every boot**, open **Payload Guest** and pick PS4Mount. The notification `PS4Mount 0.2.0-beta running. Panel at http://<PS4 IP>:8770` shows up.
 3. **Add games**, one of these ways:
    - **On a USB drive:** copy the pkgs to the **`PS4Mount`** folder of the drive and plug it into the PS4. PS4Mount creates the folder the first time it sees the drive, or you create it; only what you put there is used, the rest of the drive is left alone. Inside, they can be in folders, two levels down: `PS4Mount/Overcooked/Game/`, `…/Update/`, `…/DLC/`.
    - **From a computer:** with **Send games** in the panel (see below).
@@ -268,7 +311,7 @@ Each game has a page (click its artwork) with its version, the firmware it needs
 
 ![A game's page](docs/panel-game.png)
 
-Buttons: **Remove from library** (takes it off the console and keeps its pkgs), **Add to library**, **Scan for games**, **Send games**, **Settings**, **Log** and **Stop**.
+Buttons: **Remove from library** (takes it off the console and keeps its pkgs), **Add to library**, **Scan for games**, **Send games**, **Settings**, **Log**, **Stop** and, in the corner, **Connect Google Drive** (see below).
 
 A game's page also has **Restore original files**: it undoes what PS4Mount did to its files. It takes the game off the console and puts its pkgs back where they were, with the names they had (for example `ps4/CUSA00092/app.pkg` becomes `PS4Mount/Flower/Flower.pkg` again). It is there to get your files back as they were, for example to install the game the usual way. Nothing is deleted, and PS4Mount does not pick those pkgs up again.
 
@@ -282,6 +325,39 @@ In the panel, **Send games**: drop the pkgs and pick where they go (the USB driv
 - When it arrives, the game is added by itself.
 
 ![Sending games](docs/panel-send.png)
+
+### Google Drive backups
+
+Optional. Your games in **your own Google Drive**, to free space or keep them safe, and to download them back to the console whenever you want. The console uploads and downloads by itself: no computer needed, the panel works from a phone.
+
+- **Back up to Drive** (at the top, once connected): uploads the whole library, each game with its update and add-ons. What Drive already has is skipped.
+- **Send to Drive**, on a game's page: uploads that game.
+- **Google Drive** (corner): your account, the space used and the games you have in Drive, each with **Download** (pick the drive: the USB drive or the console's storage) and **Delete from Drive** (to Drive's trash; nothing on the console is touched).
+
+While it transfers, the panel shows the game, the percentage, the speed and the time left, and the PS4 tells on its screen when it starts, at 25, 50 and 75% and when it ends. **The console does not go to rest mode** while a transfer runs, and you can play or use the panel meanwhile. If something cuts it (the network, stopping PS4Mount, a power off), **it goes on by itself** from where it was the next time PS4Mount loads. Every file is checked with its MD5 on the way up and down: a damaged file is never taken as good.
+
+A download arrives in `PS4Mount/<Game> [CUSAxxxxx]/` of the chosen drive and PS4Mount adds it by itself (with the usual restart). A game already in the library is not downloaded over itself.
+
+In Drive they are in the folder `PS4Mount/<Game> [CUSAxxxxx]/`, as `game.pkg`, `update.pkg` and `addon-….pkg`. PS4Mount uses Google's `drive.file` permission: **it only sees the files it creates**, nothing else of your Drive (so it does not see pkgs you put in Drive yourself either). See [PRIVACY.md](PRIVACY.md).
+
+| | Speed measured (PS4 13.52, cable) |
+| --- | --- |
+| Upload | Your line's (2.8 MB/s on a 2.8 MB/s line: 7.2 GB in 45 min) |
+| Download | ~15 MB/s, the PS4's most (12 connections at once): 60 GB in ~1 h 10 min |
+
+#### Connecting your Google Drive (once)
+
+PS4Mount ships no Google credentials: each user uses **their own**, which stay on their console only. They are free and take a few minutes:
+
+1. Open **[console.cloud.google.com](https://console.cloud.google.com/)** with your Google account, click the project picker (top left) → **New project**, name **PS4Mount** → **Create**. Check that PS4Mount is the project chosen at the top.
+2. In the search box at the top type **Google Drive API** → **Enable**.
+3. Menu ☰ → **APIs & Services** → **OAuth consent screen** (Google Auth Platform) → **Get started**: app name **PS4Mount**, your email, audience **External**, your contact email, agree to the policy → **Create**. Do not upload a logo (with one, Google asks to verify the app).
+4. **Clients** → **Create client** → type **TVs and Limited Input devices** (not "Desktop app" or "Web application": with those the console cannot sign in) → name **PS4Mount console** → **Create**. Copy the **Client ID** (it ends in `.apps.googleusercontent.com`) and the **Client secret** (download the JSON: the secret may not be shown again).
+5. **Audience** → **Test users** → **Add users** → your Google email → **Save**. (The app stays in "Testing": it does not need publishing or the branding section.)
+6. *(Optional)* **Data Access** → **Add or remove scopes** → tick `…/auth/drive.file` → **Update** → **Save**.
+7. In PS4Mount's panel: **Connect Google Drive** → paste the ID and the secret → **Save** → **Connect**. A code shows up: on your phone or computer open **google.com/device**, type it with the test account and allow it. Google warns that the app is not verified: it is your own app, click **Continue**.
+
+That is all: the panel shows your email and your space. The connection is kept on the console across restarts. Google may ask apps in "Testing" to connect again after a while: if it does, PS4Mount shows a new code **on the PS4's screen** to type at google.com/device, and whatever was transferring goes on after. **Disconnect** (in the Google Drive window) removes the access at Google and deletes it from the console; you can also remove it from your Google account (Security → Third-party connections).
 
 ### Settings
 
@@ -320,6 +396,9 @@ While the delete screens are open, PS4Mount unmounts the game folders, so the sy
 | The panel does not open | Use the **console's** IP, with `http://` in front and `:8770`, from the same network. |
 | A pkg is not added | Read the log (panel → **Log**): it says why (not fake, needs another firmware, incomplete…). |
 | A game crashes or loses saves when installed the normal way too | It is the pkg (or its backport), not PS4Mount: try another dump. |
+| Google Drive: `invalid_client` when connecting | The client is not of type **TVs and Limited Input devices**, or the ID/secret were copied wrong: make one of that type and paste it again. |
+| Google Drive: "access blocked" or "access_denied" | Add your email in **Audience → Test users** of the project. |
+| Google Drive: a download says "arrived damaged" | PS4Mount already tried twice from the start; press Download again later. |
 
 To report a problem, open an [issue](https://github.com/Vld439/PS4Mount-PS4/issues) with the PS4Mount version, the firmware, the game (`CUSA…`), what happened and the log (panel → **Log**, or `/data/ps4mount/log.txt` over FTP). Do not attach pkgs or links to them.
 
@@ -331,6 +410,10 @@ To report a problem, open an [issue](https://github.com/Vld439/PS4Mount-PS4/issu
 | `/data/ps4mount/config.txt` | The settings |
 | `/data/ps4mount/stop` | Empty: stops PS4Mount |
 | `/data/ps4mount/klog_all` | Empty: copies the whole system log into PS4Mount's log (diagnosis) |
+| `/data/ps4mount/drive_client.txt` | Your Google client ID and secret |
+| `/data/ps4mount/drive.txt` | The connection with your Google account |
+| `/data/ps4mount/drive_queue.txt`, `drive_upload.txt` | Unfinished Drive transfers (to go on with them) |
+| `<scan folder>/.ps4mount-drive/` | Unfinished Drive downloads |
 | `/system_data/ps4mount/` | The games' internal folders |
 
 ## Building
@@ -351,6 +434,7 @@ You need the [ps4-payload-sdk](https://github.com/ps4-payload-dev/sdk) **built f
 - **[ps4-payload-sdk](https://github.com/ps4-payload-dev/sdk)** (John Törnblom, GPL-3.0-or-later): the toolchain and the payload runtime.
 - **flatz**: the BGFT interface documented in [ps4_stub_lib_maker_v2](https://github.com/flatz/ps4_stub_lib_maker_v2), and **[ps4-ipi](https://github.com/0x199/ps4-ipi)** as a reference for its use, to install add-ons.
 - **[SQLite](https://sqlite.org)** (public domain): reading the console's database.
+- **[BearSSL](https://bearssl.org)** (Thomas Pornin, MIT): the TLS the console talks to Google Drive with.
 - **[ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus)** (drakmor): the original's inspiration for mounting games from USB drives.
 
 ## License
