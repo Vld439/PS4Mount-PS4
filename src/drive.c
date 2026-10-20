@@ -1083,14 +1083,15 @@ out:
 
 /* --- downloads --- */
 
-/* The console's network gives one connection about 1.6 MB/s from the internet whatever the
- * line, and several together add up (8: ~13 MB/s on a 13.52 PS4): a file comes in blocks,
+/* The console's network gives one connection about 1.2-1.6 MB/s from the internet whatever
+ * the line, and several together add up to a ceiling of about 15 MB/s (a 13.52 PS4 on
+ * a 35 MB/s line: 8 connections 10.5, 12 15.0, 16 14.0, 24 14.1): a file comes in blocks,
  * DL_THREADS at a time. Each block arrives in memory and the blocks are written in order:
  * written out of order, exFAT fills the gap before a block with zeros first, which held a
  * download at 0.8 MB/s. In order, the MD5 is made as it goes and a cut download goes on
  * from the end of its part file. */
 size_t g_drive_block = 8u << 20;
-#define DL_THREADS 8
+#define DL_THREADS 12
 #define DL_SLOTS (DL_THREADS + 4) /* blocks that may wait in memory for an earlier one */
 #define DL_STALL 10
 
