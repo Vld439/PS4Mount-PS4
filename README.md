@@ -74,6 +74,14 @@ ps4/CUSAxxxxx/addcont/CUSAyyyyy/<LABEL>/ac.pkg  DLC
 
 Mantén esa estructura. Para añadir más juegos, vuelve a ponerlos en la carpeta de búsqueda.
 
+### En la consola
+
+El juego aparece en la pantalla de inicio como cualquier otro, y PS4Mount te va avisando de todo con notificaciones: al cargarse, al encontrar y añadir juegos, si falta el disco de un juego, al borrar uno y con las copias en Google Drive.
+
+![Rayman en la pantalla de inicio, con el aviso de PS4Mount](docs/console-home-es.jpg)
+
+![Las notificaciones de PS4Mount](docs/console-notices-es.jpg)
+
 ### Por qué hay que reiniciar una vez
 
 La consola solo inicia un juego cuando su servicio de descargas (BGFT) conoce la tarea del juego, y ese servicio solo las lee al arrancar. PS4Mount escribe la tarea al añadir el juego, así que el primer arranque del juego necesita un reinicio. Hemos probado a cerrar la sesión y a terminar una instalación real, y ninguna de las dos lo evita. Los DLC no necesitan reinicio.
@@ -293,6 +301,14 @@ ps4/CUSAxxxxx/addcont/CUSAyyyyy/<LABEL>/ac.pkg  add-on
 ```
 
 Keep this layout. To add more games, put them in the scan folder again.
+
+### On the console
+
+The game shows on the home screen like any other, and PS4Mount tells you everything with notifications: when it loads, when it finds and adds games, when a game's drive is missing, when one is deleted, and about the Google Drive backups (this console is in Spanish; they follow the console's language).
+
+![Rayman on the home screen, with PS4Mount's notice](docs/console-home-es.jpg)
+
+![PS4Mount's notifications](docs/console-notices-es.jpg)
 
 ### Why one restart
 
