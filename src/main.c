@@ -2574,8 +2574,9 @@ static void delete_game_files(const char *dir, const char *tid, const char *name
         unsigned long long n = tree_size(dir);
         rm_tree(dir);
         printf("[delete] %s: %s deleted (%llu bytes)\n", tid, dir, n);
-        notify(TR("%s deleted: %.1f GB freed on %s", "%s borrado: %.1f GB liberados en %s"), name, (double)n / 1e9,
-               root_label(root));
+        /* GB of 1024 MB, as the panel and the console's own screens count */
+        notify(TR("%s deleted: %.1f GB freed on %s", "%s borrado: %.1f GB liberados en %s"), name,
+               (double)n / 1073741824.0, root_label(root));
         return;
     }
     printf("[delete] %s: %s is not its library folder, nothing deleted\n", tid, dir);
