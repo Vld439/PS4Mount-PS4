@@ -805,6 +805,48 @@ int main(void) {
         CHECK(access(old, F_OK) != 0);
     }
 
+    printf("== a transfer cut by stopping PS4Mount goes on by itself at the next start\n");
+    {
+        char dir6[200], q[400], line[64] = "";
+        snprintf(dir6, sizeof(dir6), "%s/resume2", g_root);
+        mkdir(dir6, 0777);
+        snprintf(g_dest, sizeof(g_dest), "%s", dir6);
+        snprintf(q, sizeof(q), "%s/drive_queue.txt", state);
+        g_slow_ms = 200;
+        g_drive_block = 64u << 10;
+        CHECK(drive_download("CUSA00001", "usb0", msg, sizeof(msg)) == 0);
+        usleep(600000);
+        FILE *qf = fopen(q, "r");
+        CHECK(qf && fgets(line, sizeof(line), qf) && !strcmp(line, "download CUSA00001 usb0\n"));
+        if (qf)
+            fclose(qf);
+        drive_stop(); /* PS4Mount stops mid-download */
+        CHECK(access(q, F_OK) == 0); /* the queue stays for the next one */
+        g_slow_ms = 0;
+        g_notes[0] = 0;
+        drive_start(state, &ep, &host); /* the next PS4Mount */
+        wait_idle();
+        result(res, sizeof(res), &ok);
+        CHECK(ok && strstr(res, "was downloaded"));
+        CHECK(strstr(g_notes, "going on with 1 transfer(s)"));
+        snprintf(p, sizeof(p), "%s/Test Game [CUSA00001]/game.pkg", dir6);
+        CHECK(same(p, remote("game.pkg")));
+        CHECK(access(q, F_OK) != 0); /* done: out of the saved queue */
+        g_drive_block = 256u << 10;
+        /* a cancel takes it out too */
+        g_slow_ms = 200;
+        char dir7[200];
+        snprintf(dir7, sizeof(dir7), "%s/cancel", g_root);
+        mkdir(dir7, 0777);
+        snprintf(g_dest, sizeof(g_dest), "%s", dir7);
+        CHECK(drive_download("CUSA00001", "usb0", msg, sizeof(msg)) == 0);
+        usleep(300000);
+        CHECK(drive_cancel(msg, sizeof(msg)) == 0);
+        wait_idle();
+        g_slow_ms = 0;
+        CHECK(access(q, F_OK) != 0);
+    }
+
     printf("== a download that arrives damaged is tried once more, then not kept\n");
     g_ranges = 0;
     g_damage_download = 1;

@@ -63,7 +63,7 @@ static pthread_t g_thread;
 static int g_started, g_quit;
 static volatile int g_cancel;
 
-static char g_state_path[PATH_MAX], g_session_path[PATH_MAX], g_client_path[PATH_MAX];
+static char g_state_path[PATH_MAX], g_session_path[PATH_MAX], g_client_path[PATH_MAX], g_queue_path[PATH_MAX];
 /* the user's own OAuth client (Google Cloud, "TVs and limited input devices"): none ships
  * with PS4Mount; the secret never leaves the console's state folder */
 static char g_client_id[256], g_client_secret[128];
@@ -90,7 +90,7 @@ static int g_login_interval;
 static job_t g_jobs[MAX_JOBS];
 static int g_njobs;
 static int g_busy, g_op;
-static char g_cur_tid[10], g_cur_name[128], g_cur_file[96];
+static char g_cur_tid[10], g_cur_name[128], g_cur_file[96], g_cur_dest[16];
 static uint64_t g_done, g_total;
 static int g_file_i, g_file_n;
 static char g_result[512];
@@ -1591,6 +1591,67 @@ fail:
 
 /* --- the thread --- */
 
+/* The transfers of the queue (the running one first) to <state>/drive_queue.txt, so the
+ * next PS4Mount goes on with them: lines "upload CUSAxxxxx" and "download CUSAxxxxx usb0". */
+static void save_queue_locked(void) {
+    buf_t b = {0};
+    if (g_busy && (g_op == OP_UPLOAD || g_op == OP_DOWNLOAD))
+        buf_printf(&b, "%s %s %s\n", k_op_names[g_op], g_cur_tid, g_op == OP_DOWNLOAD ? g_cur_dest : "-");
+    for (int i = 0; i < g_njobs; i++)
+        if (g_jobs[i].op == OP_UPLOAD || g_jobs[i].op == OP_DOWNLOAD)
+            buf_printf(&b, "%s %s %s\n", k_op_names[g_jobs[i].op], g_jobs[i].tid,
+                       g_jobs[i].op == OP_DOWNLOAD ? g_jobs[i].dest : "-");
+    if (!b.len)
+        unlink(g_queue_path);
+    else {
+        int fd = open(g_queue_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        if (fd >= 0) {
+            (void)!write(fd, b.data, b.len);
+            close(fd);
+        }
+    }
+    buf_free(&b);
+}
+
+static int valid_tid(const char *t) {
+    if (strlen(t) != 9 || strncmp(t, "CUSA", 4))
+        return 0;
+    for (int i = 4; i < 9; i++)
+        if (t[i] < '0' || t[i] > '9')
+            return 0;
+    return 1;
+}
+
+static int valid_dest(const char *d) {
+    if (!d[0] || strlen(d) > 12)
+        return 0;
+    for (; *d; d++)
+        if (!((*d >= 'a' && *d <= 'z') || (*d >= '0' && *d <= '9')))
+            return 0;
+    return 1;
+}
+
+/* What the last PS4Mount left in its queue, back in this one's (with g_mu held). */
+static int load_queue_locked(void) {
+    FILE *f = fopen(g_queue_path, "r");
+    char line[128], op[16], tid[16], dest[32];
+    int n = 0;
+    while (f && fgets(line, sizeof(line), f)) {
+        if (sscanf(line, "%15s %15s %31s", op, tid, dest) != 3 || !valid_tid(tid))
+            continue;
+        if (!strcmp(op, "upload")) {
+            queue_locked(OP_UPLOAD, tid, "");
+            n++;
+        } else if (!strcmp(op, "download") && valid_dest(dest)) {
+            queue_locked(OP_DOWNLOAD, tid, dest);
+            n++;
+        }
+    }
+    if (f)
+        fclose(f);
+    return n;
+}
+
 static void queue_locked(int op, const char *tid, const char *dest) {
     for (int i = 0; i < g_njobs; i++)
         if (g_jobs[i].op == op && !strcmp(g_jobs[i].tid, tid) && !strcmp(g_jobs[i].dest, dest))
@@ -1603,6 +1664,8 @@ static void queue_locked(int op, const char *tid, const char *dest) {
     j->op = op;
     snprintf(j->tid, sizeof(j->tid), "%s", tid);
     snprintf(j->dest, sizeof(j->dest), "%s", dest);
+    if (op == OP_UPLOAD || op == OP_DOWNLOAD)
+        save_queue_locked();
     pthread_cond_signal(&g_cv);
 }
 
@@ -1666,6 +1729,7 @@ static void *worker(void *arg) {
         g_op = j.op;
         g_cancel = 0;
         snprintf(g_cur_tid, sizeof(g_cur_tid), "%s", j.tid);
+        snprintf(g_cur_dest, sizeof(g_cur_dest), "%s", j.dest);
         g_cur_name[0] = g_cur_file[0] = 0;
         g_done = g_total = 0;
         g_file_i = g_file_n = 0;
@@ -1704,6 +1768,10 @@ static void *worker(void *arg) {
             queue_locked(OP_LIST, "", "");
         g_busy = 0;
         g_cancel = 0;
+        /* done, failed for good or cancelled: out of the saved queue; cut by PS4Mount
+         * stopping: it stays there, for the next one */
+        if (!g_quit && (j.op == OP_UPLOAD || j.op == OP_DOWNLOAD))
+            save_queue_locked();
     }
     pthread_mutex_unlock(&g_mu);
     return NULL;
@@ -1736,6 +1804,7 @@ void drive_start(const char *state_dir, const drive_endpoints_t *ep, const drive
     snprintf(g_state_path, sizeof(g_state_path), "%s/drive.txt", state_dir);
     snprintf(g_session_path, sizeof(g_session_path), "%s/drive_upload.txt", state_dir);
     snprintf(g_client_path, sizeof(g_client_path), "%s/drive_client.txt", state_dir);
+    snprintf(g_queue_path, sizeof(g_queue_path), "%s/drive_queue.txt", state_dir);
     if (g_started)
         return;
     pthread_mutex_lock(&g_mu);
@@ -1750,8 +1819,23 @@ void drive_start(const char *state_dir, const drive_endpoints_t *ep, const drive
     if (!pthread_create(&g_thread, &at, worker, NULL)) {
         g_started = 1;
         pthread_mutex_lock(&g_mu);
-        if (g_refresh[0])
+        int resumed = 0;
+        if (g_refresh[0]) {
             queue_locked(OP_LIST, "", "");
+            resumed = load_queue_locked();
+        }
+        if (resumed) {
+            printf("[drive] %d transfer(s) left by the last run: going on with them\n", resumed);
+            if (g_host.notify) {
+                char m[200];
+                snprintf(m, sizeof(m), TR("Google Drive: going on with %d transfer(s) left unfinished",
+                                          "Google Drive: continuando %d transferencia(s) que quedaron a medias"),
+                         resumed);
+                pthread_mutex_unlock(&g_mu);
+                g_host.notify(m);
+                pthread_mutex_lock(&g_mu);
+            }
+        }
         pthread_mutex_unlock(&g_mu);
     }
     pthread_attr_destroy(&at);
@@ -1885,6 +1969,7 @@ int drive_disconnect(char *msg, size_t n) {
     pthread_mutex_unlock(&g_mu);
     disconnected(NULL);
     unlink(g_session_path);
+    unlink(g_queue_path);
     snprintf(msg, n, "%s", TR("Google Drive disconnected", "Google Drive desconectado"));
     set_result(1, "%s", msg);
     return 0;
@@ -1964,6 +2049,7 @@ int drive_cancel(char *msg, size_t n) {
             g_jobs[k++] = g_jobs[i];
     g_njobs = k;
     g_cancel = g_busy && g_op != OP_LIST;
+    save_queue_locked(); /* the running one goes from it when it ends */
     pthread_mutex_unlock(&g_mu);
     snprintf(msg, n, "%s", TR("Cancelled", "Cancelado"));
     return 0;
