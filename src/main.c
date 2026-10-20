@@ -3752,16 +3752,6 @@ void app_dests_json(buf_t *out) {
 
 /* --- Google Drive backups --- */
 
-/* The OAuth client of this build (build.sh takes them from the environment, CI from the
- * repository's secrets). For a "TVs and limited input devices" client Google does not
- * treat the secret as confidential: it ships in every copy of an app like this one. */
-#ifndef DRIVE_CLIENT_ID
-#define DRIVE_CLIENT_ID ""
-#endif
-#ifndef DRIVE_CLIENT_SECRET
-#define DRIVE_CLIENT_SECRET ""
-#endif
-
 /* The title of the pkg at path (the update's wins, as on the console); 0 when read. */
 static int pkg_title(const char *path, char *out, size_t n) {
     pkg_t *pkg = mem_alloc(sizeof(*pkg));
@@ -3877,7 +3867,7 @@ static void drive_notify(const char *msg) { notify("%s", msg); }
 static void drive_begin(void) {
     static const drive_host_t host = {drive_game_files, drive_library, drive_dest_dir, free_bytes, drive_downloaded,
                                       drive_notify};
-    drive_start(STATE_DIR, DRIVE_CLIENT_ID, DRIVE_CLIENT_SECRET, NULL, &host);
+    drive_start(STATE_DIR, NULL, &host);
 }
 
 /* --- Media tab shortcut (category 65536 + deeplinkUri, as other PS5 web panels) --- */

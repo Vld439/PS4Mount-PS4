@@ -53,7 +53,7 @@ static int g_cut_upload_after;   /* close the connection at the PUT that would p
 static int g_cut_download_at;    /* send this many bytes of a download, then close */
 static int g_damage_download;    /* report a wrong MD5 for downloads */
 static int g_refresh_revoked;    /* the refresh token is no longer valid */
-static int g_token_polls, g_revoked_calls, g_refreshes, g_ranges;
+static int g_token_polls, g_revoked_calls, g_refreshes, g_ranges, g_secret_seen;
 
 static void md5_of(const uint8_t *d, size_t n, char out[33]) {
     br_md5_context c;
@@ -207,7 +207,7 @@ static void serve(int fd) {
         have += (size_t)r;
     }
     body[len] = 0;
-    char headers[8192];
+    static char headers[1 << 16];
     snprintf(headers, sizeof(headers), "%s", req);
     const char *auth = strcasestr(headers, "Authorization: Bearer ");
     int authed = auth && !strncmp(auth + 22, "access-", 7);
@@ -219,6 +219,8 @@ static void serve(int fd) {
         json(fd, 200, "{\"device_code\":\"dev-1\",\"user_code\":\"ABCD-EFGH\",\"verification_url\":"
                       "\"https://www.google.com/device\",\"expires_in\":1800,\"interval\":1}");
     } else if (!strcmp(path, "/oauth/token")) {
+        g_secret_seen |= strstr((char *)body, "client_secret=GOCSPX-secret_1") != NULL &&
+                         strstr((char *)body, "client_id=123-abc.apps.googleusercontent.com") != NULL;
         if (strstr((char *)body, "grant_type=urn")) {
             if (++g_token_polls < 2)
                 json(fd, 428, "{\"error\":\"authorization_pending\"}");
@@ -369,7 +371,7 @@ static void *server(void *arg) {
 
 /* --- what PS4Mount gives the Drive thread --- */
 
-static char g_root[256], g_lib[256], g_dest[256];
+static char g_root[64], g_lib[256], g_dest[256];
 static int g_in_library = 1, g_downloaded_n;
 static char g_notified[1024];
 
@@ -531,15 +533,27 @@ int main(void) {
     drive_endpoints_t ep = {oauth, api, up};
     drive_host_t host = {t_game_files, t_library, t_dest_dir, t_free_bytes, t_downloaded, t_notify};
 
-    printf("== no client id: no Drive\n");
-    drive_start(state, "", "", &ep, &host);
+    printf("== no client yet: the user brings their own\n");
+    drive_start(state, &ep, &host);
     buf_t b = status();
-    CHECK(strstr((char *)b.data, "\"configured\":false"));
+    CHECK(strstr((char *)b.data, "\"configured\":true,\"client\":false"));
     buf_free(&b);
-    CHECK(drive_connect(msg, sizeof(msg)) == -1);
+    CHECK(drive_connect(msg, sizeof(msg)) == -1 && strstr(msg, "client ID"));
+    CHECK(drive_set_client("not-an-id", "s3cret", msg, sizeof(msg)) == -1);
+    CHECK(drive_set_client("123-abc.apps.googleusercontent.com", "bad secret!", msg, sizeof(msg)) == -1);
+    CHECK(drive_set_client("123-abc.apps.googleusercontent.com", "GOCSPX-secret_1", msg, sizeof(msg)) == 0);
+    b = status();
+    CHECK(strstr((char *)b.data, "\"client\":true,\"client_id\":\"123-abc.apps.googleusercontent.com\""));
+    CHECK(!strstr((char *)b.data, "GOCSPX")); /* the secret never goes back to the panel */
+    buf_free(&b);
+    snprintf(p, sizeof(p), "%s/drive_client.txt", state);
+    struct stat cst;
+    CHECK(!stat(p, &cst) && (cst.st_mode & 077) == 0);
+    drive_stop(); /* read back from the console's file on the next start */
+    g_secret_seen = 0;
 
     printf("== signing in with a code\n");
-    drive_start(state, "client-1", "secret-1", &ep, &host);
+    drive_start(state, &ep, &host);
     CHECK(drive_upload("CUSA00001", msg, sizeof(msg)) == -1); /* not connected yet */
     CHECK(strstr(msg, "Connect Google Drive first"));
     CHECK(drive_connect(msg, sizeof(msg)) == 0);
@@ -559,6 +573,7 @@ int main(void) {
     CHECK(strstr((char *)b.data, "\"listed\":true"));
     buf_free(&b);
     CHECK(g_token_polls >= 2); /* pending first, then the tokens */
+    CHECK(g_secret_seen);      /* with the user's client, from the console's file */
     snprintf(p, sizeof(p), "%s/drive.txt", state);
     FILE *sf = fopen(p, "r");
     char line[256] = "";
@@ -668,7 +683,7 @@ int main(void) {
     printf("== an access removed in the Google account disconnects\n");
     drive_stop();
     g_refresh_revoked = 1;
-    drive_start(state, "client-1", "secret-1", &ep, &host); /* starts with a list: needs a new token */
+    drive_start(state, &ep, &host); /* starts with a list: needs a new token */
     wait_idle();
     b = status();
     CHECK(strstr((char *)b.data, "\"connected\":false"));
@@ -693,6 +708,14 @@ int main(void) {
     CHECK(strstr((char *)b.data, "\"connected\":false"));
     buf_free(&b);
     CHECK(access(p, F_OK) != 0);
+
+    printf("== forgetting the client\n");
+    CHECK(drive_forget_client(msg, sizeof(msg)) == 0);
+    snprintf(p, sizeof(p), "%s/drive_client.txt", state);
+    CHECK(access(p, F_OK) != 0);
+    b = status();
+    CHECK(strstr((char *)b.data, "\"client\":false"));
+    buf_free(&b);
 
     drive_stop();
     printf("%d checks, %d failed\n", g_checks, g_failed);

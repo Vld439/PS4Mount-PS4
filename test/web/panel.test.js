@@ -270,13 +270,29 @@ function tKeys(file) {
 
   // --- Google Drive
   ok(d.getElementById('drivebtn').hidden, 'no Drive button when this build has no Drive');
-  DRIVE = { configured: true, connected: false, login: { active: false, error: '' }, job: { busy: false, queued: [] }, games: [] };
+  DRIVE = { configured: true, client: false, client_id: '', connected: false, login: { active: false, error: '' }, job: { busy: false, queued: [] }, games: [] };
   p = page('index.html', { dialog: true }); ({ w, d, reqs } = p);
   await tick(); await tick();
   ok(!d.getElementById('drivebtn').hidden && d.getElementById('drivelabel').textContent === 'Connect Google Drive', 'the corner button: Connect Google Drive');
   ok(d.getElementById('backupbtn').hidden, 'no backup button before connecting');
   d.getElementById('drivebtn').click(); await tick();
-  ok(d.getElementById('drivedlg').open && !d.getElementById('d-off').hidden && d.getElementById('d-on').hidden, 'the Drive window explains and offers Connect');
+  ok(d.getElementById('drivedlg').open && !d.getElementById('d-setup').hidden && d.getElementById('d-connect').hidden, 'no client yet: the steps to make one, no Connect');
+  ok(d.querySelector('#d-setup a').href === 'https://console.cloud.google.com/', 'with the link to Google Cloud');
+  ok(d.getElementById('d-csecret').type === 'password', 'the secret is typed hidden');
+  reqs.length = 0;
+  d.getElementById('d-cid').value = ' 123-abc.apps.googleusercontent.com ';
+  d.getElementById('d-csecret').value = 'GOCSPX-a+b';
+  d.getElementById('d-setup').dispatchEvent(new w.Event('submit', { cancelable: true })); await tick();
+  const cl = reqs.find((r) => r.url === '/api/drive/client');
+  ok(cl && cl.method === 'POST' && cl.headers['X-PS4Mount'] === '1' &&
+    cl.body === 'client_id=123-abc.apps.googleusercontent.com&client_secret=GOCSPX-a%2Bb', 'the client goes in the body, with the panel header');
+  ok(!reqs.some((r) => /GOCSPX/.test(r.url)), 'never in an address');
+  DRIVE = Object.assign({}, DRIVE, { client: true, client_id: '123-abc.apps.googleusercontent.com' });
+  w.loadDrive(); await tick();
+  ok(d.getElementById('d-setup').hidden && !d.getElementById('d-connect').hidden && d.getElementById('d-client-id').textContent.includes('123-abc'), 'with a client: Connect, and which client');
+  d.getElementById('d-cchange').click();
+  ok(!d.getElementById('d-setup').hidden && d.getElementById('d-cid').value === '123-abc.apps.googleusercontent.com' && d.getElementById('d-csecret').value === '', 'Change: the form again, the secret not shown');
+  w.renderDrive.editing = false; w.renderDrive();
   reqs.length = 0;
   d.getElementById('d-connect').click(); await tick();
   const conn = reqs.find((r) => r.url === '/api/drive/connect');
@@ -285,7 +301,7 @@ function tKeys(file) {
   w.loadDrive(); await tick();
   ok(d.getElementById('d-usercode').textContent === 'ABCD-EFGH' && d.getElementById('d-url').href === 'https://www.google.com/device', 'the code and the address to type it in');
   ok(!d.getElementById('d-code').hidden && d.getElementById('d-connect').disabled, 'waiting for the account: Connect is off');
-  DRIVE = { configured: true, connected: true, email: 'someone@example.com', quota_limit: 16e9, quota_used: 4e9, login: { active: false, error: '' },
+  DRIVE = { configured: true, client: true, client_id: '123-abc.apps.googleusercontent.com', connected: true, email: 'someone@example.com', quota_limit: 16e9, quota_used: 4e9, login: { active: false, error: '' },
     job: { busy: false, queued: [], result: '', ok: true }, listed: true, list_error: '',
     games: [{ title_id: 'CUSA00791', name: 'N++', size: 4e9, files: 2, update: true, addons: 0 },
       { title_id: 'CUSA99999', name: 'Only In Drive', size: 3e9, files: 1, update: false, addons: 2 }] };

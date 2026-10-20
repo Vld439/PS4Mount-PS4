@@ -170,6 +170,18 @@ button.small{padding:5px 10px;font-size:13px}
   <p class="hint" style="color:var(--muted)">Copies of your games in your own Google Drive: back up the library, send a game, and
     download it back to any drive of the console. PS4Mount can only see the files it puts in Drive (folder PS4Mount), nothing
     else of your Drive.</p>
+  <form class="settings" id="d-setup" hidden>
+    <div class="note">First, your own Google client (once). PS4Mount comes with none: yours stays on this console only.</div>
+    <ol class="meta" style="margin:0;padding-left:20px;line-height:1.6">
+      <li>Open <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a>, create a project and enable the Google Drive API.</li>
+      <li>In Google Auth Platform (OAuth consent screen): audience External, add the scope …/auth/drive.file, and publish the app (In production).</li>
+      <li>In Clients (Credentials), create an OAuth client of type TVs and Limited Input devices, and copy its client ID and secret here.</li>
+    </ol>
+    <label>Client ID<input type="text" id="d-cid" spellcheck="false" autocomplete="off" placeholder="123456789-abc.apps.googleusercontent.com"></label>
+    <label>Client secret<input type="password" id="d-csecret" spellcheck="false" autocomplete="off"></label>
+    <div class="row"><button type="submit" class="primary" id="d-csave">Save</button></div>
+  </form>
+  <div class="meta" id="d-client" hidden><span id="d-client-id"></span> <button type="button" class="small" id="d-cchange">Change</button></div>
   <div id="d-code" hidden>
     <div>On your phone or computer, open <a id="d-url" target="_blank" rel="noopener"></a> and type this code:</div>
     <div class="code" id="d-usercode"></div>
@@ -177,7 +189,7 @@ button.small{padding:5px 10px;font-size:13px}
   </div>
   <div class="bad" id="d-err" hidden></div>
   <div class="row" style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-    <button type="button" id="d-close1">Close</button><button type="button" class="primary" id="d-connect">Connect</button></div>
+    <button type="button" id="d-close1">Close</button><button type="button" class="primary" id="d-connect" hidden>Connect</button></div>
 </div>
 <div id="d-on" hidden>
   <div class="drive-acct"><div><b id="d-email"></b><div class="meta" id="d-quota-t"></div></div><div class="quota"><div id="d-quota"></div></div></div>
@@ -583,6 +595,11 @@ function renderDrive() {
   $('d-off').hidden = !!d.connected;
   $('d-on').hidden = !d.connected;
   var login = d.login || {};
+  var setup = !d.client || renderDrive.editing;
+  $('d-setup').hidden = !setup;
+  $('d-client').hidden = setup || !d.client;
+  $('d-client-id').textContent = t('Your Google client: {0}', d.client_id || '');
+  $('d-connect').hidden = setup;
   $('d-code').hidden = !login.active;
   $('d-connect').disabled = !!login.active;
   if (login.active) {
@@ -636,6 +653,20 @@ function loadDests() {
 $('drivebtn').onclick = function () { $('drivedlg').showModal(); renderDrive(); loadDests(); loadDrive(); };
 $('d-close1').onclick = $('d-close2').onclick = function () { $('drivedlg').close(); };
 $('d-connect').onclick = function () { driveAct('connect'); };
+$('d-cchange').onclick = function () { renderDrive.editing = true; $('d-cid').value = drive.client_id || ''; $('d-csecret').value = ''; renderDrive(); };
+/* the user's client goes in the body, never in the address (nor in the browser's history) */
+$('d-setup').onsubmit = function (e) {
+  e.preventDefault();
+  var body = 'client_id=' + encodeURIComponent($('d-cid').value.trim()) + '&client_secret=' + encodeURIComponent($('d-csecret').value.trim());
+  fetch('/api/drive/client', {method: 'POST', cache: 'no-store', body: body,
+      headers: {'X-PS4Mount': '1', 'Content-Type': 'application/x-www-form-urlencoded'}})
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      toast(j.message || j.error);
+      if (j.ok) { renderDrive.editing = false; $('d-csecret').value = ''; loadDrive(); }
+    })
+    .catch(function (err) { toast(t('Error: {0}', err.message)); });
+};
 $('d-refresh').onclick = function () { driveAct('refresh'); loadDests(); };
 $('d-disconnect').onclick = function () {
   if (confirm(t('Disconnect Google Drive? The copies stay in your Drive; PS4Mount forgets the account.'))) driveAct('disconnect');

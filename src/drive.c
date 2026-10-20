@@ -58,7 +58,9 @@ static pthread_t g_thread;
 static int g_started, g_quit;
 static volatile int g_cancel;
 
-static char g_state_path[PATH_MAX], g_session_path[PATH_MAX];
+static char g_state_path[PATH_MAX], g_session_path[PATH_MAX], g_client_path[PATH_MAX];
+/* the user's own OAuth client (Google Cloud, "TVs and limited input devices"): none ships
+ * with PS4Mount; the secret never leaves the console's state folder */
 static char g_client_id[256], g_client_secret[128];
 static drive_endpoints_t g_ep;
 static char g_ep_oauth[256], g_ep_api[256], g_ep_upload[256];
@@ -162,11 +164,11 @@ static void load_state(void) {
     while (fgets(line, sizeof(line), f)) {
         line[strcspn(line, "\r\n")] = 0;
         if (!strncmp(line, "refresh=", 8))
-            snprintf(g_refresh, sizeof(g_refresh), "%s", line + 8);
+            snprintf(g_refresh, sizeof(g_refresh), "%.511s", line + 8);
         else if (!strncmp(line, "email=", 6))
-            snprintf(g_email, sizeof(g_email), "%s", line + 6);
+            snprintf(g_email, sizeof(g_email), "%.127s", line + 6);
         else if (!strncmp(line, "root=", 5))
-            snprintf(g_root, sizeof(g_root), "%s", line + 5);
+            snprintf(g_root, sizeof(g_root), "%.127s", line + 5);
     }
     fclose(f);
 }
@@ -228,6 +230,19 @@ static void disconnected(const char *why) {
     }
 }
 
+/* The client's id and secret to a form. */
+static void form_client(buf_t *form, int secret) {
+    char id[256], sec[128];
+    pthread_mutex_lock(&g_mu);
+    snprintf(id, sizeof(id), "%s", g_client_id);
+    snprintf(sec, sizeof(sec), "%s", g_client_secret);
+    pthread_mutex_unlock(&g_mu);
+    form_add(form, "client_id", id);
+    if (secret)
+        form_add(form, "client_secret", sec);
+    memset(sec, 0, sizeof(sec));
+}
+
 /* A POST of a form to the OAuth server; the answer in r. */
 static int oauth_post(const char *path, buf_t *form, http_resp_t *r, char *err, size_t n) {
     char url[512];
@@ -252,8 +267,7 @@ static int access_token(char *err, size_t n) {
         return -1;
     }
     buf_t form = {0};
-    form_add(&form, "client_id", g_client_id);
-    form_add(&form, "client_secret", g_client_secret);
+    form_client(&form, 1);
     form_add(&form, "refresh_token", refresh);
     form_add(&form, "grant_type", "refresh_token");
     http_resp_t r;
@@ -297,7 +311,7 @@ static int access_token(char *err, size_t n) {
 
 static void login_start(void) {
     buf_t form = {0};
-    form_add(&form, "client_id", g_client_id);
+    form_client(&form, 0);
     form_add(&form, "scope", SCOPE);
     http_resp_t r;
     char err[256];
@@ -346,8 +360,7 @@ static void login_poll(void) {
         return;
     }
     buf_t form = {0};
-    form_add(&form, "client_id", g_client_id);
-    form_add(&form, "client_secret", g_client_secret);
+    form_client(&form, 1);
     form_add(&form, "device_code", device);
     form_add(&form, "grant_type", "urn:ietf:params:oauth:grant-type:device_code");
     http_resp_t r;
@@ -621,7 +634,12 @@ static int session_start(const drive_file_t *f, const char *parent, const char *
                          size_t un, char *err, size_t n) {
     buf_t b = {0}, u = {0}, h = {0};
     char short_title[100];
-    snprintf(short_title, sizeof(short_title), "%s", title); /* appProperties: 124 bytes a pair */
+    /* appProperties: 124 bytes a pair; cut at a whole UTF-8 character */
+    size_t tl = strlen(title) < sizeof(short_title) - 1 ? strlen(title) : sizeof(short_title) - 1;
+    while (tl && tl < strlen(title) && ((unsigned char)title[tl] & 0xc0) == 0x80)
+        tl--;
+    memcpy(short_title, title, tl);
+    short_title[tl] = 0;
     buf_printf(&b, "{\"name\":");
     json_esc(&b, f->name);
     buf_printf(&b, ",\"parents\":[");
@@ -1155,7 +1173,7 @@ static void run_download(const char *tid, const char *dest) {
         goto fail;
     }
     char parts[PATH_MAX], final_dir[PATH_MAX], part[PATH_MAX];
-    snprintf(parts, sizeof(parts), "%s/" PART_DIR, scan);
+    snprintf(parts, sizeof(parts), "%.4000s/" PART_DIR, scan);
     mkdir(scan, 0777);
     mkdir(parts, 0777);
     /* the space it needs: all of it (part files of a cut download are already counted
@@ -1163,7 +1181,7 @@ static void run_download(const char *tid, const char *dest) {
     uint64_t need = SPACE_MARGIN;
     for (int i = 0; i < nr; i++) {
         struct stat st;
-        snprintf(part, sizeof(part), "%s/%s.part", parts, rem[i].id);
+        snprintf(part, sizeof(part), "%.3900s/%.127s.part", parts, rem[i].id);
         uint64_t held = !stat(part, &st) ? (uint64_t)st.st_blocks * 512 : 0;
         need += rem[i].size > held ? rem[i].size - held : 0;
     }
@@ -1174,7 +1192,7 @@ static void run_download(const char *tid, const char *dest) {
         goto fail;
     }
     clean_title(title, fname, sizeof(fname));
-    snprintf(final_dir, sizeof(final_dir), "%s/%s [%s]", scan, fname[0] ? fname : tid, tid);
+    snprintf(final_dir, sizeof(final_dir), "%.3800s/%.191s [%s]", scan, fname[0] ? fname : tid, tid);
     /* the game first, then its update and add-ons: the scan takes them in that order */
     for (int pass = 0; pass < 2; pass++)
         for (int i = 0; i < nr; i++) {
@@ -1187,7 +1205,7 @@ static void run_download(const char *tid, const char *dest) {
             g_done = 0;
             g_total = rem[i].size;
             pthread_mutex_unlock(&g_mu);
-            snprintf(part, sizeof(part), "%s/%s.part", parts, rem[i].id);
+            snprintf(part, sizeof(part), "%.3900s/%.127s.part", parts, rem[i].id);
             printf("[drive] %s: downloading %s (%llu bytes) into %s\n", tid, rem[i].name, (unsigned long long)rem[i].size, part);
             if (download_file(&rem[i], part, err, sizeof(err)))
                 goto fail;
@@ -1300,7 +1318,7 @@ static void run_list(void) {
                 if (ng == MAX_REMOTE)
                     continue;
                 memset(&games[ng], 0, sizeof(games[0]));
-                snprintf(games[ng].tid, sizeof(games[0].tid), "%s", tid);
+                snprintf(games[ng].tid, sizeof(games[0].tid), "%.9s", tid);
                 ng++;
             }
             remote_game_t *g = &games[k];
@@ -1324,7 +1342,7 @@ static void run_list(void) {
     return;
 fail:
     pthread_mutex_lock(&g_mu);
-    snprintf(g_list_error, sizeof(g_list_error), "%s", err);
+    snprintf(g_list_error, sizeof(g_list_error), "%.255s", err);
     pthread_mutex_unlock(&g_mu);
     printf("[drive] list: %s\n", err);
 }
@@ -1415,10 +1433,22 @@ static void *worker(void *arg) {
     return NULL;
 }
 
-void drive_start(const char *state_dir, const char *client_id, const char *client_secret, const drive_endpoints_t *ep,
-                 const drive_host_t *host) {
-    snprintf(g_client_id, sizeof(g_client_id), "%s", client_id ? client_id : "");
-    snprintf(g_client_secret, sizeof(g_client_secret), "%s", client_secret ? client_secret : "");
+static void load_client(void) {
+    FILE *f = fopen(g_client_path, "r");
+    char line[512];
+    g_client_id[0] = g_client_secret[0] = 0;
+    while (f && fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\r\n")] = 0;
+        if (!strncmp(line, "client_id=", 10))
+            snprintf(g_client_id, sizeof(g_client_id), "%.255s", line + 10);
+        else if (!strncmp(line, "client_secret=", 14))
+            snprintf(g_client_secret, sizeof(g_client_secret), "%.127s", line + 14);
+    }
+    if (f)
+        fclose(f);
+}
+
+void drive_start(const char *state_dir, const drive_endpoints_t *ep, const drive_host_t *host) {
     snprintf(g_ep_oauth, sizeof(g_ep_oauth), "%s", ep && ep->oauth ? ep->oauth : "https://oauth2.googleapis.com");
     snprintf(g_ep_api, sizeof(g_ep_api), "%s", ep && ep->api ? ep->api : "https://www.googleapis.com/drive/v3");
     snprintf(g_ep_upload, sizeof(g_ep_upload), "%s",
@@ -1429,9 +1459,14 @@ void drive_start(const char *state_dir, const char *client_id, const char *clien
     g_host = *host;
     snprintf(g_state_path, sizeof(g_state_path), "%s/drive.txt", state_dir);
     snprintf(g_session_path, sizeof(g_session_path), "%s/drive_upload.txt", state_dir);
-    if (!g_client_id[0] || g_started)
+    snprintf(g_client_path, sizeof(g_client_path), "%s/drive_client.txt", state_dir);
+    if (g_started)
         return;
-    load_state();
+    pthread_mutex_lock(&g_mu);
+    load_client();
+    if (g_client_id[0])
+        load_state();
+    pthread_mutex_unlock(&g_mu);
     g_quit = 0;
     pthread_attr_t at;
     pthread_attr_init(&at);
@@ -1473,8 +1508,11 @@ void drive_stop(void) {
 void drive_status_json(buf_t *out) {
     pthread_mutex_lock(&g_mu);
     time_t now = time(NULL);
-    buf_printf(out, "{\"configured\":%s,\"connected\":%s,\"email\":", g_started ? "true" : "false",
-               g_refresh[0] ? "true" : "false");
+    /* the client id, never its secret */
+    buf_printf(out, "{\"configured\":%s,\"client\":%s,\"client_id\":", g_started ? "true" : "false",
+               g_client_id[0] ? "true" : "false");
+    json_esc(out, g_client_id);
+    buf_printf(out, ",\"connected\":%s,\"email\":", g_refresh[0] ? "true" : "false");
     json_esc(out, g_email);
     buf_printf(out, ",\"quota_limit\":%lld,\"quota_used\":%lld,\"login\":{\"active\":%s,\"code\":", g_quota_limit,
                g_quota_used, g_login ? "true" : "false");
@@ -1517,7 +1555,11 @@ void drive_status_json(buf_t *out) {
 
 static int ready(char *msg, size_t n, int need_account) {
     if (!g_started) {
-        snprintf(msg, n, "%s", TR("Google Drive is not available in this build", "Google Drive no está disponible en esta versión"));
+        snprintf(msg, n, "%s", TR("Google Drive is not running", "Google Drive no está en marcha"));
+        return -1;
+    }
+    if (!g_client_id[0]) {
+        snprintf(msg, n, "%s", TR("Enter your Google client ID and secret first", "Pon primero tu ID de cliente y tu secreto de Google"));
         return -1;
     }
     if (need_account && !g_refresh[0]) {
@@ -1632,5 +1674,94 @@ int drive_cancel(char *msg, size_t n) {
     g_cancel = g_busy && g_op != OP_LIST;
     pthread_mutex_unlock(&g_mu);
     snprintf(msg, n, "%s", TR("Cancelled", "Cancelado"));
+    return 0;
+}
+
+/* An id as Google gives them: <digits>-<letters and digits>.apps.googleusercontent.com. */
+static int client_id_ok(const char *id) {
+    static const char suffix[] = ".apps.googleusercontent.com";
+    size_t l = strlen(id), sl = sizeof(suffix) - 1;
+    if (l <= sl || l >= sizeof(g_client_id) || strcmp(id + l - sl, suffix))
+        return 0;
+    for (size_t i = 0; i < l - sl; i++)
+        if (!((id[i] >= '0' && id[i] <= '9') || (id[i] >= 'a' && id[i] <= 'z') || id[i] == '-'))
+            return 0;
+    return 1;
+}
+
+static int secret_ok(const char *s) {
+    size_t l = strlen(s);
+    if (!l || l >= sizeof(g_client_secret))
+        return 0;
+    for (; *s; s++)
+        if (!((*s >= '0' && *s <= '9') || (*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') || *s == '-' || *s == '_'))
+            return 0;
+    return 1;
+}
+
+int drive_set_client(const char *id, const char *secret, char *msg, size_t n) {
+    if (!g_started) {
+        snprintf(msg, n, "%s", TR("Google Drive is not running", "Google Drive no está en marcha"));
+        return -1;
+    }
+    if (!client_id_ok(id)) {
+        snprintf(msg, n, "%s", TR("That is not a client ID: it ends in .apps.googleusercontent.com",
+                                  "Eso no es un ID de cliente: termina en .apps.googleusercontent.com"));
+        return -1;
+    }
+    if (!secret_ok(secret)) {
+        snprintf(msg, n, "%s", TR("That is not a client secret (letters, digits, - and _)",
+                                  "Eso no es un secreto de cliente (letras, números, - y _)"));
+        return -1;
+    }
+    char tmp[PATH_MAX + 8];
+    snprintf(tmp, sizeof(tmp), "%s.tmp", g_client_path);
+    int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    buf_t b = {0};
+    buf_printf(&b, "client_id=%s\nclient_secret=%s\n", id, secret);
+    int ok = fd >= 0 && write(fd, b.data, b.len) == (ssize_t)b.len;
+    memset(b.data, 0, b.len);
+    buf_free(&b);
+    if (fd >= 0)
+        close(fd);
+    if (!ok || rename(tmp, g_client_path)) {
+        unlink(tmp);
+        snprintf(msg, n, TR("cannot write %s (%s)", "no se puede escribir %s (%s)"), g_client_path, strerror(errno));
+        return -1;
+    }
+    pthread_mutex_lock(&g_mu);
+    int changed = strcmp(id, g_client_id) != 0;
+    snprintf(g_client_id, sizeof(g_client_id), "%s", id);
+    snprintf(g_client_secret, sizeof(g_client_secret), "%s", secret);
+    if (changed) {
+        /* an account signed in with another client does not go with this one */
+        g_cancel = 1;
+        g_njobs = 0;
+        g_login = 0;
+        g_login_error[0] = 0;
+    }
+    pthread_mutex_unlock(&g_mu);
+    if (changed)
+        disconnected(NULL);
+    printf("[drive] client set (%s)\n", id);
+    snprintf(msg, n, "%s", TR("Google client saved on the console", "Cliente de Google guardado en la consola"));
+    return 0;
+}
+
+int drive_forget_client(char *msg, size_t n) {
+    if (!g_started) {
+        snprintf(msg, n, "%s", TR("Google Drive is not running", "Google Drive no está en marcha"));
+        return -1;
+    }
+    if (g_refresh[0])
+        drive_disconnect(msg, n);
+    pthread_mutex_lock(&g_mu);
+    g_client_id[0] = 0;
+    memset(g_client_secret, 0, sizeof(g_client_secret));
+    g_login = 0;
+    g_login_error[0] = 0;
+    pthread_mutex_unlock(&g_mu);
+    unlink(g_client_path);
+    snprintf(msg, n, "%s", TR("Google client removed from the console", "Cliente de Google borrado de la consola"));
     return 0;
 }

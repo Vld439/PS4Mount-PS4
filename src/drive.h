@@ -42,9 +42,9 @@ typedef struct {
     const char *upload; /* https://www.googleapis.com/upload/drive/v3 */
 } drive_endpoints_t;
 
-/* Starts the thread. client_id empty: Drive is not available in this build. ep NULL: Google. */
-void drive_start(const char *state_dir, const char *client_id, const char *client_secret,
-                 const drive_endpoints_t *ep, const drive_host_t *host);
+/* Starts the thread. ep NULL: Google's servers. Each user brings their own OAuth client
+ * (drive_set_client): PS4Mount ships none. */
+void drive_start(const char *state_dir, const drive_endpoints_t *ep, const drive_host_t *host);
 /* Ends the thread (the transfer in progress stops; uploads resume where they were). */
 void drive_stop(void);
 
@@ -52,6 +52,9 @@ void drive_stop(void);
 void drive_status_json(buf_t *out);
 
 /* Panel actions; 0 when accepted, msg says what happens or why not. */
+/* The user's client ("TVs and limited input devices"), kept in <state>/drive_client.txt. */
+int drive_set_client(const char *client_id, const char *client_secret, char *msg, size_t n);
+int drive_forget_client(char *msg, size_t n);
 int drive_connect(char *msg, size_t n);
 int drive_disconnect(char *msg, size_t n);
 /* tid NULL: the whole library. */

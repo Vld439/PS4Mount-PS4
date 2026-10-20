@@ -73,3 +73,9 @@ int drive_download(const char *tid, const char *dest, char *msg, size_t n) {
 int drive_trash(const char *tid, char *msg, size_t n) { return record("drive_trash", tid, msg, n); }
 int drive_refresh(char *msg, size_t n) { return record("drive_refresh", NULL, msg, n); }
 int drive_cancel(char *msg, size_t n) { return record("drive_cancel", NULL, msg, n); }
+int drive_set_client(const char *id, const char *secret, char *msg, size_t n) {
+    char arg[512];
+    snprintf(arg, sizeof(arg), "%s|%s", id, secret);
+    return record("drive_client", arg, msg, n);
+}
+int drive_forget_client(char *msg, size_t n) { return record("drive_forget_client", NULL, msg, n); }

@@ -65,7 +65,20 @@ var LANGS = {
     'Cancel transfer': 'Cancelar el envío',
     'Send': 'Enviar',
     /* Google Drive */
+    'First, your own Google client (once). PS4Mount comes with none: yours stays on this console only.':
+      'Primero, tu propio cliente de Google (una sola vez). PS4Mount no trae ninguno: el tuyo se queda solo en esta consola.',
+    'Open': 'Abre',
+    ', create a project and enable the Google Drive API.': ', crea un proyecto y activa la Google Drive API.',
+    'In Google Auth Platform (OAuth consent screen): audience External, add the scope …/auth/drive.file, and publish the app (In production).':
+      'En Google Auth Platform (pantalla de consentimiento OAuth): público Externo, añade el permiso …/auth/drive.file y publica la app (En producción).',
+    'In Clients (Credentials), create an OAuth client of type TVs and Limited Input devices, and copy its client ID and secret here.':
+      'En Clientes (Credenciales), crea un cliente OAuth de tipo TV y dispositivos de entrada limitada, y copia aquí su ID de cliente y su secreto.',
+    'Client ID': 'ID de cliente',
+    'Client secret': 'Secreto del cliente',
+    'Change': 'Cambiar',
+    'Your Google client: {0}': 'Tu cliente de Google: {0}',
     'Google Drive': 'Google Drive',
+    'console.cloud.google.com': 'console.cloud.google.com',
     'Back up to Drive': 'Copia en Drive',
     'Connect Google Drive': 'Conectar Google Drive',
     'Copies of your games in your own Google Drive: back up the library, send a game, and download it back to any drive of the console. PS4Mount can only see the files it puts in Drive (folder PS4Mount), nothing else of your Drive.':

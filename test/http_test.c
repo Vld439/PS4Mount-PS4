@@ -226,6 +226,12 @@ int main(void) {
     before = g_stub_calls;
     r = DRIVE_POST("/api/drive/connectx");
     CHECK(status(r, "404") && g_stub_calls == before);
+    r = ask("POST /api/drive/client HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 79\r\n\r\n"
+            "client_id=123-abc.apps.googleusercontent.com&client_secret=GOCSPX-a%2Bb_c+d");
+    CHECK(status(r, "200") && !strcmp(g_stub_call, "drive_client") &&
+          !strcmp(g_stub_arg, "123-abc.apps.googleusercontent.com|GOCSPX-a+b_c d"));
+    DRIVE_POST("/api/drive/forget_client");
+    CHECK(!strcmp(g_stub_call, "drive_forget_client"));
 #undef DRIVE_POST
 
     printf("a body that arrives after the headers\n");

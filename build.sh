@@ -38,17 +38,7 @@ if [ ! -f "$BR/libbearssl.a" ]; then
     done | xargs -P "$(nproc)" -I{} sh -c '{}'
     $B/orbis-ar rcs "$BR/libbearssl.a" "$BR"/*.o
 fi
-# Google Drive needs this build's OAuth client ("TVs and limited input devices"): set
-# DRIVE_CLIENT_ID and DRIVE_CLIENT_SECRET, or put them in drive-client.env (not in git).
-# Without them the panel shows no Drive button.
-[ -f drive-client.env ] && . ./drive-client.env
-DRIVE_FLAGS=()
-if [ -n "$DRIVE_CLIENT_ID" ]; then
-    DRIVE_FLAGS=(-DDRIVE_CLIENT_ID="\"$DRIVE_CLIENT_ID\"" -DDRIVE_CLIENT_SECRET="\"$DRIVE_CLIENT_SECRET\"")
-else
-    echo "note: DRIVE_CLIENT_ID is not set: this build has no Google Drive"
-fi
-$B/orbis-clang -O2 -Wall -Wextra -Ibuild -Ithird_party/sqlite -Ithird_party/bearssl/inc "${DRIVE_FLAGS[@]}" -o build/ps4mount-ps4.elf \
+$B/orbis-clang -O2 -Wall -Wextra -Ibuild -Ithird_party/sqlite -Ithird_party/bearssl/inc -o build/ps4mount-ps4.elf \
     src/main.c src/fw.c src/logts.c src/web.c src/pkg.c src/build.c src/check.c src/upload.c src/install.c src/lang.c src/mem.c src/db.c src/origin.c src/crypto.c \
     src/drive.c src/https.c src/json.c "$SQ" "$BR/libbearssl.a" \
     -lSceUserService -lSceAppInstUtil -lSceSystemService -lkernel_sys

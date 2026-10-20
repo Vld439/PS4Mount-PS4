@@ -170,15 +170,45 @@ static int dest_param(const char *path, char *dest, size_t n) {
     return o ? 0 : -1;
 }
 
+/* The form field key of body, decoded (+ and %XX) into out. 0 when present. */
+static int form_field(const char *body, const char *key, char *out, size_t n) {
+    size_t kl = strlen(key), o = 0;
+    for (const char *p = body; p && *p; p = strchr(p, '&') ? strchr(p, '&') + 1 : NULL) {
+        if (strncmp(p, key, kl) || p[kl] != '=')
+            continue;
+        for (p += kl + 1; *p && *p != '&' && o + 1 < n; p++) {
+            int hi, lo;
+            if (*p == '%' && p[1] && p[2] && sscanf(p + 1, "%1x%1x", &hi, &lo) == 2) {
+                out[o++] = (char)(hi * 16 + lo);
+                p += 2;
+            } else
+                out[o++] = *p == '+' ? ' ' : *p;
+        }
+        out[o] = 0;
+        return 0;
+    }
+    out[0] = 0;
+    return -1;
+}
+
 /* POST /api/drive/<action>[?title_id=..&dest=..]: the Drive thread does the work, the
- * panel follows it in GET /api/drive. */
-static void drive_action(int fd, const char *path) {
+ * panel follows it in GET /api/drive. The user's client comes in the body (client_id,
+ * client_secret), never in the address. */
+static void drive_action(int fd, const char *path, const char *body) {
     const char *a = path + 11;
     size_t al = strcspn(a, "?");
     char tid[10], dest[16], msg[512];
     int has_tid = !title_param(path, tid), rc;
 #define IS(name) (al == sizeof(name) - 1 && !strncmp(a, name, al))
-    if (IS("connect"))
+    if (IS("client")) {
+        char id[256], secret[128];
+        form_field(body, "client_id", id, sizeof(id));
+        form_field(body, "client_secret", secret, sizeof(secret));
+        rc = drive_set_client(id, secret, msg, sizeof(msg));
+        memset(secret, 0, sizeof(secret));
+    } else if (IS("forget_client"))
+        rc = drive_forget_client(msg, sizeof(msg));
+    else if (IS("connect"))
         rc = drive_connect(msg, sizeof(msg));
     else if (IS("disconnect"))
         rc = drive_disconnect(msg, sizeof(msg));
@@ -354,7 +384,7 @@ void web_handle(int fd) {
         if (!may_write(fd, req))
             reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
         else
-            drive_action(fd, path);
+            drive_action(fd, path, body);
     } else if (!strcmp(path, "/api/log")) {
         send_log(fd);
     } else if (post && !strcmp(path, "/api/stop")) {
