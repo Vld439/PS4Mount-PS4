@@ -5,3 +5,9 @@ useDefault = true
 [[allowlists]]
 description = "Vendored SQLite source: identifiers that look like keys, not secrets"
 paths = ['''^third_party/sqlite/''']
+
+[[allowlists]]
+description = "Made-up Google client secret of the Drive tests' stand-in server (real credentials never enter this repository)"
+condition = "AND" # that value in that file only
+paths = ['''^test/drive_test\.c$''']
+regexes = ['''GOCSPX-secret_1''']

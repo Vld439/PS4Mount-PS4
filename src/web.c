@@ -177,7 +177,7 @@ static int form_field(const char *body, const char *key, char *out, size_t n) {
         if (strncmp(p, key, kl) || p[kl] != '=')
             continue;
         for (p += kl + 1; *p && *p != '&' && o + 1 < n; p++) {
-            int hi, lo;
+            unsigned hi, lo;
             if (*p == '%' && p[1] && p[2] && sscanf(p + 1, "%1x%1x", &hi, &lo) == 2) {
                 out[o++] = (char)(hi * 16 + lo);
                 p += 2;
