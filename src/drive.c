@@ -457,7 +457,8 @@ static void login_poll(void) {
  * (network, 429, 5xx) are tried again, an ended token is refreshed once. 0 when an answer
  * arrived: its status is the caller's to judge. */
 static int api_stall(const char *method, const char *url, const char *ctype, const void *body, size_t len,
-                     const char *extra, http_sink_t sink, void *sink_ctx, int stall, http_resp_t *r, char *err, size_t n) {
+                     const char *extra, http_sink_t sink, void *sink_ctx, int stall, http_keep_t *keep, http_resp_t *r,
+                     char *err, size_t n) {
     int refreshed = 0;
     for (int t = 0; t < TRIES; t++) {
         if (g_cancel || g_quit) {
@@ -475,7 +476,7 @@ static int api_stall(const char *method, const char *url, const char *ctype, con
         if (extra)
             buf_put(&h, extra, strlen(extra));
         http_req_t q = {.method = method, .url = url, .headers = text(&h), .body = body, .body_len = len,
-                        .sink = sink, .sink_ctx = sink_ctx, .cancel = &g_cancel, .stall = stall};
+                        .sink = sink, .sink_ctx = sink_ctx, .cancel = &g_cancel, .stall = stall, .keep = keep};
         int rc = http_request(&q, r, err, n);
         buf_free(&h);
         if (!rc && r->status == 401 && !refreshed) {
@@ -510,7 +511,7 @@ static int api_stall(const char *method, const char *url, const char *ctype, con
 
 static int api(const char *method, const char *url, const char *ctype, const void *body, size_t len, const char *extra,
                http_sink_t sink, void *sink_ctx, http_resp_t *r, char *err, size_t n) {
-    return api_stall(method, url, ctype, body, len, extra, sink, sink_ctx, 0, r, err, n);
+    return api_stall(method, url, ctype, body, len, extra, sink, sink_ctx, 0, NULL, r, err, n);
 }
 
 /* A JSON request that must answer 200; the parsed answer in r. */
@@ -843,6 +844,7 @@ static int upload_file(const drive_file_t *f, const char *parent, const char *ti
     }
     br_md5_context md5;
     br_md5_init(&md5);
+    http_keep_t *keep = http_keep_new(); /* the chunks share one connection */
     uint64_t off = 0, hashed = 0;
     int rc = -1, fresh = session_load(f, url, sizeof(url)) != 0, restarts = 0, drop = 0;
     http_resp_t r;
@@ -912,7 +914,7 @@ static int upload_file(const drive_file_t *f, const char *parent, const char *ti
             else
                 snprintf(cr, sizeof(cr), "Content-Range: bytes */%llu\r\n", (unsigned long long)f->size);
             if (http_request(&(http_req_t){.method = "PUT", .url = url, .headers = cr, .body = buf, .body_len = len,
-                                           .cancel = &g_cancel},
+                                           .cancel = &g_cancel, .keep = keep},
                              &r, err, n)) {
                 fails++;
                 break; /* asks the session where it is */
@@ -979,6 +981,7 @@ static int upload_file(const drive_file_t *f, const char *parent, const char *ti
     /* kept after a cut, a cancel or a stop: the next upload of this pkg goes on from there */
     if (!rc || drop)
         unlink(g_session_path);
+    http_keep_free(keep);
     close(fd);
     mem_free(buf);
     return rc;
@@ -1165,6 +1168,8 @@ static void dl_flush_locked(dl_t *d) {
 
 static void *dl_worker(void *arg) {
     dl_t *d = arg;
+    /* one connection for all the blocks of this thread: one TLS handshake, not one a block */
+    http_keep_t *keep = http_keep_new();
     for (;;) {
         pthread_mutex_lock(&d->mu);
         /* no block further ahead than the slots can hold */
@@ -1177,6 +1182,7 @@ static void *dl_worker(void *arg) {
         }
         if (d->stop || g_cancel || g_quit || d->next >= d->nblocks) {
             pthread_mutex_unlock(&d->mu);
+            http_keep_free(keep);
             return NULL;
         }
         uint64_t b = d->next++;
@@ -1194,7 +1200,7 @@ static void *dl_worker(void *arg) {
             size_t before = pc.at;
             /* a connection that stops sending holds every block after it (they are written in
              * order): after DL_STALL seconds without a byte it is opened again from there */
-            int q = api_stall("GET", url, NULL, NULL, 0, range, piece_sink, &pc, DL_STALL, &r, err, sizeof(err));
+            int q = api_stall("GET", url, NULL, NULL, 0, range, piece_sink, &pc, DL_STALL, keep, &r, err, sizeof(err));
             if (q && pc.at < pc.want && !g_cancel && !g_quit && !d->stop)
                 printf("[drive] block %llu: %s at %zu of %zu bytes, opening it again\n", (unsigned long long)b, err, pc.at, pc.want);
             if (!q && r.status != 206 && !(r.status == 200 && from == 0 && to == d->f->size)) {

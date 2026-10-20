@@ -10,6 +10,12 @@
 
 #include "build.h"
 
+/* A connection kept open between requests to the same server (keep-alive): its TLS
+ * handshake (~1.2 s on the console) is paid once. One per thread. */
+typedef struct http_keep http_keep_t;
+http_keep_t *http_keep_new(void);
+void http_keep_free(http_keep_t *k);
+
 /* Receives the response body as it arrives; nonzero stops the transfer. */
 typedef int (*http_sink_t)(void *ctx, const uint8_t *data, size_t len);
 
@@ -22,6 +28,7 @@ typedef struct {
     void *sink_ctx;
     volatile int *cancel;     /* set from another thread: the request stops (may be NULL) */
     int stall;                /* seconds without a byte before the request gives up (0: 60) */
+    http_keep_t *keep;        /* NULL: a connection of its own, closed after the answer */
 } http_req_t;
 
 #define HTTP_BODY_MAX (1u << 20)

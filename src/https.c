@@ -390,8 +390,12 @@ static int read_body(reader_t *rd, body_t *b, int chunked, uint64_t length, char
                 return -1;
             }
             uint64_t left = strtoull(line, NULL, 16);
-            if (!left)
-                return 0; /* trailers are not needed */
+            if (!left) {
+                /* the trailers up to the empty line: the connection may carry another request */
+                while (!rd_line(rd, line, sizeof(line)) && line[0])
+                    ;
+                return 0;
+            }
             while (left) {
                 if (rd_fill(rd) <= 0) {
                     conn_err(rd->c, "the answer was cut", err, n);
@@ -430,20 +434,36 @@ static int read_body(reader_t *rd, body_t *b, int chunked, uint64_t length, char
     return 0;
 }
 
-int http_request(const http_req_t *q, http_resp_t *r, char *err, size_t n) {
-    memset(r, 0, sizeof(*r));
-    r->length = UINT64_MAX;
-    http_url_t u;
-    if (http_parse_url(q->url, &u)) {
-        snprintf(err, n, "bad URL");
-        return -1;
-    }
-    conn_t *c = conn_open(&u, q->cancel, q->stall, err, n);
-    if (!c)
-        return -1;
+struct http_keep {
+    conn_t *c;
+    char host[256];
+    int port, tls;
+};
+
+http_keep_t *http_keep_new(void) {
+    http_keep_t *k = mem_alloc(sizeof(*k));
+    if (k)
+        memset(k, 0, sizeof(*k));
+    return k;
+}
+
+void http_keep_free(http_keep_t *k) {
+    if (!k)
+        return;
+    conn_close(k->c);
+    mem_free(k);
+}
+
+/* One request on c. *answered: a status line arrived (a connection the server closed
+ * while it was idle fails before that, and the request can go again on a new one).
+ * *reusable: the answer was read to its end and the server keeps the connection. */
+static int request_on(conn_t *c, const http_req_t *q, const http_url_t *u, int keep, http_resp_t *r, int *answered,
+                      int *reusable, char *err, size_t n) {
+    *answered = *reusable = 0;
     buf_t h = {0};
     int body = q->body_len || strcmp(q->method, "GET");
-    buf_printf(&h, "%s %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: PS4Mount\r\nConnection: close\r\n", q->method, u.path, u.host);
+    buf_printf(&h, "%s %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: PS4Mount\r\nConnection: %s\r\n", q->method, u->path,
+               u->host, keep ? "keep-alive" : "close");
     if (body)
         buf_printf(&h, "Content-Length: %zu\r\n", q->body_len);
     if (q->headers)
@@ -460,7 +480,6 @@ int http_request(const http_req_t *q, http_resp_t *r, char *err, size_t n) {
         rc = conn_flush(c);
     if (rc) {
         conn_err(c, "the request could not be sent", err, n);
-        conn_close(c);
         return -1;
     }
     reader_t *rd = mem_alloc(sizeof(*rd));
@@ -468,7 +487,6 @@ int http_request(const http_req_t *q, http_resp_t *r, char *err, size_t n) {
     if (!rd || !head) {
         mem_free(rd);
         mem_free(head);
-        conn_close(c);
         snprintf(err, n, "no memory for the answer");
         return -1;
     }
@@ -502,6 +520,7 @@ int http_request(const http_req_t *q, http_resp_t *r, char *err, size_t n) {
         snprintf(err, n, "not an HTTP answer");
         goto out;
     }
+    *answered = 1;
     char v[64];
     if (!header(head, "Content-Length", v, sizeof(v)))
         r->length = strtoull(v, NULL, 10);
@@ -509,18 +528,70 @@ int http_request(const http_req_t *q, http_resp_t *r, char *err, size_t n) {
     header(head, "Range", r->range, sizeof(r->range));
     int chunked = 0;
     if (!header(head, "Transfer-Encoding", v, sizeof(v))) {
-        for (char *c = v; *c; c++)
-            *c = (char)tolower((unsigned char)*c);
+        for (char *p = v; *p; p++)
+            *p = (char)tolower((unsigned char)*p);
         chunked = strstr(v, "chunked") != NULL;
     }
+    int closing = !header(head, "Connection", v, sizeof(v)) && (v[0] == 'c' || v[0] == 'C');
     body_t b = {q, r, 0};
-    if (!strcmp(q->method, "HEAD") || r->status == 204 || r->status == 304)
+    int nobody = !strcmp(q->method, "HEAD") || r->status == 204 || r->status == 304;
+    if (nobody)
         rc = 0;
     else
         rc = read_body(rd, &b, chunked, r->length, err, n);
+    /* reusable: an answer of a known end, all of it read, and no close from the server */
+    *reusable = !rc && !closing && (nobody || chunked || r->length != UINT64_MAX);
 out:
     mem_free(rd);
     mem_free(head);
-    conn_close(c);
     return rc;
+}
+
+int http_request(const http_req_t *q, http_resp_t *r, char *err, size_t n) {
+    memset(r, 0, sizeof(*r));
+    r->length = UINT64_MAX;
+    http_url_t u;
+    if (http_parse_url(q->url, &u)) {
+        snprintf(err, n, "bad URL");
+        return -1;
+    }
+    http_keep_t *k = q->keep;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        conn_t *c = NULL;
+        int reused = 0;
+        if (k && k->c && k->port == u.port && k->tls == u.tls && !strcmp(k->host, u.host)) {
+            c = k->c;
+            c->cancel = q->cancel;
+            c->stall = q->stall;
+            reused = 1;
+        } else {
+            if (k && k->c) {
+                conn_close(k->c);
+                k->c = NULL;
+            }
+            if (!(c = conn_open(&u, q->cancel, q->stall, err, n)))
+                return -1;
+        }
+        if (k)
+            k->c = NULL;
+        int answered, reusable;
+        int rc = request_on(c, q, &u, k != NULL, r, &answered, &reusable, err, n);
+        if (!rc && k && reusable) {
+            k->c = c;
+            snprintf(k->host, sizeof(k->host), "%s", u.host);
+            k->port = u.port;
+            k->tls = u.tls;
+        } else
+            conn_close(c);
+        /* a kept connection the server had closed fails before any answer: once more on a
+         * new one (nothing of the body went to the sink) */
+        if (rc && reused && !answered && !(q->cancel && *q->cancel)) {
+            http_resp_free(r);
+            memset(r, 0, sizeof(*r));
+            r->length = UINT64_MAX;
+            continue;
+        }
+        return rc;
+    }
+    return -1;
 }

@@ -5,6 +5,7 @@
  * Drive has, downloads that resume, a damaged download, the trash, a removed access and
  * disconnecting. Run with: bash test/run.sh */
 #include <arpa/inet.h>
+#include <stdint.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <signal.h>
@@ -53,7 +54,7 @@ static int g_cut_upload_after;   /* close the connection at the PUT that would p
 static int g_cut_download_at;    /* send this many bytes of a download, then close */
 static int g_damage_download;    /* report a wrong MD5 for downloads */
 static int g_refresh_revoked;    /* the refresh token is no longer valid */
-static int g_token_polls, g_revoked_calls, g_refreshes, g_ranges, g_secret_seen, g_slow_ms;
+static int g_token_polls, g_revoked_calls, g_refreshes, g_ranges, g_secret_seen, g_slow_ms, g_accepts, g_requests, g_puts, g_put_conns;
 
 static void md5_of(const uint8_t *d, size_t n, char out[33]) {
     br_md5_context c;
@@ -177,20 +178,27 @@ static void file_json(char *out, size_t n, const gfile_t *f) {
              f->id, f->name, f->size, md5, t, k, title);
 }
 
-static void serve(int fd) {
-    static char req[1 << 16];
+/* One request on fd; 1 when the connection stays for another (the client asked for
+ * keep-alive), 0 when it closes. */
+static int serve(int fd, int first) {
+    char *req = malloc(1 << 16);
+    int keep = 0;
     size_t got = 0;
     char *end = NULL;
-    while (!end && got < sizeof(req) - 1) {
-        ssize_t r = read(fd, req + got, sizeof(req) - 1 - got);
-        if (r <= 0)
-            return;
+    while (!end && got < (1 << 16) - 1) {
+        ssize_t r = read(fd, req + got, (1 << 16) - 1 - got);
+        if (r <= 0) {
+            free(req);
+            return 0;
+        }
         got += (size_t)r;
         req[got] = 0;
         end = strstr(req, "\r\n\r\n");
     }
-    if (!end)
-        return;
+    if (!end) {
+        free(req);
+        return 0;
+    }
     *end = 0;
     char method[16], path[4096];
     sscanf(req, "%15s %4095s", method, path);
@@ -202,13 +210,15 @@ static void serve(int fd) {
         ssize_t r = read(fd, body + have, len - have);
         if (r <= 0) {
             free(body);
-            return;
+            free(req);
+            return 0;
         }
         have += (size_t)r;
     }
     body[len] = 0;
-    static char headers[1 << 16];
-    snprintf(headers, sizeof(headers), "%s", req);
+    char *headers = req; /* the head, up to the blank line */
+    keep = strcasestr(headers, "Connection: keep-alive") != NULL;
+    g_requests++;
     const char *auth = strcasestr(headers, "Authorization: Bearer ");
     int authed = auth && !strncmp(auth + 22, "access-", 7);
     jv_t meta = jv_of((char *)body, len);
@@ -311,6 +321,7 @@ static void serve(int fd) {
                 (void)!write(fd, head, (size_t)hn);
                 (void)!write(fd, f->data + from, (size_t)g_cut_download_at - from);
                 g_cut_download_at = 0;
+                keep = 0; /* and the connection drops */
             } else
                 respond(fd, rg ? 206 : 200, extra, "application/octet-stream", f->data + from, n);
         }
@@ -333,12 +344,15 @@ static void serve(int fd) {
         const char *cr = strcasestr(headers, "Content-Range: bytes ");
         size_t a = 0, b = 0, total = 0;
         int query = cr && cr[21] == '*';
+        g_puts += !query;
+        g_put_conns += !query && first; /* a chunk that opened a connection of its own */
         if (cr && !query)
             sscanf(cr + 21, "%zu-%zu/%zu", &a, &b, &total);
         if (!f) {
             json(fd, 404, "{}");
         } else if (!query && g_cut_upload_after && b + 1 > (size_t)g_cut_upload_after) {
             g_cut_upload_after = 0; /* the chunk is lost: nothing answers */
+            keep = 0;
         } else {
             if (!query && a == f->size && len == b - a + 1) {
                 memcpy(f->data + a, body, len);
@@ -361,16 +375,33 @@ static void serve(int fd) {
     }
     pthread_mutex_unlock(&g_smu);
     free(body);
+    free(req);
+    return keep;
 }
 
+static void *conn_thread(void *arg) {
+    int fd = (int)(intptr_t)arg;
+    for (int first = 1; serve(fd, first); first = 0)
+        ;
+    close(fd);
+    return NULL;
+}
+
+/* A thread a connection: kept connections wait for their next request side by side. */
 static void *server(void *arg) {
     (void)arg;
     for (;;) {
         int fd = accept(g_listen, NULL, NULL);
         if (fd < 0)
             return NULL;
-        serve(fd);
-        close(fd);
+        pthread_mutex_lock(&g_smu);
+        g_accepts++;
+        pthread_mutex_unlock(&g_smu);
+        pthread_t t;
+        if (pthread_create(&t, NULL, conn_thread, (void *)(intptr_t)fd))
+            close(fd);
+        else
+            pthread_detach(t);
     }
 }
 
@@ -593,6 +624,9 @@ int main(void) {
 
     printf("== uploading a game in chunks\n");
     g_notes[0] = 0;
+    pthread_mutex_lock(&g_smu);
+    int up_conns = g_put_conns, up_puts = g_puts;
+    pthread_mutex_unlock(&g_smu);
     CHECK(drive_upload("CUSA00001", msg, sizeof(msg)) == 0);
     int saw_progress = 0;
     for (int i = 0; i < 400 && !saw_progress; i++) {
@@ -608,6 +642,11 @@ int main(void) {
     /* on the console's screen: when it starts and when it ends */
     CHECK(strstr(g_notes, "Uploading Test: Game to Google Drive (2 MB)\n"));
     CHECK(strstr(g_notes, "Test: Game is in Google Drive (2 MB in "));
+    pthread_mutex_lock(&g_smu);
+    /* the 6 + 1 + 1 chunks of the three pkgs: a kept connection a pkg, not one a chunk */
+    CHECK(g_puts - up_puts == 8 && g_put_conns - up_conns <= 3);
+    printf("  %d chunks, %d of them on a new connection\n", g_puts - up_puts, g_put_conns - up_conns);
+    pthread_mutex_unlock(&g_smu);
     snprintf(p, sizeof(p), "%s/app.pkg", g_lib);
     CHECK(same(p, remote("game.pkg")));
     snprintf(p, sizeof(p), "%s/patch.pkg", g_lib);
@@ -653,6 +692,9 @@ int main(void) {
 
     printf("== downloading a game into a scan folder\n");
     g_in_library = 0;
+    pthread_mutex_lock(&g_smu);
+    int accepts0 = g_accepts, requests0 = g_requests;
+    pthread_mutex_unlock(&g_smu);
     g_cut_download_at = 100000; /* the first download drops after 100000 bytes */
     CHECK(drive_download("CUSA00001", "usb1", msg, sizeof(msg)) == -1);
     CHECK(drive_download("CUSA00001", "usb0", msg, sizeof(msg)) == 0);
@@ -662,6 +704,7 @@ int main(void) {
     CHECK(g_downloaded_n == 1);
     CHECK(g_cut_download_at == 0);
     CHECK(g_ranges >= 6 + 3 + 1 + 1); /* in blocks: 6 for the game, 3 the update, 1 the add-on, 1 again */
+    (void)accepts0, (void)requests0;
     snprintf(p, sizeof(p), "%s/Test Game [CUSA00001]/game.pkg", g_dest);
     CHECK(same(p, remote("game.pkg")));
     snprintf(p, sizeof(p), "%s/Test Game [CUSA00001]/update.pkg", g_dest);
