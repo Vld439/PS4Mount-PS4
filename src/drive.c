@@ -28,6 +28,9 @@
 #define MAX_REMOTE 256
 #define TRIES 6            /* attempts of a request that fails for a passing reason */
 #define PART_DIR ".ps4mount-drive"
+/* part files hold whole blocks in order from the start; ones from before (.part, written
+ * out of order with holes) are never taken as a start */
+#define PART_EXT ".dl"
 #define SPACE_MARGIN (64ull << 20)
 
 /* Each chunk is a connection of its own, and its TLS handshake costs ~1.2 s on the
@@ -1236,13 +1239,6 @@ static int download_file(const remote_file_t *f, const char *part, char *err, si
     memset(&d, 0, sizeof(d));
     d.f = f;
     d.nblocks = f->size ? (f->size + g_drive_block - 1) / g_drive_block : 0;
-    char map[PATH_MAX + 8];
-    snprintf(map, sizeof(map), "%s.map", part);
-    if (!access(map, F_OK)) {
-        /* a part file written out of order (0.2): not usable as a prefix */
-        unlink(map);
-        unlink(part);
-    }
     d.fd = open(part, O_RDWR | O_CREAT, 0666);
     if (d.fd < 0) {
         snprintf(err, n, TR("cannot write %s (%s)", "no se puede escribir %s (%s)"), part, strerror(errno));
@@ -1313,12 +1309,11 @@ static int download_file(const remote_file_t *f, const char *part, char *err, si
         char got[33];
         md5_hex(&d.md5, got);
         if (strcmp(got, f->md5)) {
-            snprintf(err, n, TR("%s arrived damaged (MD5 %s, should be %s): it will be downloaded again",
-                                "%s llegó dañado (MD5 %s, debería ser %s): se descargará de nuevo"),
+            snprintf(err, n, TR("%s arrived damaged (MD5 %s, should be %s)", "%s llegó dañado (MD5 %s, debería ser %s)"),
                      f->name, got, f->md5);
             if (ftruncate(d.fd, 0)) {
             }
-            rc = -1;
+            rc = -2;
         }
     }
     if (close(d.fd) && !rc) {
@@ -1381,7 +1376,7 @@ static void run_download(const char *tid, const char *dest) {
     uint64_t need = SPACE_MARGIN;
     for (int i = 0; i < nr; i++) {
         struct stat st;
-        snprintf(part, sizeof(part), "%.3900s/%.127s.part", parts, rem[i].id);
+        snprintf(part, sizeof(part), "%.3900s/%.127s" PART_EXT, parts, rem[i].id);
         uint64_t held = !stat(part, &st) ? (uint64_t)st.st_blocks * 512 : 0;
         need += rem[i].size > held ? rem[i].size - held : 0;
     }
@@ -1417,7 +1412,7 @@ static void run_download(const char *tid, const char *dest) {
             g_done = 0;
             g_total = rem[i].size;
             pthread_mutex_unlock(&g_mu);
-            snprintf(part, sizeof(part), "%.3900s/%.127s.part", parts, rem[i].id);
+            snprintf(part, sizeof(part), "%.3900s/%.127s" PART_EXT, parts, rem[i].id);
             /* already here whole (a download asked for twice, before the scan took it) */
             char here[PATH_MAX];
             struct stat hs;
@@ -1428,7 +1423,21 @@ static void run_download(const char *tid, const char *dest) {
                 continue;
             }
             printf("[drive] %s: downloading %s (%llu bytes) into %s\n", tid, rem[i].name, (unsigned long long)rem[i].size, part);
-            if (download_file(&rem[i], part, err, sizeof(err)))
+            {
+                /* the old kind of part file of this pkg, if any, is not a start */
+                char old[PATH_MAX + 8];
+                snprintf(old, sizeof(old), "%.3900s/%.127s.part", parts, rem[i].id);
+                unlink(old);
+                snprintf(old, sizeof(old), "%.3900s/%.127s.part.map", parts, rem[i].id);
+                unlink(old);
+            }
+            int drc = download_file(&rem[i], part, err, sizeof(err));
+            if (drc == -2) {
+                /* damaged (the part file emptied): once more from the start, on its own */
+                printf("[drive] %s: %s; downloading it again\n", tid, err);
+                drc = download_file(&rem[i], part, err, sizeof(err));
+            }
+            if (drc)
                 goto fail;
             char dst[PATH_MAX];
             mkdir(final_dir, 0777);

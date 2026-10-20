@@ -681,7 +681,7 @@ int main(void) {
         snprintf(g_dest, sizeof(g_dest), "%s", dir2);
         snprintf(part, sizeof(part), "%s/.ps4mount-drive", dir2);
         mkdir(part, 0777);
-        snprintf(part, sizeof(part), "%s/.ps4mount-drive/%s.part", dir2, g->id);
+        snprintf(part, sizeof(part), "%s/.ps4mount-drive/%s.dl", dir2, g->id);
         FILE *pf = fopen(part, "wb");
         fwrite(g->data, 1, (256u << 10) * 2, pf); /* two whole blocks */
         fwrite("garbage", 1, 7, pf);               /* and the start of a third, not trusted */
@@ -739,7 +739,31 @@ int main(void) {
         CHECK(access(p, F_OK) != 0); /* no second copy */
     }
 
-    printf("== a download that arrives damaged is not kept\n");
+    printf("== an old kind of part file (holes, written out of order) is not taken as a start\n");
+    {
+        gfile_t *g = remote("game.pkg");
+        char dir5[200], old[400];
+        snprintf(dir5, sizeof(dir5), "%s/old", g_root);
+        mkdir(dir5, 0777);
+        snprintf(g_dest, sizeof(g_dest), "%s", dir5);
+        snprintf(old, sizeof(old), "%s/.ps4mount-drive", dir5);
+        mkdir(old, 0777);
+        snprintf(old, sizeof(old), "%s/.ps4mount-drive/%s.part", dir5, g->id);
+        FILE *of = fopen(old, "wb");
+        for (int i = 0; i < 600000; i++)
+            fputc(0, of); /* zeros where the game's first blocks go */
+        fclose(of);
+        CHECK(drive_download("CUSA00001", "usb0", msg, sizeof(msg)) == 0);
+        wait_idle();
+        result(res, sizeof(res), &ok);
+        CHECK(ok);
+        snprintf(p, sizeof(p), "%s/Test Game [CUSA00001]/game.pkg", dir5);
+        CHECK(same(p, g));
+        CHECK(access(old, F_OK) != 0);
+    }
+
+    printf("== a download that arrives damaged is tried once more, then not kept\n");
+    g_ranges = 0;
     g_damage_download = 1;
     snprintf(p, sizeof(p), "%s/other", g_root);
     mkdir(p, 0777);
@@ -748,6 +772,7 @@ int main(void) {
     wait_idle();
     result(res, sizeof(res), &ok);
     CHECK(!ok && strstr(res, "arrived damaged"));
+    CHECK(g_ranges == 6 * 2); /* the game's 6 blocks, twice */
     snprintf(p, sizeof(p), "%s/Test Game [CUSA00001]/game.pkg", g_dest);
     CHECK(access(p, F_OK) != 0);
     g_damage_download = 0;
