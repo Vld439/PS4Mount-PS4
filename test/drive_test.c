@@ -761,6 +761,37 @@ int main(void) {
         wait_idle();
     }
 
+    printf("== a game's folder appears only with all its pkgs (no scan adds it half-way)\n");
+    {
+        char dir8[200], fd[400], hidden[400];
+        snprintf(dir8, sizeof(dir8), "%s/together", g_root);
+        mkdir(dir8, 0777);
+        snprintf(g_dest, sizeof(g_dest), "%s", dir8);
+        snprintf(fd, sizeof(fd), "%s/Test Game [CUSA00001]", dir8);
+        snprintf(hidden, sizeof(hidden), "%s/.Test Game [CUSA00001]", dir8);
+        g_slow_ms = 150;
+        CHECK(drive_download("CUSA00001", "usb0", msg, sizeof(msg)) == 0);
+        int seen_early = 0, busy = 1;
+        for (int i = 0; i < 400 && busy; i++) {
+            usleep(10000);
+            if (access(fd, F_OK) == 0) {
+                b = status();
+                busy = strstr((char *)b.data, "\"busy\":true") != NULL;
+                buf_free(&b);
+                seen_early |= busy; /* the folder while the download still runs */
+                break;
+            }
+        }
+        wait_idle();
+        g_slow_ms = 0;
+        CHECK(!seen_early);
+        snprintf(p, sizeof(p), "%s/game.pkg", fd);
+        CHECK(same(p, remote("game.pkg")));
+        snprintf(p, sizeof(p), "%s/update.pkg", fd);
+        CHECK(same(p, remote("update.pkg")));
+        CHECK(access(hidden, F_OK) != 0); /* the hidden staging folder is gone */
+    }
+
     printf("== the same game asked for twice is downloaded once\n");
     {
         char dir4[200];

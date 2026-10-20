@@ -5,6 +5,7 @@
  * after a restart), ranged downloads into a hidden part file, and MD5 checks of both. */
 #include "drive.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -1409,7 +1410,12 @@ static void run_download(const char *tid, const char *dest) {
     }
     clean_title(title, fname, sizeof(fname));
     snprintf(final_dir, sizeof(final_dir), "%.3800s/%.191s [%s]", scan, fname[0] ? fname : tid, tid);
-    /* the game first, then its update and add-ons: the scan takes them in that order */
+    /* Every pkg first comes whole into the hidden part folder; then all of them go to the
+     * game's folder at once. One at a time, the scan added the game while its update was
+     * still on the way, and had to add it again when it came (the add-on install that
+     * re-add asks for can stall, and a registration during the download slowed it). */
+    char staged[PATH_MAX];
+    snprintf(staged, sizeof(staged), "%.3800s/.%.191s [%s]", scan, fname[0] ? fname : tid, tid);
     for (int pass = 0; pass < 2; pass++)
         for (int i = 0; i < nr; i++) {
             if ((pass == 0) != !strcmp(rem[i].kind, "game"))
@@ -1448,16 +1454,45 @@ static void run_download(const char *tid, const char *dest) {
             }
             if (drc)
                 goto fail;
-            char dst[PATH_MAX];
-            mkdir(final_dir, 0777);
-            free_path(final_dir, rem[i].name, dst, sizeof(dst));
-            if (rename(part, dst)) {
-                snprintf(err, sizeof(err), TR("%s could not be renamed (%s)", "%s no se pudo renombrar (%s)"), part, strerror(errno));
-                goto fail;
-            }
             file_done(rem[i].size);
             set_phase("receiving");
         }
+    /* all of them whole: into a hidden folder (the scan skips hidden ones), which then
+     * takes the game folder's name in one rename */
+    mkdir(staged, 0777);
+    for (int i = 0; i < nr; i++) {
+        char here[PATH_MAX], dst[PATH_MAX];
+        struct stat hs;
+        snprintf(here, sizeof(here), "%.3800s/%.90s", final_dir, rem[i].name);
+        if (!stat(here, &hs) && (uint64_t)hs.st_size == rem[i].size)
+            continue; /* already in the game's folder */
+        snprintf(part, sizeof(part), "%.3900s/%.127s" PART_EXT, parts, rem[i].id);
+        free_path(staged, rem[i].name, dst, sizeof(dst));
+        if (rename(part, dst)) {
+            snprintf(err, sizeof(err), TR("%s could not be renamed (%s)", "%s no se pudo renombrar (%s)"), part, strerror(errno));
+            goto fail;
+        }
+    }
+    if (rename(staged, final_dir)) {
+        /* the game's folder is there already (a download asked for again): file by file */
+        DIR *sd = opendir(staged);
+        struct dirent *e;
+        while (sd && (e = readdir(sd))) {
+            char from[PATH_MAX], dst[PATH_MAX];
+            if (e->d_name[0] == '.')
+                continue;
+            snprintf(from, sizeof(from), "%.3800s/%.250s", staged, e->d_name);
+            free_path(final_dir, e->d_name, dst, sizeof(dst));
+            if (rename(from, dst)) {
+                snprintf(err, sizeof(err), TR("%s could not be renamed (%s)", "%s no se pudo renombrar (%s)"), from, strerror(errno));
+                closedir(sd);
+                goto fail;
+            }
+        }
+        if (sd)
+            closedir(sd);
+        rmdir(staged);
+    }
     rmdir(parts);
     rc = 0;
     char took[48];
