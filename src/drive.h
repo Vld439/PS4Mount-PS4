@@ -48,6 +48,9 @@ void drive_start(const char *state_dir, const drive_endpoints_t *ep, const drive
 /* Ends the thread (the transfer in progress stops; uploads resume where they were). */
 void drive_stop(void);
 
+/* 1 while an upload or a download runs or waits (the console is kept out of rest mode). */
+int drive_active(void);
+
 /* {"configured":..,"connected":..,"email":..,"login":{..},"job":{..},"games":[..]} */
 void drive_status_json(buf_t *out);
 

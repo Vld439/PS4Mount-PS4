@@ -94,6 +94,7 @@ typedef struct {
 static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, -1};
 
 int sceSystemServiceParamGetInt(int param_id, int *value);
+int sceSystemServicePowerTick(void);
 
 /* The language in use: the one chosen in the settings, else the console's. */
 static void apply_lang(void) {
@@ -3964,6 +3965,23 @@ static int still_listening(int s) {
 
 static int g_live; /* klogsrv replays its backlog first: live after the first quiet 100 ms */
 
+/* Rest mode would cut a Drive transfer (and close the payload's sockets): while one runs,
+ * the system is told every few seconds that the console is in use, as when a pad is
+ * pressed. Once it ends the usual rest settings apply again. */
+static void keep_awake(void) {
+    static time_t last;
+    static int on;
+    int active = drive_active();
+    if (active != on) {
+        on = active;
+        printf("[drive] %s\n", on ? "keeping the console out of rest mode while it transfers" : "rest mode allowed again");
+    }
+    if (on && time(NULL) - last >= 10) {
+        last = time(NULL);
+        sceSystemServicePowerTick();
+    }
+}
+
 /* Serves the panel and handles klog lines for up to ms milliseconds. */
 static void pump_events(int ms) {
     static char buf[16384], line[4096];
@@ -4140,6 +4158,7 @@ int main(void) {
             g_manual_scan = 0;
             g_next_scan = time(NULL) + SCAN_SECONDS;
         }
+        keep_awake();
         pump_events(1000);
     }
 }

@@ -1715,6 +1715,15 @@ void drive_stop(void) {
     pthread_mutex_unlock(&g_mu);
 }
 
+int drive_active(void) {
+    pthread_mutex_lock(&g_mu);
+    int a = g_busy && (g_op == OP_UPLOAD || g_op == OP_DOWNLOAD);
+    for (int i = 0; i < g_njobs && !a; i++)
+        a = g_jobs[i].op == OP_UPLOAD || g_jobs[i].op == OP_DOWNLOAD;
+    pthread_mutex_unlock(&g_mu);
+    return a;
+}
+
 void drive_status_json(buf_t *out) {
     pthread_mutex_lock(&g_mu);
     time_t now = time(NULL);
