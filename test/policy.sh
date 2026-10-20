@@ -74,5 +74,9 @@ for path in sys.argv[1:]:
 sys.exit(bad)
 PY
 
+# Notifications are in the console's language: a text given to notify() goes through TR()
+# (a bare "%s" passes a text made with TR elsewhere).
+grep -nE '\bnotify\("' src/main.c | grep -vE 'notify\("%s(: %s)?"' && rule "a notification without TR(): it would show in English on a Spanish console"
+
 [ $fail = 0 ] && echo "policy: all rules hold"
 exit $fail

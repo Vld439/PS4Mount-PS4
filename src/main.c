@@ -396,7 +396,8 @@ static int src_open(title_src_t *t, const char *root, const char *tid) {
     if (exists(t->patch_path)) {
         const sfo_item_t *gv = sfo_get(&t->app_sfo, "VERSION");
         if (pkg_open(&t->patch, t->patch_path) || read_sfo(&t->patch, &t->patch_sfo)) {
-            snprintf(t->update_issue, sizeof(t->update_issue), "Update ignored: patch.pkg could not be read");
+            snprintf(t->update_issue, sizeof(t->update_issue), "%s",
+                     TR("Update ignored: patch.pkg could not be read", "Actualización ignorada: no se pudo leer patch.pkg"));
             if (t->patch.fd > 0)
                 pkg_close(&t->patch);
         } else {
@@ -406,8 +407,9 @@ static int src_open(title_src_t *t, const char *root, const char *tid) {
             const char *gver = gv ? gv->sval : "?", *uver = uv ? uv->sval : "?";
             if (strcmp(t->patch.title_id, tid)) {
                 snprintf(t->update_issue, sizeof(t->update_issue),
-                         "Update ignored: it is for %s version %s, the game is %s version %s", t->patch.title_id, uver,
-                         tid, gver);
+                         TR("Update ignored: it is for %s version %s, the game is %s version %s",
+                            "Actualización ignorada: es para %s versión %s, el juego es %s versión %s"),
+                         t->patch.title_id, uver, tid, gver);
                 pkg_close(&t->patch);
             } else {
                 t->has_patch = 1;
@@ -2193,7 +2195,8 @@ static void scan_root(const char *root, int fresh, int reconnected) {
         const char *rv = db_app_ver(t->tid);
         if (rv && *rv && strcmp(rv, src.ver)) {
             char why[64];
-            snprintf(why, sizeof(why), "registered as %s, the update is %s", rv, src.ver);
+            snprintf(why, sizeof(why), TR("registered as %s, the update is %s", "registrado como %s, la actualización es %s"), rv,
+                     src.ver);
             if (readd_queue(t->tid, why))
                 printf("[reg] %s: %s\n", t->tid, why);
         }
@@ -2253,13 +2256,15 @@ static void scan_root(const char *root, int fresh, int reconnected) {
             if (!grouped) {
                 char extra[64] = "";
                 if (t->ndlc)
-                    snprintf(extra, sizeof(extra), " + %d add-on%s", t->ndlc, t->ndlc > 1 ? "s" : "");
+                    snprintf(extra, sizeof(extra), TR(" + %d add-on(s)", " + %d DLC"), t->ndlc);
                 notify(TR("Adding %d/%d: %s%s%s (%s)", "Añadiendo %d/%d: %s%s%s (%s)"), done + k + 1, pending, t->name,
                        t->has_patch ? TR(" with update", " con actualización") : "", extra, t->tid);
             }
             if (src_open(&src, root, t->tid) || register_prepare(&src)) {
                 if (retry_failed(t->tid))
-                    notify("Failed to add %s (%s), it is tried again every few minutes", t->name, t->tid);
+                    notify(TR("Failed to add %s (%s), it is tried again every few minutes",
+                              "No se pudo añadir %s (%s), se vuelve a intentar cada pocos minutos"),
+                           t->name, t->tid);
             } else {
                 prepared[k] = 1;
                 snprintf(ids[np++], 10, "%s", t->tid);
@@ -2277,7 +2282,9 @@ static void scan_root(const char *root, int fresh, int reconnected) {
                 continue;
             if (register_finish(&src)) {
                 if (retry_failed(t->tid))
-                    notify("Failed to add %s (%s), it is tried again every few minutes", t->name, t->tid);
+                    notify(TR("Failed to add %s (%s), it is tried again every few minutes",
+                              "No se pudo añadir %s (%s), se vuelve a intentar cada pocos minutos"),
+                           t->name, t->tid);
             } else {
                 retry_clear(t->tid);
                 ok++;
@@ -2523,7 +2530,7 @@ static void disagree_seen(const char *tid) {
         return;
     m->running = 0; /* the launch was refused */
     if (m->has_patch)
-        readd_queue(tid, "system file disagree");
+        readd_queue(tid, TR("the system found another version", "el sistema encontró otra versión"));
 }
 
 /* PS4Mount's own folders of a game that left the library (the pkgs are not in them). */
@@ -3922,7 +3929,7 @@ __attribute__((unused)) static void install_panel_shortcut(void) {
     rc = register_call(PANEL_ID);
     printf("[panel] shortcut install rc=0x%08x\n", rc);
     if (!rc)
-        notify("PS4Mount added to the Media tab");
+        notify("%s", TR("PS4Mount added to the Media tab", "PS4Mount añadido a la pestaña Multimedia"));
 }
 
 static int g_klog = -1, g_web = -1;
