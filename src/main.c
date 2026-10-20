@@ -645,9 +645,25 @@ static int dlc_installed(const dlc_src_t *a) {
     return !lstat(p, &st) && S_ISREG(st.st_mode);
 }
 
+/* Add-ons the system's installer would not take in this run: the game goes on without
+ * them (and is not registered again for them on every scan); the next PS4Mount tries
+ * again, after the restart a new game needs anyway. */
+#define MAX_DLC_FAILED 64
+static char g_dlc_failed[MAX_DLC_FAILED][40];
+static int g_ndlc_failed;
+
+static int dlc_failed(const char *content_id) {
+    for (int i = 0; i < g_ndlc_failed; i++)
+        if (!strcmp(g_dlc_failed[i], content_id))
+            return 1;
+    return 0;
+}
+
 static int dlc_ready(const title_src_t *t) {
     char p[PATH_MAX];
     for (int i = 0; i < t->ndlc; i++) {
+        if (t->dlc[i].install && dlc_failed(t->dlc[i].pkg.content_id))
+            continue;
         snprintf(p, sizeof(p), HOLD_DIR "/addcont/%s/%s/ac.pkg", t->dlc[i].pkg.title_id,
                  t->dlc[i].pkg.content_id + 20);
         if (t->dlc[i].install ? !dlc_installed(&t->dlc[i]) : !exists(p))
@@ -675,11 +691,17 @@ static int g_nreboot;
 static int same_file(const char *path, const void *data, size_t size);
 
 /* When the console booted (0 when unknown). */
+/* When the console booted: the clock less the time since boot. (kern.boottime is
+ * refused to payloads: it gave 0 and every restart mark was dropped as stale.) It moves
+ * by a second or so between calls, and with a clock set over the network. */
 static long boot_time(void) {
-    struct timeval tv;
-    size_t len = sizeof(tv);
-    return sysctlbyname("kern.boottime", &tv, &len, NULL, 0) ? 0 : (long)tv.tv_sec;
+    struct timespec up;
+    if (clock_gettime(CLOCK_MONOTONIC, &up))
+        return 0;
+    return (long)time(NULL) - (long)up.tv_sec;
 }
+
+#define SAME_BOOT_SECONDS 60 /* a console takes longer than this to boot again */
 
 /* STATE_DIR/<TID>.restart holds the boot time of when its task was written: the game
  * needs a restart while the console has not booted since (a PS4Mount loaded again keeps
@@ -696,7 +718,7 @@ static int needs_reboot(const char *tid) {
     ssize_t n = read(fd, buf, sizeof(buf) - 1);
     close(fd);
     long boot = boot_time(), when = n > 0 ? atol(buf) : -1;
-    if (boot && when == boot)
+    if (boot && when > 0 && labs(when - boot) <= SAME_BOOT_SECONDS)
         return 1;
     unlink(p); /* booted since: BGFT has read the task */
     return 0;
@@ -870,9 +892,12 @@ static void pump_events(int ms);
 
 /* Installs a small add-on with the system's installer and waits for it (a minute at
  * most): the system copies the pkg into /user/addcont and writes its addcont.db record. */
+/* 0 when installed, 1 when the installer would not take it now (see g_dlc_failed). */
 static int dlc_install(dlc_src_t *a) {
     if (dlc_installed(a))
         return 0;
+    if (dlc_failed(a->pkg.content_id))
+        return 1;
     char target[64], url[PATH_MAX + 8], msg[PATH_MAX + 64];
     snprintf(target, sizeof(target), "/user/addcont/%s", a->pkg.title_id);
     /* a folder mounted here by an older PS4Mount: the install must reach the real one */
@@ -884,13 +909,14 @@ static int dlc_install(dlc_src_t *a) {
     int task = install_pkg(sys_path(a->path, url, sizeof(url)), n && !n->is_int ? n->sval : a->pkg.content_id,
                            user, msg, sizeof(msg));
     printf("[dlc] %s: %s\n", a->pkg.content_id, msg);
-    if (task < 0)
-        return -1;
-    for (int i = 0; i < 120 && !dlc_installed(a); i++)
+    for (int i = 0; task >= 0 && i < 120 && !dlc_installed(a); i++)
         pump_events(500);
     if (!dlc_installed(a)) {
-        printf("[dlc] %s: not installed after a minute\n", a->pkg.content_id);
-        return -1;
+        if (task >= 0)
+            printf("[dlc] %s: not installed after a minute\n", a->pkg.content_id);
+        if (g_ndlc_failed < MAX_DLC_FAILED)
+            snprintf(g_dlc_failed[g_ndlc_failed++], sizeof(g_dlc_failed[0]), "%s", a->pkg.content_id);
+        return 1;
     }
     printf("[dlc] %s installed\n", a->pkg.content_id);
     return 0;
@@ -919,8 +945,20 @@ static int place_files(title_src_t *t) {
 
     if (place_license(app))
         return -1;
-    for (int i = 0; i < t->ndlc; i++)
-        rc |= t->dlc[i].install ? dlc_install(&t->dlc[i]) : place_dlc(&t->dlc[i]);
+    int dlc_left = 0;
+    for (int i = 0; i < t->ndlc; i++) {
+        if (!t->dlc[i].install)
+            rc |= place_dlc(&t->dlc[i]);
+        else if (dlc_install(&t->dlc[i]) > 0)
+            dlc_left++;
+    }
+    /* an add-on the installer refuses does not keep the game out of the library */
+    if (dlc_left)
+        notify(TR("%s: %d add-on(s) could not be installed now; the game is added without them and they are tried again "
+                  "the next time PS4Mount loads",
+                  "%s: %d DLC no se pudieron instalar ahora; el juego se añade sin ellos y se vuelven a intentar la "
+                  "próxima vez que cargues PS4Mount"),
+               t->name, dlc_left);
 
     size_t pl = 0, ppl = 0;
     uint8_t *pg = pkg_entry(app, 0x1001, &pl), *ppg = pat ? pkg_entry(pat, 0x1001, &ppl) : NULL;
