@@ -30,7 +30,9 @@
 #define PART_DIR ".ps4mount-drive"
 #define SPACE_MARGIN (64ull << 20)
 
-size_t g_drive_chunk = 8u << 20;
+/* Each chunk is a connection of its own, and its TLS handshake costs ~1.2 s on the
+ * console: 8 MB chunks lost a quarter of a 2 MB/s upload, 32 MB ones lose ~7%. */
+size_t g_drive_chunk = 32u << 20;
 int g_drive_retry_seconds = 2;
 
 enum { OP_LOGIN, OP_LIST, OP_UPLOAD, OP_DOWNLOAD, OP_TRASH };
