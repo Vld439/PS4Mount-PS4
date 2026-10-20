@@ -892,12 +892,13 @@ static void pump_events(int ms);
 
 /* Installs a small add-on with the system's installer and waits for it (a minute at
  * most): the system copies the pkg into /user/addcont and writes its addcont.db record. */
-/* 0 when installed, 1 when the installer would not take it now (see g_dlc_failed). */
+/* 0 when installed, 1 when the installer would not take it now, 2 when it already would
+ * not earlier in this run (see g_dlc_failed: said once). */
 static int dlc_install(dlc_src_t *a) {
     if (dlc_installed(a))
         return 0;
     if (dlc_failed(a->pkg.content_id))
-        return 1;
+        return 2;
     char target[64], url[PATH_MAX + 8], msg[PATH_MAX + 64];
     snprintf(target, sizeof(target), "/user/addcont/%s", a->pkg.title_id);
     /* a folder mounted here by an older PS4Mount: the install must reach the real one */
@@ -920,6 +921,21 @@ static int dlc_install(dlc_src_t *a) {
     }
     printf("[dlc] %s installed\n", a->pkg.content_id);
     return 0;
+}
+
+/* Installs the small add-ons of a registered game. One the installer refuses does not
+ * keep the game out of the library: it is said, and tried again at the next load. */
+static void install_title_dlc(title_src_t *t) {
+    int left = 0;
+    for (int i = 0; i < t->ndlc; i++)
+        if (t->dlc[i].install && dlc_install(&t->dlc[i]) == 1)
+            left++;
+    if (left)
+        notify(TR("%s: %d add-on(s) could not be installed now; the game is added without them and they are tried again "
+                  "the next time PS4Mount loads",
+                  "%s: %d DLC no se pudieron instalar ahora; el juego se añade sin ellos y se vuelven a intentar la "
+                  "próxima vez que cargues PS4Mount"),
+               t->name, left);
 }
 
 static int place_files(title_src_t *t) {
@@ -945,20 +961,13 @@ static int place_files(title_src_t *t) {
 
     if (place_license(app))
         return -1;
-    int dlc_left = 0;
-    for (int i = 0; i < t->ndlc; i++) {
+    for (int i = 0; i < t->ndlc; i++)
         if (!t->dlc[i].install)
             rc |= place_dlc(&t->dlc[i]);
-        else if (dlc_install(&t->dlc[i]) > 0)
-            dlc_left++;
-    }
-    /* an add-on the installer refuses does not keep the game out of the library */
-    if (dlc_left)
-        notify(TR("%s: %d add-on(s) could not be installed now; the game is added without them and they are tried again "
-                  "the next time PS4Mount loads",
-                  "%s: %d DLC no se pudieron instalar ahora; el juego se añade sin ellos y se vuelven a intentar la "
-                  "próxima vez que cargues PS4Mount"),
-               t->name, dlc_left);
+    /* the installer takes an add-on only for a game the system has: one not registered
+     * yet gets them once it is (register_finish) */
+    if (db_is_registered(tid))
+        install_title_dlc(t);
 
     size_t pl = 0, ppl = 0;
     uint8_t *pg = pkg_entry(app, 0x1001, &pl), *ppg = pat ? pkg_entry(pat, 0x1001, &ppl) : NULL;
@@ -1617,6 +1626,7 @@ static int register_finish(title_src_t *t) {
         return -1;
     }
     enforce_patch_sfo(t);
+    install_title_dlc(t); /* now the system has the game (already installed ones are skipped) */
     char marker[64];
     snprintf(marker, sizeof(marker), STATE_DIR "/%s.src", tid);
     if (write_file(marker, t->marker, strlen(t->marker), 0666))

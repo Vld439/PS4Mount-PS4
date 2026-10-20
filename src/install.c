@@ -33,6 +33,7 @@ typedef struct {
 
 #define BGFT_OPT_DISABLE_CDN_QUERY_PARAM 0x10000
 #define BGFT_HEAP (1u << 20)
+#define BGFT_ERR_TASK_EXISTS ((int)0x80990015) /* seen when an install of the pkg is queued already */
 
 int sceKernelLoadStartModule(const char *, size_t, const void *, uint32_t, void *, int *);
 
@@ -103,8 +104,18 @@ int install_pkg(const char *path, const char *name, int user, char *msg, unsigne
     p.params.playgo_scenario_id = "0";
     p.params.option = BGFT_OPT_DISABLE_CDN_QUERY_PARAM;
     int task = -1, rc = g_register(&p, &task);
+    if (rc == BGFT_ERR_TASK_EXISTS && task > 0) {
+        /* an install of this pkg already waits in the installer's queue (one that stalled):
+         * start that one instead of asking for another */
+        int st = g_start(task);
+        printf("[dlc] %s is already task %08x; starting it: 0x%08x\n", path, task, st);
+        if (!st) {
+            snprintf(msg, n, "installing %s (task %08x, already queued)", path, task);
+            return task;
+        }
+    }
     if (rc) {
-        snprintf(msg, n, "the system installer refused %s (0x%08x)", path, rc);
+        snprintf(msg, n, "the system installer refused %s (0x%08x, task %d)", path, rc, task);
         return -1;
     }
     rc = g_start(task);
