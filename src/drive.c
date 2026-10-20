@@ -453,8 +453,8 @@ static void login_poll(void) {
 /* A request to Drive with the access token; requests that fail for a passing reason
  * (network, 429, 5xx) are tried again, an ended token is refreshed once. 0 when an answer
  * arrived: its status is the caller's to judge. */
-static int api(const char *method, const char *url, const char *ctype, const void *body, size_t len, const char *extra,
-               http_sink_t sink, void *sink_ctx, http_resp_t *r, char *err, size_t n) {
+static int api_stall(const char *method, const char *url, const char *ctype, const void *body, size_t len,
+                     const char *extra, http_sink_t sink, void *sink_ctx, int stall, http_resp_t *r, char *err, size_t n) {
     int refreshed = 0;
     for (int t = 0; t < TRIES; t++) {
         if (g_cancel || g_quit) {
@@ -472,7 +472,7 @@ static int api(const char *method, const char *url, const char *ctype, const voi
         if (extra)
             buf_put(&h, extra, strlen(extra));
         http_req_t q = {.method = method, .url = url, .headers = text(&h), .body = body, .body_len = len,
-                        .sink = sink, .sink_ctx = sink_ctx, .cancel = &g_cancel};
+                        .sink = sink, .sink_ctx = sink_ctx, .cancel = &g_cancel, .stall = stall};
         int rc = http_request(&q, r, err, n);
         buf_free(&h);
         if (!rc && r->status == 401 && !refreshed) {
@@ -503,6 +503,11 @@ static int api(const char *method, const char *url, const char *ctype, const voi
     if (g_cancel || g_quit)
         snprintf(err, n, "%s", TR("cancelled", "cancelado"));
     return -1;
+}
+
+static int api(const char *method, const char *url, const char *ctype, const void *body, size_t len, const char *extra,
+               http_sink_t sink, void *sink_ctx, http_resp_t *r, char *err, size_t n) {
+    return api_stall(method, url, ctype, body, len, extra, sink, sink_ctx, 0, r, err, n);
 }
 
 /* A JSON request that must answer 200; the parsed answer in r. */
@@ -1084,6 +1089,7 @@ out:
 size_t g_drive_block = 8u << 20;
 #define DL_THREADS 8
 #define DL_SLOTS (DL_THREADS + 4) /* blocks that may wait in memory for an earlier one */
+#define DL_STALL 10
 
 typedef struct {
     const remote_file_t *f;
@@ -1158,8 +1164,13 @@ static void *dl_worker(void *arg) {
     for (;;) {
         pthread_mutex_lock(&d->mu);
         /* no block further ahead than the slots can hold */
-        while (!d->stop && !g_cancel && !g_quit && d->next < d->nblocks && d->next >= d->written + (uint64_t)d->slots)
-            pthread_cond_wait(&d->cv, &d->mu);
+        while (!d->stop && !g_cancel && !g_quit && d->next < d->nblocks && d->next >= d->written + (uint64_t)d->slots) {
+            /* a second at a time: a cancel or a stop sets a flag, it does not signal */
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += 1;
+            pthread_cond_timedwait(&d->cv, &d->mu, &ts);
+        }
         if (d->stop || g_cancel || g_quit || d->next >= d->nblocks) {
             pthread_mutex_unlock(&d->mu);
             return NULL;
@@ -1177,7 +1188,11 @@ static void *dl_worker(void *arg) {
             snprintf(range, sizeof(range), "Range: bytes=%llu-%llu\r\n", (unsigned long long)(from + pc.at),
                      (unsigned long long)(to - 1));
             size_t before = pc.at;
-            int q = api("GET", url, NULL, NULL, 0, range, piece_sink, &pc, &r, err, sizeof(err));
+            /* a connection that stops sending holds every block after it (they are written in
+             * order): after DL_STALL seconds without a byte it is opened again from there */
+            int q = api_stall("GET", url, NULL, NULL, 0, range, piece_sink, &pc, DL_STALL, &r, err, sizeof(err));
+            if (q && pc.at < pc.want && !g_cancel && !g_quit && !d->stop)
+                printf("[drive] block %llu: %s at %zu of %zu bytes, opening it again\n", (unsigned long long)b, err, pc.at, pc.want);
             if (!q && r.status != 206 && !(r.status == 200 && from == 0 && to == d->f->size)) {
                 gone = r.status == 404;
                 if (r.status == 200)
@@ -1257,12 +1272,15 @@ static int download_file(const remote_file_t *f, const char *part, char *err, si
         keep = 0;
     if (keep) {
         set_phase("checking");
-        if (hash_range_r(d.fd, &d.md5, 0, keep * g_drive_block, d.buf[0], g_drive_block, 0)) {
+        if (hash_range_r(d.fd, &d.md5, 0, keep * g_drive_block, d.buf[0], g_drive_block, 1)) {
             br_md5_init(&d.md5);
             keep = 0;
             if (ftruncate(d.fd, 0)) {
             }
         }
+        pthread_mutex_lock(&g_mu);
+        g_nsamples = 0; /* a local read: not the download's speed */
+        pthread_mutex_unlock(&g_mu);
         set_phase("receiving");
     }
     d.written = d.next = keep;

@@ -53,7 +53,7 @@ static int g_cut_upload_after;   /* close the connection at the PUT that would p
 static int g_cut_download_at;    /* send this many bytes of a download, then close */
 static int g_damage_download;    /* report a wrong MD5 for downloads */
 static int g_refresh_revoked;    /* the refresh token is no longer valid */
-static int g_token_polls, g_revoked_calls, g_refreshes, g_ranges, g_secret_seen;
+static int g_token_polls, g_revoked_calls, g_refreshes, g_ranges, g_secret_seen, g_slow_ms;
 
 static void md5_of(const uint8_t *d, size_t n, char out[33]) {
     br_md5_context c;
@@ -299,6 +299,11 @@ static void serve(int fd) {
             char extra[128];
             snprintf(extra, sizeof(extra), "Content-Range: bytes %zu-%zu/%zu\r\n", from, last, f->size);
             g_ranges++;
+            if (g_slow_ms && from) {
+                pthread_mutex_unlock(&g_smu);
+                usleep((useconds_t)g_slow_ms * 1000);
+                pthread_mutex_lock(&g_smu);
+            }
             if (g_cut_download_at && (size_t)g_cut_download_at > from && (size_t)g_cut_download_at <= last) {
                 /* the announced length, then less: a connection that drops */
                 char head[256];
@@ -689,6 +694,28 @@ int main(void) {
         snprintf(p, sizeof(p), "%s/Test Game [CUSA00001]/game.pkg", dir2);
         CHECK(same(p, g));
         CHECK(g_ranges == 4 + 3 + 1); /* the game's 4 missing blocks, then the update and the add-on */
+    }
+
+    printf("== stopping in the middle of a download ends at once\n");
+    {
+        char dir3[200];
+        snprintf(dir3, sizeof(dir3), "%s/stop", g_root);
+        mkdir(dir3, 0777);
+        snprintf(g_dest, sizeof(g_dest), "%s", dir3);
+        g_slow_ms = 300; /* every block takes a while: blocks wait for the first ones */
+        g_drive_block = 64u << 10; /* more blocks than slots: some threads wait for a turn */
+        CHECK(drive_download("CUSA00001", "usb0", msg, sizeof(msg)) == 0);
+        usleep(500000);
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        drive_stop();
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        double took = (double)(t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
+        CHECK(took < 3); /* not held by threads waiting for a turn */
+        g_slow_ms = 0;
+        g_drive_block = 256u << 10;
+        drive_start(state, &ep, &host);
+        wait_idle();
     }
 
     printf("== a download that arrives damaged is not kept\n");

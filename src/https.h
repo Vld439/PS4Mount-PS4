@@ -21,6 +21,7 @@ typedef struct {
     http_sink_t sink;         /* NULL: the body goes to http_resp_t.body (at most HTTP_BODY_MAX) */
     void *sink_ctx;
     volatile int *cancel;     /* set from another thread: the request stops (may be NULL) */
+    int stall;                /* seconds without a byte before the request gives up (0: 60) */
 } http_req_t;
 
 #define HTTP_BODY_MAX (1u << 20)

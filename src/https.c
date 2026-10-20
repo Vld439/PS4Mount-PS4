@@ -53,7 +53,7 @@ static int resolve(const char *host, struct in_addr *out) {
     int rid = pool < 0 ? -1 : sceNetResolverCreate("ps4mount", pool, 0);
     if (rid >= 0) {
         sce_in_addr_t a = {0};
-        int rc = sceNetResolverStartNtoa(rid, host, &a, 10 * 1000 * 1000, 2, 0);
+        int rc = sceNetResolverStartNtoa(rid, host, &a, 5 * 1000 * 1000, 1, 0);
         sceNetResolverDestroy(rid);
         if (rc >= 0 && a.s_addr) {
             out->s_addr = a.s_addr;
@@ -81,7 +81,7 @@ static void entropy(uint8_t *p, size_t n) {
 }
 
 typedef struct {
-    int fd;
+    int fd, stall;
     volatile int *cancel;
     int tls;
     br_ssl_client_context cc;
@@ -93,7 +93,7 @@ typedef struct {
 /* Waits until fd can be read (or written) for at most IO_SECONDS, a second at a time so
  * a cancel is seen. 0 when ready. */
 static int wait_fd(conn_t *c, int write) {
-    for (int i = 0; i < IO_SECONDS; i++) {
+    for (int i = 0; i < (c->stall > 0 ? c->stall : IO_SECONDS); i++) {
         if (c->cancel && *c->cancel)
             return -1;
         fd_set fs;
@@ -155,7 +155,7 @@ static void conn_err(conn_t *c, const char *what, char *err, size_t n) {
         snprintf(err, n, "%s: the connection was lost", what);
 }
 
-static conn_t *conn_open(const http_url_t *u, volatile int *cancel, char *err, size_t n) {
+static conn_t *conn_open(const http_url_t *u, volatile int *cancel, int stall, char *err, size_t n) {
     struct in_addr addr;
     if (resolve(u->host, &addr)) {
         snprintf(err, n, "%s could not be found: is the console online?", u->host);
@@ -178,15 +178,22 @@ static conn_t *conn_open(const http_url_t *u, volatile int *cancel, char *err, s
     fcntl(fd, F_SETFL, fl | O_NONBLOCK);
     int rc = connect(fd, (struct sockaddr *)&sa, sizeof(sa));
     if (rc && errno == EINPROGRESS) {
-        fd_set fs;
-        FD_ZERO(&fs);
-        FD_SET(fd, &fs);
-        struct timeval tv = {CONNECT_SECONDS, 0};
-        int soerr = 0;
-        socklen_t sl = sizeof(soerr);
-        rc = select(fd + 1, NULL, &fs, NULL, &tv) == 1 && !getsockopt(fd, SOL_SOCKET, SO_ERROR, &soerr, &sl) && !soerr
-                 ? 0
-                 : -1;
+        /* a second at a time: a cancel (PS4Mount stopping) is not held up by it */
+        rc = -1;
+        for (int i = 0; i < CONNECT_SECONDS && !(cancel && *cancel); i++) {
+            fd_set fs;
+            FD_ZERO(&fs);
+            FD_SET(fd, &fs);
+            struct timeval tv = {1, 0};
+            int r = select(fd + 1, NULL, &fs, NULL, &tv), soerr = 0;
+            socklen_t sl = sizeof(soerr);
+            if (r == 1) {
+                rc = !getsockopt(fd, SOL_SOCKET, SO_ERROR, &soerr, &sl) && !soerr ? 0 : -1;
+                break;
+            }
+            if (r < 0 && errno != EINTR)
+                break;
+        }
     }
     fcntl(fd, F_SETFL, fl);
     if (rc) {
@@ -204,6 +211,7 @@ static conn_t *conn_open(const http_url_t *u, volatile int *cancel, char *err, s
     }
     memset(c, 0, sizeof(*c));
     c->fd = fd;
+    c->stall = stall;
     c->cancel = cancel;
     c->tls = u->tls;
     if (c->tls) {
@@ -430,7 +438,7 @@ int http_request(const http_req_t *q, http_resp_t *r, char *err, size_t n) {
         snprintf(err, n, "bad URL");
         return -1;
     }
-    conn_t *c = conn_open(&u, q->cancel, err, n);
+    conn_t *c = conn_open(&u, q->cancel, q->stall, err, n);
     if (!c)
         return -1;
     buf_t h = {0};

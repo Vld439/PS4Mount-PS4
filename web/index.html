@@ -598,7 +598,7 @@ function renderDrive() {
       main = (opText[job.op] ? opText[job.op](job.name || job.title_id) : job.op);
       if (all) main += ' · ' + pct + '% · ' + t('{0} of {1}', mb(done), mb(all));
       if (job.phase === 'retrying') main += ' · ' + t('connection lost, trying again in {0} s', job.retry_in);
-      else if (job.phase === 'checking') main += ' · ' + (job.op === 'upload' ? t('reading again what Drive already has…') : t('checking the file…'));
+      else if (job.phase === 'checking') main += ' · ' + (job.op === 'upload' ? t('reading again what Drive already has…') : t('reading again what already arrived…'));
       else if (job.speed > 0 && all) main += ' · ' + mb(job.speed) + '/s · ' + t('{0} left', left((all - done) / job.speed));
       else if (all) main += ' · ' + t('measuring the speed…');
       if (job.file) sub.push(job.file + (job.files > 1 ? ' (' + job.file_index + '/' + job.files + ')' : ''));
