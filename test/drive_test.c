@@ -771,20 +771,23 @@ int main(void) {
         snprintf(hidden, sizeof(hidden), "%s/.Test Game [CUSA00001]", dir8);
         g_slow_ms = 150;
         CHECK(drive_download("CUSA00001", "usb0", msg, sizeof(msg)) == 0);
-        int seen_early = 0, busy = 1;
-        for (int i = 0; i < 400 && busy; i++) {
-            usleep(10000);
+        /* the moment the folder shows, all three pkgs are in it, whole */
+        int complete_at_first_sight = 0;
+        for (int i = 0; i < 2000; i++) {
+            usleep(2000);
             if (access(fd, F_OK) == 0) {
-                b = status();
-                busy = strstr((char *)b.data, "\"busy\":true") != NULL;
-                buf_free(&b);
-                seen_early |= busy; /* the folder while the download still runs */
+                char g1[500], g2[500], g3[500];
+                snprintf(g1, sizeof(g1), "%s/game.pkg", fd);
+                snprintf(g2, sizeof(g2), "%s/update.pkg", fd);
+                snprintf(g3, sizeof(g3), "%s/addon-CUSA00001-DLC1.pkg", fd);
+                complete_at_first_sight = same(g1, remote("game.pkg")) && same(g2, remote("update.pkg")) &&
+                                          same(g3, remote("addon-CUSA00001-DLC1.pkg"));
                 break;
             }
         }
         wait_idle();
         g_slow_ms = 0;
-        CHECK(!seen_early);
+        CHECK(complete_at_first_sight);
         snprintf(p, sizeof(p), "%s/game.pkg", fd);
         CHECK(same(p, remote("game.pkg")));
         snprintf(p, sizeof(p), "%s/update.pkg", fd);
