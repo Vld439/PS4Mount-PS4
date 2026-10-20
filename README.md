@@ -130,7 +130,11 @@ Opcional. Tus juegos en **tu propio Google Drive**, para liberar espacio o tener
 
 ![La ventana de Google Drive](docs/panel-drive-es.png)
 
-Mientras transfiere, el panel muestra el juego, el porcentaje, la velocidad y el tiempo que queda (es la barra de la [primera captura](#español)), y la PS4 avisa en pantalla al empezar, al 25, 50 y 75 % y al terminar. **La consola no entra en reposo** mientras haya una transferencia, y puedes jugar o usar el panel a la vez. Si algo la corta (la red, detener PS4Mount, apagar), **sigue sola** desde donde iba la próxima vez que cargues PS4Mount. Cada archivo se comprueba con su MD5 al subir y al bajar: un archivo dañado nunca se da por bueno.
+Mientras transfiere, el panel muestra el juego, el porcentaje, la velocidad y el tiempo que queda (la barra de la [primera captura](#español) es una descarga), y la PS4 avisa en pantalla al empezar, al 25, 50 y 75 % y al terminar. **La consola no entra en reposo** mientras haya una transferencia, y puedes jugar o usar el panel a la vez. Si algo la corta (la red, detener PS4Mount, apagar), **sigue sola** desde donde iba la próxima vez que cargues PS4Mount. Cada archivo se comprueba con su MD5 al subir y al bajar: un archivo dañado nunca se da por bueno.
+
+| Subiendo un juego | Su ficha mientras sube |
+| --- | --- |
+| ![Subiendo a Drive](docs/panel-upload-es.png) | ![La ficha durante la subida](docs/panel-upload-game-es.png) |
 
 Al descargar, el juego llega a `PS4Mount/<Juego> [CUSAxxxxx]/` de la unidad elegida y PS4Mount lo añade solo (con el reinicio de siempre). Un juego que ya está en la biblioteca no se descarga encima.
 
@@ -358,7 +362,11 @@ Optional. Your games in **your own Google Drive**, to free space or keep them sa
 
 ![The Google Drive window](docs/panel-drive.png)
 
-While it transfers, the panel shows the game, the percentage, the speed and the time left (the bar in the [first screenshot](#english)), and the PS4 tells on its screen when it starts, at 25, 50 and 75% and when it ends. **The console does not go to rest mode** while a transfer runs, and you can play or use the panel meanwhile. If something cuts it (the network, stopping PS4Mount, a power off), **it goes on by itself** from where it was the next time PS4Mount loads. Every file is checked with its MD5 on the way up and down: a damaged file is never taken as good.
+While it transfers, the panel shows the game, the percentage, the speed and the time left (the bar in the [first screenshot](#english) is a download), and the PS4 tells on its screen when it starts, at 25, 50 and 75% and when it ends. **The console does not go to rest mode** while a transfer runs, and you can play or use the panel meanwhile. If something cuts it (the network, stopping PS4Mount, a power off), **it goes on by itself** from where it was the next time PS4Mount loads. Every file is checked with its MD5 on the way up and down: a damaged file is never taken as good.
+
+| Uploading a game | Its page while it uploads |
+| --- | --- |
+| ![Uploading to Drive](docs/panel-upload.png) | ![The game's page during the upload](docs/panel-upload-game.png) |
 
 A download arrives in `PS4Mount/<Game> [CUSAxxxxx]/` of the chosen drive and PS4Mount adds it by itself (with the usual restart). A game already in the library is not downloaded over itself.
 

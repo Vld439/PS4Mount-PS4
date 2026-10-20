@@ -65,6 +65,10 @@ var LANGS = {
     'Cancel transfer': 'Cancelar el envío',
     'Send': 'Enviar',
     /* Google Drive */
+    'uploading to Drive ({0}%)': 'subiendo a Drive ({0} %)',
+    'downloading from Drive ({0}%)': 'descargando de Drive ({0} %)',
+    'waiting to go to Drive': 'en cola para subir a Drive',
+    'waiting to come from Drive': 'en cola para bajar de Drive',
     'reading again what already arrived…': 'releyendo lo que ya llegó…',
     'reading again what Drive already has…': 'releyendo lo que Drive ya tiene…',
     'Google Drive asks to connect again: open {0} and type {1}': 'Google Drive pide conectar de nuevo: abre {0} y escribe {1}',

@@ -258,7 +258,8 @@ function actions(g, page) {
     act += '<button data-a="restore" data-t="' + g.title_id + '">' + t('Restore original files') + '</button>' +
       '<div class="meta" style="flex-basis:100%">' + t('Takes the game off the console and puts its pkgs back where they were, with the names they had. Nothing is deleted.') + '</div>';
   if (page && drive.connected && g.state !== 'internal' && g.state !== 'offline')
-    act += '<button class="gd" data-d="upload" data-t="' + g.title_id + '">' + (driveGame(g.title_id) ? t('Send to Drive again') : t('Send to Drive')) + '</button>';
+    act += driveState(g.title_id) ? '<button disabled>' + esc(driveState(g.title_id)) + '</button>' :
+      '<button class="gd" data-d="upload" data-t="' + g.title_id + '">' + (driveGame(g.title_id) ? t('Send to Drive again') : t('Send to Drive')) + '</button>';
   if (busy[g.title_id]) act = '<button disabled>' + t('Please wait…') + '</button>';
   return act;
 }
@@ -302,7 +303,7 @@ function showGame(tid) {
     [t('Add-ons'), g.dlc ? String(g.dlc) : t('none')], [t('Needs firmware'), g.system_ver || t('unknown')], [t('Size'), gb(g.size)],
     [t('On'), (g.storage || '') + ' · ' + g.source]];
   var dg = driveGame(tid);
-  if (drive.connected) f.push(['Google Drive', dg ? t('in Drive ({0})', mb(dg.size)) : t('not in Drive')]);
+  if (drive.connected) f.push(['Google Drive', driveState(tid) || (dg ? t('in Drive ({0})', mb(dg.size)) : t('not in Drive'))]);
   $('g-facts').innerHTML = f.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') +
     (g.state === 'restart' ? '<dt></dt><dd class="warn">' + t('Added. Restart the console once to play it.') + '</dd>' : '');
   $('g-actions').innerHTML = actions(g, true);
@@ -570,6 +571,20 @@ setInterval(load, 5000);
 
 /* --- Google Drive --- */
 var drive = {}, driveBusyBefore = false;
+/* "2.7 MB/s": a decimal below 10, where a whole MB would round 2.66 up to 3 */
+function rate(bps) { var m = bps / 1048576; return (m < 10 ? m.toFixed(1) : Math.round(m)) + ' MB/s'; }
+/* What the Drive thread is doing with tid now ('' when nothing): shown on its page */
+function driveState(tid) {
+  var job = drive.job || {}, q = job.queued || [];
+  if (job.busy && job.title_id === tid && (job.op === 'upload' || job.op === 'download')) {
+    var all = job.game_total || job.total, pct = all ? Math.floor(100 * (job.game_total ? job.game_done : job.done) / all) : 0;
+    return job.op === 'upload' ? t('uploading to Drive ({0}%)', pct) : t('downloading from Drive ({0}%)', pct);
+  }
+  for (var i = 0; i < q.length; i++)
+    if (q[i].title_id === tid && (q[i].op === 'upload' || q[i].op === 'download'))
+      return q[i].op === 'upload' ? t('waiting to go to Drive') : t('waiting to come from Drive');
+  return '';
+}
 function driveGame(tid) { var l = drive.games || []; for (var i = 0; i < l.length; i++) if (l[i].title_id === tid) return l[i]; return null; }
 /* Drive actions send the panel's header: a download writes files, an upload sends them out. */
 function driveAct(action, query) {
@@ -603,7 +618,7 @@ function renderDrive() {
       if (all) main += ' · ' + pct + '% · ' + t('{0} of {1}', mb(done), mb(all));
       if (job.phase === 'retrying') main += ' · ' + t('connection lost, trying again in {0} s', job.retry_in);
       else if (job.phase === 'checking') main += ' · ' + (job.op === 'upload' ? t('reading again what Drive already has…') : t('reading again what already arrived…'));
-      else if (job.speed > 0 && all) main += ' · ' + mb(job.speed) + '/s · ' + t('{0} left', left((all - done) / job.speed));
+      else if (job.speed > 0 && all) main += ' · ' + rate(job.speed) + ' · ' + t('{0} left', left((all - done) / job.speed));
       else if (all) main += ' · ' + t('measuring the speed…');
       if (job.file) sub.push(job.file + (job.files > 1 ? ' (' + job.file_index + '/' + job.files + ')' : ''));
       if (job.elapsed) sub.push(t('running for {0}', left(job.elapsed, true)));

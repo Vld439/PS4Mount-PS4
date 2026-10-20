@@ -347,7 +347,13 @@ function tKeys(file) {
   w.loadDrive(); await tick();
   let dbt = d.getElementById('db-text').textContent, dbs = d.getElementById('db-sub').textContent;
   ok(d.getElementById('drivebar').style.display === 'flex' && dbt.includes('Uploading Soulstice to Drive') && dbt.includes('25%') && dbt.includes('of 1.9 GB'), 'the whole game in progress, under the header: ' + dbt);
-  ok(dbt.includes('/s') && dbt.includes('~9 min left'), 'with its speed and the time left (1.5 GB at 2.8 MB/s)');
+  ok(dbt.includes('2.7 MB/s') && dbt.includes('~9 min left'), 'with its speed (a decimal below 10 MB/s) and the time left: ' + dbt);
+  w.showGame('CUSA41712');
+  ok(d.getElementById('g-facts').textContent.includes('uploading to Drive (25%)') && d.querySelector('#g-actions button[disabled]') &&
+    !d.querySelector('#g-actions [data-d="upload"]'), 'the page of the game being uploaded says so, no second Send to Drive');
+  w.showGame('CUSA00791');
+  ok(d.getElementById('g-facts').textContent.includes('waiting to go to Drive'), 'a queued game says it waits');
+  d.getElementById('gamedlg').close();
   ok(dbs.includes('game.pkg (1/2)') && dbs.includes('running for 10 min') && dbs.includes('1 more waiting'), 'the file, the time so far and the queue: ' + dbs);
   DRIVE.job = Object.assign({}, DRIVE.job, { phase: 'retrying', retry_in: 8 });
   w.loadDrive(); await tick();
