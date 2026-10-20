@@ -74,6 +74,9 @@ static long long g_quota_limit = -1, g_quota_used = -1;
 
 /* signing in */
 static int g_login;
+/* Google ended the access (an app in testing gets a week): a new code is asked for at once
+ * and shown on the console's screen, and the job it cut waits for it */
+static int g_expired, g_relogin;
 static char g_user_code[32], g_verify_url[128], g_device_code[512], g_login_error[256];
 static time_t g_login_until, g_login_next;
 static int g_login_interval;
@@ -92,6 +95,8 @@ static int g_result_ok = 1;
 static remote_game_t *g_remote;
 static int g_nremote, g_listed;
 static char g_list_error[256];
+
+static void queue_front_locked(int op);
 
 /* --- small helpers --- */
 
@@ -299,9 +304,13 @@ static int access_token(char *err, size_t n) {
     if (!jv_get_string(v, "error", e, sizeof(e)) && !strcmp(e, "invalid_grant")) {
         /* revoked from the Google account, or expired: only signing in again helps */
         http_resp_free(&r);
-        disconnected(TR("Google Drive was disconnected (the access was removed or expired): connect again",
-                        "Google Drive se desconectó (se quitó el acceso o caducó): vuelve a conectarlo"));
-        snprintf(err, n, "%s", TR("Google Drive is not connected", "Google Drive no está conectado"));
+        printf("[drive] the access ended (invalid_grant): asking for a new code\n");
+        disconnected(NULL);
+        pthread_mutex_lock(&g_mu);
+        g_expired = g_relogin = 1;
+        queue_front_locked(OP_LOGIN);
+        pthread_mutex_unlock(&g_mu);
+        snprintf(err, n, "%s", TR("Google Drive needs you to connect again", "Google Drive necesita que vuelvas a conectarlo"));
         return -1;
     }
     google_error(&r, err, n);
@@ -336,10 +345,25 @@ static void login_start(void) {
         g_login = 0;
         snprintf(g_login_error, sizeof(g_login_error), "%s", rc ? err : TR("Google did not give a code", "Google no dio ningún código"));
     }
+    int relogin = g_relogin && g_login, relogin_failed = g_relogin && !g_login;
+    char code[64], url[160];
+    snprintf(code, sizeof(code), "%s", g_user_code);
+    snprintf(url, sizeof(url), "%s", g_verify_url);
+    g_relogin = 0;
     pthread_mutex_unlock(&g_mu);
     if (!rc)
         http_resp_free(&r);
     printf("[drive] sign-in %s\n", g_login ? "code shown" : g_login_error);
+    if (relogin && g_host.notify) {
+        /* nobody may be looking at the panel: the code goes to the screen */
+        char m[300];
+        snprintf(m, sizeof(m), TR("Google Drive asks to connect again: on your phone open %s and type %s",
+                                  "Google Drive pide conectar de nuevo: en el móvil abre %s y escribe %s"),
+                 url, code);
+        g_host.notify(m);
+    } else if (relogin_failed && g_host.notify)
+        g_host.notify(TR("Google Drive was disconnected: connect it again in the panel",
+                         "Google Drive se desconectó: vuelve a conectarlo en el panel"));
 }
 
 static void queue_locked(int op, const char *tid, const char *dest);
@@ -354,6 +378,7 @@ static void login_poll(void) {
     if (expired) {
         pthread_mutex_lock(&g_mu);
         g_login = 0;
+        g_njobs = 0; /* what waited for the code cannot go on without it */
         snprintf(g_login_error, sizeof(g_login_error), "%s",
                  TR("The code expired: press Connect again", "El código caducó: pulsa Conectar otra vez"));
         pthread_mutex_unlock(&g_mu);
@@ -1362,6 +1387,20 @@ static void queue_locked(int op, const char *tid, const char *dest) {
     pthread_cond_signal(&g_cv);
 }
 
+/* Before everything waiting (no duplicate of it stays behind). */
+static void queue_front_locked(int op) {
+    int k = 0;
+    for (int i = 0; i < g_njobs; i++)
+        if (g_jobs[i].op != op)
+            g_jobs[k++] = g_jobs[i];
+    g_njobs = k < MAX_JOBS ? k : MAX_JOBS - 1;
+    memmove(g_jobs + 1, g_jobs, sizeof(g_jobs[0]) * (size_t)g_njobs);
+    memset(&g_jobs[0], 0, sizeof(g_jobs[0]));
+    g_jobs[0].op = op;
+    g_njobs++;
+    pthread_cond_signal(&g_cv);
+}
+
 static void revoke_token(const char *token) {
     buf_t form = {0};
     form_add(&form, "token", token);
@@ -1394,7 +1433,8 @@ static void *worker(void *arg) {
             pthread_mutex_lock(&g_mu);
             continue;
         }
-        if (!g_njobs) {
+        /* while a code is shown, only the sign-in itself runs */
+        if (!g_njobs || (g_login && g_jobs[0].op != OP_LOGIN)) {
             struct timespec ts;
             clock_gettime(CLOCK_REALTIME, &ts);
             ts.tv_sec += 1;
@@ -1420,6 +1460,17 @@ static void *worker(void *arg) {
         case OP_TRASH: run_trash(j.tid); break;
         }
         pthread_mutex_lock(&g_mu);
+        if (g_expired && j.op != OP_LOGIN) {
+            /* cut by the end of the access: again once signed in (an upload goes on from
+             * its session) */
+            g_expired = 0;
+            if (g_njobs < MAX_JOBS && j.op != OP_LIST) {
+                int at = g_njobs && g_jobs[0].op == OP_LOGIN ? 1 : 0;
+                memmove(g_jobs + at + 1, g_jobs + at, sizeof(g_jobs[0]) * (size_t)(g_njobs - at));
+                g_jobs[at] = j;
+                g_njobs++;
+            }
+        }
         int more = 0;
         for (int i = 0; i < g_njobs; i++)
             more |= g_jobs[i].op != OP_LOGIN && g_jobs[i].op != OP_LIST;

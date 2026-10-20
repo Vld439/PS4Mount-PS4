@@ -680,26 +680,33 @@ int main(void) {
     CHECK(strstr((char *)b.data, "\"games\":[]"));
     buf_free(&b);
 
-    printf("== an access removed in the Google account disconnects\n");
-    drive_stop();
+    printf("== an access that ends asks for a new code on the screen, and the job goes on\n");
+    g_in_library = 1;
+    g_notified[0] = 0;
+    pthread_mutex_lock(&g_smu);
     g_refresh_revoked = 1;
-    drive_start(state, &ep, &host); /* starts with a list: needs a new token */
+    pthread_mutex_unlock(&g_smu);
+    drive_stop();
+    drive_start(state, &ep, &host); /* a new start: the access token is asked for again */
+    CHECK(drive_upload("CUSA00001", msg, sizeof(msg)) == 0);
+    int saw = 0;
+    for (int i = 0; i < 200 && !saw; i++) {
+        usleep(20000);
+        saw = strstr(g_notified, "google.com/device") && strstr(g_notified, "ABCD-EFGH");
+    }
+    CHECK(saw); /* the code on the console's screen */
     wait_idle();
-    b = status();
-    CHECK(strstr((char *)b.data, "\"connected\":false"));
-    buf_free(&b);
-    CHECK(strstr(g_notified, "disconnected"));
-    snprintf(p, sizeof(p), "%s/drive.txt", state);
-    CHECK(access(p, F_OK) != 0);
-
-    printf("== disconnecting revokes the access\n");
-    g_refresh_revoked = 0;
-    g_token_polls = 0;
-    CHECK(drive_connect(msg, sizeof(msg)) == 0);
-    wait_idle();
+    result(res, sizeof(res), &ok);
+    CHECK(ok && strstr(res, "is in Google Drive")); /* after signing in, the cut upload ran */
     b = status();
     CHECK(strstr((char *)b.data, "\"connected\":true"));
     buf_free(&b);
+    CHECK(count_remote() == 3);
+    pthread_mutex_lock(&g_smu);
+    g_refresh_revoked = 0;
+    pthread_mutex_unlock(&g_smu);
+
+    printf("== disconnecting revokes the access\n");
     CHECK(drive_disconnect(msg, sizeof(msg)) == 0);
     wait_idle();
     usleep(200000);
@@ -707,6 +714,7 @@ int main(void) {
     b = status();
     CHECK(strstr((char *)b.data, "\"connected\":false"));
     buf_free(&b);
+    snprintf(p, sizeof(p), "%s/drive.txt", state);
     CHECK(access(p, F_OK) != 0);
 
     printf("== forgetting the client\n");
