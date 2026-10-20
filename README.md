@@ -150,11 +150,47 @@ En Drive quedan en la carpeta `PS4Mount/<Juego> [CUSAxxxxx]/`, como `game.pkg`, 
 PS4Mount no trae credenciales de Google: cada usuario usa **las suyas**, que se quedan solo en su consola. Se crean gratis en unos minutos:
 
 1. Abre **[console.cloud.google.com](https://console.cloud.google.com/)** con tu cuenta de Google, pulsa el selector de proyectos (arriba a la izquierda) → **Proyecto nuevo**, nombre **PS4Mount** → **Crear**. Comprueba que arriba está elegido PS4Mount.
+
+   <details><summary>Ver captura</summary>
+
+   ![El proyecto PS4Mount elegido](docs/gcloud-1-project-es.png)
+
+   </details>
 2. En el buscador de arriba escribe **Google Drive API** → **Habilitar**.
+
+   <details><summary>Ver capturas</summary>
+
+   ![Buscar Google Drive API](docs/gcloud-2-search-es.png)
+
+   ![La Google Drive API habilitada](docs/gcloud-3-api-es.png)
+
+   </details>
 3. Menú ☰ → **APIs y servicios** → **Pantalla de consentimiento de OAuth** (Google Auth Platform) → **Comenzar**: nombre de la app **PS4Mount**, tu correo, público **Externo**, tu correo de contacto, acepta la política → **Crear**. No subas logo (con logo, Google pide verificar la app).
 4. **Clientes** → **Crear cliente** → tipo **TV y dispositivos de entrada limitada** (no "App de escritorio" ni "Aplicación web": con esos la consola no puede iniciar sesión) → nombre **PS4Mount consola** → **Crear**. Copia el **ID de cliente** (termina en `.apps.googleusercontent.com`) y el **Secreto del cliente** (descarga el JSON: el secreto puede no volver a mostrarse).
+
+   <details><summary>Ver capturas</summary>
+
+   ![Crear un cliente de tipo TV y dispositivos de entrada limitada](docs/gcloud-4-client-type-es.png)
+
+   ![El cliente creado: su ID y su secreto](docs/gcloud-5-client-es.png)
+
+   </details>
 5. **Público** → **Usuarios de prueba** → **Add users** → tu correo de Google → **Guardar**. (La app se queda en estado "Prueba": no hace falta publicarla ni la sección de marca.)
+
+   <details><summary>Ver captura</summary>
+
+   ![Tu correo en Usuarios de prueba](docs/gcloud-6-test-users-es.png)
+
+   </details>
 6. *(Opcional)* **Acceso a los datos** → **Agregar o quitar permisos** → marca `…/auth/drive.file` → **Actualizar** → **Guardar**.
+
+   <details><summary>Ver capturas</summary>
+
+   ![Elegir el permiso drive.file](docs/gcloud-7-scope-es.png)
+
+   ![drive.file en los permisos no sensibles](docs/gcloud-8-scope-saved-es.png)
+
+   </details>
 7. En el panel de PS4Mount: **Conectar Google Drive** → pega el ID y el secreto → **Guardar** → **Conectar**. Sale un código: en el móvil o el PC abre **google.com/device**, escríbelo con la cuenta de prueba y acepta. Google avisa de que la app no está verificada: es tu propia app, pulsa **Continuar**.
 
 | Pegar tu cliente | El código para google.com/device |
@@ -387,14 +423,50 @@ In Drive they are in the folder `PS4Mount/<Game> [CUSAxxxxx]/`, as `game.pkg`, `
 
 #### Connecting your Google Drive (once)
 
-PS4Mount ships no Google credentials: each user uses **their own**, which stay on their console only. They are free and take a few minutes:
+PS4Mount ships no Google credentials: each user uses **their own**, which stay on their console only. They are free and take a few minutes (the screenshots are of Google Cloud in Spanish; the buttons are in the same places):
 
 1. Open **[console.cloud.google.com](https://console.cloud.google.com/)** with your Google account, click the project picker (top left) → **New project**, name **PS4Mount** → **Create**. Check that PS4Mount is the project chosen at the top.
+
+   <details><summary>See the screenshot</summary>
+
+   ![The PS4Mount project chosen](docs/gcloud-1-project-es.png)
+
+   </details>
 2. In the search box at the top type **Google Drive API** → **Enable**.
+
+   <details><summary>See the screenshots</summary>
+
+   ![Searching for Google Drive API](docs/gcloud-2-search-es.png)
+
+   ![The Google Drive API enabled](docs/gcloud-3-api-es.png)
+
+   </details>
 3. Menu ☰ → **APIs & Services** → **OAuth consent screen** (Google Auth Platform) → **Get started**: app name **PS4Mount**, your email, audience **External**, your contact email, agree to the policy → **Create**. Do not upload a logo (with one, Google asks to verify the app).
 4. **Clients** → **Create client** → type **TVs and Limited Input devices** (not "Desktop app" or "Web application": with those the console cannot sign in) → name **PS4Mount console** → **Create**. Copy the **Client ID** (it ends in `.apps.googleusercontent.com`) and the **Client secret** (download the JSON: the secret may not be shown again).
+
+   <details><summary>See the screenshots</summary>
+
+   ![Creating a client of type TVs and Limited Input devices](docs/gcloud-4-client-type-es.png)
+
+   ![The client made: its ID and secret](docs/gcloud-5-client-es.png)
+
+   </details>
 5. **Audience** → **Test users** → **Add users** → your Google email → **Save**. (The app stays in "Testing": it does not need publishing or the branding section.)
+
+   <details><summary>See the screenshot</summary>
+
+   ![Your email in Test users](docs/gcloud-6-test-users-es.png)
+
+   </details>
 6. *(Optional)* **Data Access** → **Add or remove scopes** → tick `…/auth/drive.file` → **Update** → **Save**.
+
+   <details><summary>See the screenshots</summary>
+
+   ![Choosing the drive.file scope](docs/gcloud-7-scope-es.png)
+
+   ![drive.file among the non-sensitive scopes](docs/gcloud-8-scope-saved-es.png)
+
+   </details>
 7. In PS4Mount's panel: **Connect Google Drive** → paste the ID and the secret → **Save** → **Connect**. A code shows up: on your phone or computer open **google.com/device**, type it with the test account and allow it. Google warns that the app is not verified: it is your own app, click **Continue**.
 
 | Pasting your client | The code for google.com/device |
