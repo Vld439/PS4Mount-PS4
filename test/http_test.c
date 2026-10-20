@@ -189,6 +189,45 @@ int main(void) {
     r = ask("GET /api/uploads HTTP/1.1\r\n\r\n");
     CHECK(status(r, "200") && strstr(r, "\"state\""));
 
+    printf("Google Drive\n");
+    r = ask("GET /api/drive HTTP/1.1\r\n\r\n");
+    CHECK(status(r, "200") && strstr(r, "\"configured\""));
+    /* every action needs the panel's header: a download writes files, an upload sends them out */
+    before = g_stub_calls;
+    r = post("/api/drive/upload", "");
+    CHECK(status(r, "403") && g_stub_calls == before);
+    r = ask("GET /api/drive/upload HTTP/1.1\r\nX-PS4Mount: 1\r\n\r\n");
+    CHECK(status(r, "404") && g_stub_calls == before); /* not on GET */
+#define DRIVE_POST(p) ask("POST " p " HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 0\r\n\r\n")
+    r = DRIVE_POST("/api/drive/connect");
+    CHECK(status(r, "200") && !strcmp(g_stub_call, "drive_connect"));
+    r = DRIVE_POST("/api/drive/upload");
+    CHECK(status(r, "200") && !strcmp(g_stub_call, "drive_upload") && !strcmp(g_stub_arg, "(null)")); /* all */
+    r = DRIVE_POST("/api/drive/upload?title_id=CUSA00001");
+    CHECK(!strcmp(g_stub_arg, "CUSA00001"));
+    before = g_stub_calls;
+    r = DRIVE_POST("/api/drive/upload?title_id=../etc");
+    CHECK(status(r, "400") && g_stub_calls == before); /* a bad id is not "all games" */
+    r = DRIVE_POST("/api/drive/download?title_id=CUSA00001&dest=usb0");
+    CHECK(status(r, "200") && !strcmp(g_stub_call, "drive_download") && !strcmp(g_stub_arg, "CUSA00001 usb0"));
+    before = g_stub_calls;
+    r = DRIVE_POST("/api/drive/download?title_id=CUSA00001&dest=../x");
+    CHECK(status(r, "400") && g_stub_calls == before);
+    r = DRIVE_POST("/api/drive/download?title_id=CUSA00001");
+    CHECK(status(r, "400") && g_stub_calls == before);
+    r = DRIVE_POST("/api/drive/trash?title_id=CUSA00001");
+    CHECK(!strcmp(g_stub_call, "drive_trash") && !strcmp(g_stub_arg, "CUSA00001"));
+    DRIVE_POST("/api/drive/refresh");
+    CHECK(!strcmp(g_stub_call, "drive_refresh"));
+    DRIVE_POST("/api/drive/cancel");
+    CHECK(!strcmp(g_stub_call, "drive_cancel"));
+    DRIVE_POST("/api/drive/disconnect");
+    CHECK(!strcmp(g_stub_call, "drive_disconnect"));
+    before = g_stub_calls;
+    r = DRIVE_POST("/api/drive/connectx");
+    CHECK(status(r, "404") && g_stub_calls == before);
+#undef DRIVE_POST
+
     printf("a body that arrives after the headers\n");
     const char *head = "POST /api/config HTTP/1.1\r\nContent-Length: 15\r\n\r\n";
     ask2(head, strlen(head), "restore_batch=7");

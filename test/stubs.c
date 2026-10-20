@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "drive.h"
 #include "stubs.h"
 #include "web.h"
 
@@ -58,3 +59,17 @@ int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint6
     return -1; /* refused: the panel answers with msg */
 }
 void app_uploads_json(buf_t *out) { buf_printf(out, "{\"state\":\"idle\"}"); }
+void app_dests_json(buf_t *out) { buf_printf(out, "{\"dests\":[]}"); }
+
+void drive_status_json(buf_t *out) { buf_printf(out, "{\"configured\":true}"); }
+int drive_connect(char *msg, size_t n) { return record("drive_connect", NULL, msg, n); }
+int drive_disconnect(char *msg, size_t n) { return record("drive_disconnect", NULL, msg, n); }
+int drive_upload(const char *tid, char *msg, size_t n) { return record("drive_upload", tid, msg, n); }
+int drive_download(const char *tid, const char *dest, char *msg, size_t n) {
+    char arg[64];
+    snprintf(arg, sizeof(arg), "%s %s", tid, dest);
+    return record("drive_download", arg, msg, n);
+}
+int drive_trash(const char *tid, char *msg, size_t n) { return record("drive_trash", tid, msg, n); }
+int drive_refresh(char *msg, size_t n) { return record("drive_refresh", NULL, msg, n); }
+int drive_cancel(char *msg, size_t n) { return record("drive_cancel", NULL, msg, n); }

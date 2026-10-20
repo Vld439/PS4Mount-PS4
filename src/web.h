@@ -32,6 +32,8 @@ void app_check(const void *data, size_t len, uint64_t size, buf_t *out);
  * read, length: the whole body) and takes fd, which it answers. Returns -1 when it did not
  * start: msg says why and fd is the caller's. */
 int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint64_t length, char *msg, size_t cap);
+/* /api/dests: the drives a pkg can go to, with their free space (as in /api/check). */
+void app_dests_json(buf_t *out);
 /* /api/uploads: the state of the upload. */
 void app_uploads_json(buf_t *out);
 

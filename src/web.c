@@ -15,6 +15,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include "drive.h"
 #include "page_data.h"
 #include "lang.h"
 #include "mem.h"
@@ -159,6 +160,50 @@ static uint8_t *read_body(int fd, const char *pre, size_t pre_len, size_t len) {
     return b;
 }
 
+/* dest=<usb0..usb7, ext0, ext1, internal> of a query: letters and digits only. */
+static int dest_param(const char *path, char *dest, size_t n) {
+    const char *p = strstr(path, "dest=");
+    size_t o = 0;
+    for (p = p ? p + 5 : ""; ((*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9')) && o + 1 < n; p++)
+        dest[o++] = *p;
+    dest[o] = 0;
+    return o ? 0 : -1;
+}
+
+/* POST /api/drive/<action>[?title_id=..&dest=..]: the Drive thread does the work, the
+ * panel follows it in GET /api/drive. */
+static void drive_action(int fd, const char *path) {
+    const char *a = path + 11;
+    size_t al = strcspn(a, "?");
+    char tid[10], dest[16], msg[512];
+    int has_tid = !title_param(path, tid), rc;
+#define IS(name) (al == sizeof(name) - 1 && !strncmp(a, name, al))
+    if (IS("connect"))
+        rc = drive_connect(msg, sizeof(msg));
+    else if (IS("disconnect"))
+        rc = drive_disconnect(msg, sizeof(msg));
+    else if (IS("upload"))
+        rc = strstr(path, "title_id=") && !has_tid ? (snprintf(msg, sizeof(msg), "%s", TR("invalid title_id", "title_id no válido")), -1)
+                                                   : drive_upload(has_tid ? tid : NULL, msg, sizeof(msg));
+    else if (IS("download"))
+        rc = !has_tid || dest_param(path, dest, sizeof(dest))
+                 ? (snprintf(msg, sizeof(msg), "%s", TR("invalid title_id or dest", "title_id o dest no válidos")), -1)
+                 : drive_download(tid, dest, msg, sizeof(msg));
+    else if (IS("trash"))
+        rc = !has_tid ? (snprintf(msg, sizeof(msg), "%s", TR("invalid title_id", "title_id no válido")), -1)
+                      : drive_trash(tid, msg, sizeof(msg));
+    else if (IS("refresh"))
+        rc = drive_refresh(msg, sizeof(msg));
+    else if (IS("cancel"))
+        rc = drive_cancel(msg, sizeof(msg));
+    else {
+        reply(fd, "404 Not Found", "text/plain", "not found\n", 10);
+        return;
+    }
+#undef IS
+    json_msg(fd, !rc, msg);
+}
+
 void web_serve(int listen_fd) {
     int fd = accept(listen_fd, NULL, NULL);
     if (fd >= 0)
@@ -294,6 +339,22 @@ void web_handle(int fd) {
         app_uploads_json(&b);
         reply(fd, "200 OK", "application/json; charset=utf-8", b.data, b.len);
         buf_free(&b);
+    } else if (!strcmp(path, "/api/dests")) {
+        buf_t b = {0};
+        app_dests_json(&b);
+        reply(fd, "200 OK", "application/json; charset=utf-8", b.data, b.len);
+        buf_free(&b);
+    } else if (!strcmp(path, "/api/drive")) {
+        buf_t b = {0};
+        drive_status_json(&b);
+        reply(fd, "200 OK", "application/json; charset=utf-8", b.data, b.len);
+        buf_free(&b);
+    } else if (post && !strncmp(path, "/api/drive/", 11)) {
+        /* downloads write files, uploads send them out: the panel's own requests only */
+        if (!may_write(fd, req))
+            reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
+        else
+            drive_action(fd, path);
     } else if (!strcmp(path, "/api/log")) {
         send_log(fd);
     } else if (post && !strcmp(path, "/api/stop")) {

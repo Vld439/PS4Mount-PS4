@@ -75,6 +75,16 @@ form.settings input.num{width:6em}
 progress{width:100%;height:10px;margin-top:8px;accent-color:var(--accent)}
 .sendbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
 .sendbar select{background:#0b0d11;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+button.small{padding:5px 10px;font-size:13px}
+.gd{display:inline-flex;align-items:center;gap:6px}
+.gd svg{width:16px;height:16px}
+#drivebar{display:none;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 20px;background:#11161f;border-bottom:1px solid var(--line);font-size:14px}
+#drivebar progress{width:220px;margin:0}
+.code{font:600 30px/1.2 ui-monospace,Consolas,monospace;letter-spacing:3px;background:#0b0d11;border:1px solid var(--line);border-radius:10px;padding:12px 18px;display:inline-block;margin:8px 0;user-select:all}
+.drive-acct{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-bottom:10px}
+.quota{height:8px;background:#0b0d11;border-radius:99px;overflow:hidden;width:220px;border:1px solid var(--line)}
+.quota div{height:100%;background:var(--accent)}
+.b-drive{position:absolute;right:10px;top:10px;padding:3px 8px;border-radius:999px;font-size:12px;font-weight:600;background:#1a73e8}
 #toast{position:fixed;right:20px;bottom:20px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 16px;display:none;max-width:420px}
 </style>
 </head>
@@ -85,11 +95,14 @@ progress{width:100%;height:10px;margin-top:8px;accent-color:var(--accent)}
     <input id="q" type="search" placeholder="Search game or CUSA">
     <button id="rescan" class="primary">Scan for games</button>
     <button id="sendbtn" hidden>Send games</button>
+    <button id="backupbtn" hidden>Back up to Drive</button>
     <button id="settingsbtn">Settings</button>
     <button id="logbtn">Log</button>
     <button id="stop" class="danger">Stop</button>
+    <button id="drivebtn" class="small gd" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#0f9d58" d="M7.7 3h8.6l5.4 9.3-4.3 7.5z" opacity=".9"/><path fill="#fbbc04" d="M2.3 12.3 7.7 3l4.3 7.4-5.4 9.4z"/><path fill="#4285f4" d="M6.6 19.8 12 10.4h9.7l-4.3 9.4z"/></svg><span id="drivelabel">Connect Google Drive</span></button>
   </div>
 </header>
+<div id="drivebar"><span id="db-text"></span><progress id="db-prog" max="1" value="0"></progress><button class="small" id="db-cancel">Cancel</button></div>
 <main>
   <div class="summary" id="summary"></div>
   <div class="grid" id="grid"></div>
@@ -152,6 +165,30 @@ progress{width:100%;height:10px;margin-top:8px;accent-color:var(--accent)}
 <h3 id="g-name"></h3><dl class="facts" id="g-facts"></dl>
 <div class="actions" id="g-actions" style="padding:0"></div>
 <form method="dialog" style="display:flex;justify-content:flex-end;margin-top:10px"><button>Close</button></form></dialog>
+<dialog id="drivedlg"><h3>Google Drive</h3>
+<div id="d-off">
+  <p class="hint" style="color:var(--muted)">Copies of your games in your own Google Drive: back up the library, send a game, and
+    download it back to any drive of the console. PS4Mount can only see the files it puts in Drive (folder PS4Mount), nothing
+    else of your Drive.</p>
+  <div id="d-code" hidden>
+    <div>On your phone or computer, open <a id="d-url" target="_blank" rel="noopener"></a> and type this code:</div>
+    <div class="code" id="d-usercode"></div>
+    <div class="hint" style="color:var(--muted)" id="d-wait">Waiting for you to allow it in your Google account…</div>
+  </div>
+  <div class="bad" id="d-err" hidden></div>
+  <div class="row" style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+    <button type="button" id="d-close1">Close</button><button type="button" class="primary" id="d-connect">Connect</button></div>
+</div>
+<div id="d-on" hidden>
+  <div class="drive-acct"><div><b id="d-email"></b><div class="meta" id="d-quota-t"></div></div><div class="quota"><div id="d-quota"></div></div></div>
+  <div class="bar" style="margin-bottom:10px"><button type="button" class="primary" id="d-backup">Back up the library</button>
+    <button type="button" id="d-refresh">Refresh</button><button type="button" class="danger" id="d-disconnect">Disconnect</button></div>
+  <div class="bad" id="d-listerr" hidden></div>
+  <div class="note" id="d-result" hidden></div>
+  <label class="meta">Download to <select id="d-dest"></select></label>
+  <div class="pickwrap"><table class="picker"><thead><tr><th>Game</th><th>In Drive</th><th></th></tr></thead><tbody id="d-rows"></tbody></table></div>
+  <div class="row" style="display:flex;justify-content:flex-end"><button type="button" id="d-close2">Close</button></div>
+</div></dialog>
 <dialog id="logdlg"><h3>Log</h3><pre id="log"></pre><form method="dialog"><button>Close</button></form></dialog>
 <div id="toast"></div>
 <!--LANG-->
@@ -201,6 +238,8 @@ function actions(g, page) {
   if (page && g.state !== 'internal' && g.state !== 'offline') /* the pkgs of an absent drive cannot move */
     act += '<button data-a="restore" data-t="' + g.title_id + '">' + t('Restore original files') + '</button>' +
       '<div class="meta" style="flex-basis:100%">' + t('Takes the game off the console and puts its pkgs back where they were, with the names they had. Nothing is deleted.') + '</div>';
+  if (page && drive.connected && g.state !== 'internal' && g.state !== 'offline')
+    act += '<button class="gd" data-d="upload" data-t="' + g.title_id + '">' + (driveGame(g.title_id) ? t('Send to Drive again') : t('Send to Drive')) + '</button>';
   if (busy[g.title_id]) act = '<button disabled>' + t('Please wait…') + '</button>';
   return act;
 }
@@ -214,7 +253,8 @@ function render() {
     shown++;
     var act = actions(g);
     html += '<div class="card"><div class="art" data-g="' + g.title_id + '" style="background-image:url(/icon/' + g.title_id + ')">' +
-      '<span class="badge b-' + g.state + '">' + esc(label(g.state)) + '</span></div>' +
+      '<span class="badge b-' + g.state + '">' + esc(label(g.state)) + '</span>' +
+      (driveGame(g.title_id) ? '<span class="b-drive" title="' + esc(t('In Google Drive')) + '">Drive</span>' : '') + '</div>' +
       '<div class="info"><div class="name">' + esc(g.name) + '</div>' +
       '<div class="meta">' + g.title_id + (g.version ? ' · v' + esc(g.version) : '') + (g.has_patch ? t(' (with update)') : '') +
         (g.dlc ? ' · ' + esc(addons(g)) : '') + (g.size ? ' · ' + gb(g.size) : '') + '</div>' +
@@ -242,6 +282,8 @@ function showGame(tid) {
     [t('Version'), g.has_patch ? t('v{0} (game v{1} with its update)', g.version, g.game_version || '?') : 'v' + g.version],
     [t('Add-ons'), g.dlc ? String(g.dlc) : t('none')], [t('Needs firmware'), g.system_ver || t('unknown')], [t('Size'), gb(g.size)],
     [t('On'), (g.storage || '') + ' · ' + g.source]];
+  var dg = driveGame(tid);
+  if (drive.connected) f.push(['Google Drive', dg ? t('in Drive ({0})', mb(dg.size)) : t('not in Drive')]);
   $('g-facts').innerHTML = f.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') +
     (g.state === 'restart' ? '<dt></dt><dd class="warn">' + t('Added. Restart the console once to play it.') + '</dd>' : '');
   $('g-actions').innerHTML = actions(g, true);
@@ -260,6 +302,8 @@ function load() {
 function onAction(e) {
   var art = e.target.closest('[data-g]');
   if (art) { showGame(art.getAttribute('data-g')); return; }
+  var d = e.target.closest('button[data-d]');
+  if (d) { driveAct('upload', 'title_id=' + d.getAttribute('data-t')); return; }
   var b = e.target.closest('button[data-a]');
   if (!b) return;
   if ($('gamedlg').open) $('gamedlg').close();
@@ -504,6 +548,113 @@ $('stop').onclick = function () {
 };
 load();
 setInterval(load, 5000);
+
+/* --- Google Drive --- */
+var drive = {}, driveBusyBefore = false;
+function driveGame(tid) { var l = drive.games || []; for (var i = 0; i < l.length; i++) if (l[i].title_id === tid) return l[i]; return null; }
+/* Drive actions send the panel's header: a download writes files, an upload sends them out. */
+function driveAct(action, query) {
+  return fetch('/api/drive/' + action + (query ? '?' + query : ''), {method: 'POST', cache: 'no-store', headers: {'X-PS4Mount': '1'}})
+    .then(function (r) { return r.json(); })
+    .then(function (j) { toast(j.message || j.error); setTimeout(loadDrive, 500); return j; })
+    .catch(function (err) { toast(t('Error: {0}', err.message)); });
+}
+var opText = {
+  upload: function (n) { return t('Uploading {0} to Drive', n); },
+  download: function (n) { return t('Downloading {0} from Drive', n); },
+  trash: function (n) { return t('Moving {0} to the Drive trash', n); }};
+function renderDrive() {
+  var d = drive, job = d.job || {};
+  $('drivebtn').hidden = !d.configured;
+  $('drivelabel').textContent = d.connected ? 'Google Drive' : t('Connect Google Drive');
+  $('backupbtn').hidden = !d.connected;
+  var bar = job.busy && job.op !== 'list' && job.op !== 'login';
+  $('drivebar').style.display = bar ? 'flex' : 'none';
+  if (bar) {
+    var pct = job.total ? Math.floor(100 * job.done / job.total) : 0;
+    $('db-text').textContent = (opText[job.op] ? opText[job.op](job.name || job.title_id) : job.op) +
+      (job.file ? ' · ' + job.file + (job.files > 1 ? ' (' + job.file_index + '/' + job.files + ')' : '') + ' · ' + pct + '% · ' +
+        mb(job.done) + ' / ' + mb(job.total) : '') +
+      (job.queued && job.queued.length ? ' · ' + t('{0} more waiting', job.queued.length) : '');
+    $('db-prog').max = job.total || 1;
+    $('db-prog').value = job.done || 0;
+  }
+  if (!$('drivedlg').open) return;
+  $('d-off').hidden = !!d.connected;
+  $('d-on').hidden = !d.connected;
+  var login = d.login || {};
+  $('d-code').hidden = !login.active;
+  $('d-connect').disabled = !!login.active;
+  if (login.active) {
+    $('d-usercode').textContent = login.code;
+    $('d-url').textContent = login.url;
+    $('d-url').href = login.url;
+  }
+  $('d-err').hidden = !login.error;
+  $('d-err').textContent = login.error || '';
+  if (!d.connected) return;
+  $('d-email').textContent = d.email || '';
+  var lim = d.quota_limit, used = d.quota_used;
+  $('d-quota-t').textContent = lim > 0 ? t('{0} of {1} used', mb(used), mb(lim)) : (used >= 0 ? t('{0} used', mb(used)) : '');
+  $('d-quota').style.width = lim > 0 ? Math.min(100, 100 * used / lim) + '%' : '0';
+  $('d-listerr').hidden = !d.list_error;
+  $('d-listerr').textContent = d.list_error || '';
+  $('d-result').hidden = !job.result || job.busy;
+  $('d-result').textContent = job.result || '';
+  $('d-result').className = job.ok ? 'note' : 'bad';
+  var rows = (d.games || []).slice().sort(byName).map(function (r) {
+    var here = gameBy(r.title_id), extra = [];
+    if (r.update) extra.push(t('update'));
+    if (r.addons) extra.push(r.addons === 1 ? t('1 add-on') : t('{0} add-ons', r.addons));
+    return '<tr><td>' + esc(r.name || r.title_id) + '<div class="meta">' + r.title_id + (here ? ' · ' + esc(t('on the console')) : '') + '</div></td>' +
+      '<td>' + mb(r.size) + (extra.length ? '<div class="meta">' + esc(t('game')) + ', ' + esc(extra.join(', ')) + '</div>' : '') + '</td>' +
+      '<td style="white-space:nowrap">' + (here ? '' : '<button class="small primary" data-dl="' + r.title_id + '">' + t('Download') + '</button> ') +
+      '<button class="small danger" data-tr="' + r.title_id + '">' + t('Delete from Drive') + '</button></td></tr>';
+  }).join('');
+  $('d-rows').innerHTML = rows || '<tr><td colspan="3" class="meta">' + (d.listed ? t('Nothing in Google Drive yet: use Back up the library, or Send to Drive on a game\'s page.') : t('Reading Google Drive')) + '</td></tr>';
+}
+function loadDrive() {
+  return api('/api/drive').then(function (j) {
+    drive = j;
+    var busyNow = !!(j.job && j.job.busy);
+    if (driveBusyBefore && !busyNow) load(); /* a download is in the library soon */
+    driveBusyBefore = busyNow;
+    var inDrive = (j.games || []).map(function (g) { return g.title_id; }).join();
+    if (inDrive !== loadDrive.seen) { loadDrive.seen = inDrive; render(); } /* the cards' Drive marks */
+    renderDrive();
+  }).catch(function () { /* an older PS4Mount: no Drive */ });
+}
+function loadDests() {
+  api('/api/dests').then(function (j) {
+    var cur = $('d-dest').value;
+    $('d-dest').innerHTML = (j.dests || []).map(function (x) {
+      return '<option value="' + esc(x.id) + '">' + esc(x.label) + ' — ' + esc(x.folder) + ' (' + esc(t('{0} free', mb(x.free))) + ')</option>';
+    }).join('') || '<option value="">' + t('No drive connected') + '</option>';
+    if (cur) $('d-dest').value = cur;
+  });
+}
+$('drivebtn').onclick = function () { $('drivedlg').showModal(); renderDrive(); loadDests(); loadDrive(); };
+$('d-close1').onclick = $('d-close2').onclick = function () { $('drivedlg').close(); };
+$('d-connect').onclick = function () { driveAct('connect'); };
+$('d-refresh').onclick = function () { driveAct('refresh'); loadDests(); };
+$('d-disconnect').onclick = function () {
+  if (confirm(t('Disconnect Google Drive? The copies stay in your Drive; PS4Mount forgets the account.'))) driveAct('disconnect');
+};
+$('backupbtn').onclick = $('d-backup').onclick = function () {
+  if (confirm(t('Back up the whole library to Google Drive? Games already there are skipped. The console must stay on (not in rest mode) until it ends.'))) driveAct('upload');
+};
+$('db-cancel').onclick = function () { if (confirm(t('Stop the Drive transfer? An upload goes on from where it was the next time.'))) driveAct('cancel'); };
+$('d-rows').onclick = function (e) {
+  var dl = e.target.closest('button[data-dl]'), tr = e.target.closest('button[data-tr]');
+  if (dl) {
+    if (!$('d-dest').value) { toast(t('No drive connected')); return; }
+    driveAct('download', 'title_id=' + dl.getAttribute('data-dl') + '&dest=' + encodeURIComponent($('d-dest').value));
+  }
+  if (tr && confirm(t('Move {0} to the Drive trash? The pkgs on the console stay.', tr.getAttribute('data-tr')))) driveAct('trash', 'title_id=' + tr.getAttribute('data-tr'));
+};
+setInterval(function () { if ($('drivedlg').open || (drive.job && drive.job.busy) || (drive.login && drive.login.active)) loadDrive(); }, 2000);
+setInterval(function () { if (!$('drivedlg').open && !(drive.job && drive.job.busy)) loadDrive(); }, 15000);
+loadDrive();
 </script>
 </body>
 </html>

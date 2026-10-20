@@ -40,6 +40,7 @@
 #include "upload.h"
 #include "crypto.h"
 #include "db.h"
+#include "drive.h"
 #include "fw.h"
 #include "install.h"
 #include "lang.h"
@@ -3743,6 +3744,142 @@ int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint6
 
 void app_uploads_json(buf_t *out) { upload_status_json(out); }
 
+void app_dests_json(buf_t *out) {
+    buf_printf(out, "{\"dests\":");
+    dests_json(out, 0);
+    buf_printf(out, "}");
+}
+
+/* --- Google Drive backups --- */
+
+/* The OAuth client of this build (build.sh takes them from the environment, CI from the
+ * repository's secrets). For a "TVs and limited input devices" client Google does not
+ * treat the secret as confidential: it ships in every copy of an app like this one. */
+#ifndef DRIVE_CLIENT_ID
+#define DRIVE_CLIENT_ID ""
+#endif
+#ifndef DRIVE_CLIENT_SECRET
+#define DRIVE_CLIENT_SECRET ""
+#endif
+
+/* The title of the pkg at path (the update's wins, as on the console); 0 when read. */
+static int pkg_title(const char *path, char *out, size_t n) {
+    pkg_t *pkg = mem_alloc(sizeof(*pkg));
+    sfo_t *sfo = mem_alloc(sizeof(*sfo));
+    int rc = -1;
+    if (pkg && sfo && !pkg_open(pkg, path)) {
+        const sfo_item_t *t = read_sfo(pkg, sfo) ? NULL : sfo_get(sfo, "TITLE");
+        if (t && !t->is_int) {
+            snprintf(out, n, "%s", t->sval);
+            rc = 0;
+        }
+        pkg_close(pkg);
+    }
+    mem_free(pkg);
+    mem_free(sfo);
+    return rc;
+}
+
+static void drive_add_file(drive_file_t *files, int *nf, int max, const char *path, const char *name, const char *kind) {
+    struct stat st;
+    if (*nf >= max || stat(path, &st) || !S_ISREG(st.st_mode))
+        return;
+    drive_file_t *f = &files[(*nf)++];
+    snprintf(f->path, sizeof(f->path), "%s", path);
+    snprintf(f->name, sizeof(f->name), "%s", name);
+    snprintf(f->kind, sizeof(f->kind), "%s", kind);
+    f->size = (uint64_t)st.st_size;
+}
+
+/* The pkgs of a library game: <root>/ps4/<TID>/app.pkg, patch.pkg and
+ * addcont/<ADD-ON TID>/<LABEL>/ac.pkg. Runs in the Drive thread: it only reads. */
+static int drive_game_files(const char *tid, drive_file_t *files, int max, char *name, size_t nn) {
+    char root[32], dir[PATH_MAX], p[PATH_MAX], fname[96];
+    if (find_root(tid, root, sizeof(root)))
+        return 0;
+    int nf = 0;
+    snprintf(dir, sizeof(dir), "%s/ps4/%s", root, tid);
+    snprintf(p, sizeof(p), "%s/app.pkg", dir);
+    drive_add_file(files, &nf, max, p, "game.pkg", "game");
+    if (!nf)
+        return 0;
+    if (pkg_title(p, name, nn))
+        snprintf(name, nn, "%s", tid);
+    snprintf(p, sizeof(p), "%s/patch.pkg", dir);
+    if (exists(p)) {
+        drive_add_file(files, &nf, max, p, "update.pkg", "update");
+        pkg_title(p, name, nn);
+    }
+    snprintf(p, sizeof(p), "%s/addcont", dir);
+    DIR *d = opendir(p);
+    struct dirent *e, *l;
+    while (d && (e = readdir(d))) {
+        if (e->d_name[0] == '.')
+            continue;
+        char sub[PATH_MAX];
+        snprintf(sub, sizeof(sub), "%s/addcont/%s", dir, e->d_name);
+        DIR *ld = opendir(sub);
+        while (ld && (l = readdir(ld))) {
+            if (l->d_name[0] == '.')
+                continue;
+            snprintf(p, sizeof(p), "%s/%s/ac.pkg", sub, l->d_name);
+            snprintf(fname, sizeof(fname), "addon-%.9s-%.40s.pkg", e->d_name, l->d_name);
+            drive_add_file(files, &nf, max, p, fname, "addon");
+        }
+        if (ld)
+            closedir(ld);
+    }
+    if (d)
+        closedir(d);
+    return nf;
+}
+
+static int drive_library(char (*tids)[10], int max) {
+    int n = 0;
+    for (int i = 0; i < NROOTS; i++) {
+        char root[32], lib[PATH_MAX], p[PATH_MAX];
+        root_path(i, root, sizeof(root));
+        if (!root_present(root))
+            continue;
+        snprintf(lib, sizeof(lib), "%s/ps4", root);
+        DIR *d = opendir(lib);
+        struct dirent *e;
+        while (d && (e = readdir(d)) && n < max) {
+            snprintf(p, sizeof(p), "%s/%s/app.pkg", lib, e->d_name);
+            if (strlen(e->d_name) != 9 || strncmp(e->d_name, "CUSA", 4) || !exists(p))
+                continue;
+            int seen = 0;
+            for (int k = 0; k < n && !seen; k++)
+                seen = !strcmp(tids[k], e->d_name);
+            if (!seen)
+                snprintf(tids[n++], 10, "%s", e->d_name);
+        }
+        if (d)
+            closedir(d);
+    }
+    return n;
+}
+
+static int drive_dest_dir(const char *dest, char *dir, size_t n) {
+    if (upload_dir(dest, dir, n))
+        return -1;
+    mkdirs(dir, 0777);
+    return 0;
+}
+
+static void drive_downloaded(const char *tid) {
+    (void)tid;
+    app_rescan(); /* the scan adds it now */
+}
+
+static void drive_notify(const char *msg) { notify("%s", msg); }
+
+static void drive_begin(void) {
+    static const drive_host_t host = {drive_game_files, drive_library, drive_dest_dir, free_bytes, drive_downloaded,
+                                      drive_notify};
+    drive_start(STATE_DIR, DRIVE_CLIENT_ID, DRIVE_CLIENT_SECRET, NULL, &host);
+}
+
 /* --- Media tab shortcut (category 65536 + deeplinkUri, as other PS5 web panels) --- */
 
 #define PANEL_ID "PMNT00001"
@@ -3801,6 +3938,7 @@ static int g_klog = -1, g_web = -1;
 /* Closes the ports and the log before main returns: the process stays (it is the
  * loader's) and anything left open in it would keep the next PS4Mount out. */
 static void shutdown_daemon(int lock) {
+    drive_stop();
     install_close();
     if (g_web >= 0)
         close(g_web);
@@ -3931,6 +4069,7 @@ int main(void) {
     /* no Media tab shortcut: it is a PS5 web app (param.json); the panel is opened from
      * a browser */
     g_web = web_listen();
+    drive_begin();
     if (g_reg_mode == REG_ALL)
         notify("%s", g_web >= 0 ? TR(VERSION " running. Panel at http://<PS4 IP>:8770",
                                VERSION " en marcha. Panel en http://<IP de la PS4>:8770")

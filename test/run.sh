@@ -29,6 +29,17 @@ SQ="$B/sqlite3-$(echo "$CC $FLAGS" | md5sum | cut -c1-8).o"
 [ -f "$SQ" ] || $CC $FLAGS -w -c third_party/sqlite/sqlite3.c -o "$SQ" \
     -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_DEFAULT_CACHE_SIZE=-128
 
+# BearSSL once per compiler and flags, as a library
+BR="$B/bearssl-$(echo "$CC $FLAGS" | md5sum | cut -c1-8)"
+if [ ! -f "$BR/libbearssl.a" ]; then
+    mkdir -p "$BR"
+    for f in third_party/bearssl/src/*.c third_party/bearssl/src/*/*.c; do
+        echo "$CC $FLAGS -w -Ithird_party/bearssl/inc -Ithird_party/bearssl/src -c $f -o $BR/$(echo "${f#third_party/bearssl/src/}" | tr / _).o"
+    done | xargs -P "$(nproc)" -I{} sh -c '{}'
+    ar rcs "$BR/libbearssl.a" "$BR"/*.o
+fi
+BRF="-Ithird_party/bearssl/inc"
+
 echo "== unit"
 $CC $FLAGS -o "$B/unit" test/unit.c src/build.c src/mem.c src/lang.c src/check.c src/crypto.c src/pkg.c src/origin.c
 "$B/unit"
@@ -52,3 +63,7 @@ $CC $FLAGS -Itest -o "$B/upload_test" test/upload_test.c src/upload.c src/lang.c
 echo "== log with times"
 $CC $FLAGS -o "$B/log_test" test/log_test.c src/logts.c -lpthread
 "$B/log_test"
+
+echo "== Google Drive backups"
+$CC $FLAGS $BRF -o "$B/drive_test" test/drive_test.c src/drive.c src/https.c src/json.c src/lang.c src/build.c src/mem.c src/crypto.c "$BR/libbearssl.a" -lpthread
+"$B/drive_test"

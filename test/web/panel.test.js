@@ -14,7 +14,11 @@ const GAMES = [
   { title_id: 'CUSA00069', name: 'Rayman Legends', version: '', has_patch: false, size: 0, state: 'offline', mount: '', source: '/mnt/usb1/ps4/CUSA00069', dlc: 0, update_issue: '', content_id: '', game_version: '', system_ver: '', storage: 'usb1' }];
 const CFG = { batch: true, batch_size: 5, dlc: true, restore_batch: 5, max_restore_batch: 10, paths: ['/'] };
 let REPLY_LANG; // the language the console reports (undefined: none, English)
+let DRIVE = { configured: false }; // GET /api/drive (an object: the tests change it)
+const DESTS = { dests: [{ id: 'usb0', label: 'usb0', folder: '/mnt/usb0/PS4Mount', free: 5e11, fits: true }] };
 function reply(url) {
+  if (url === '/api/drive') return DRIVE;
+  if (url === '/api/dests') return DESTS;
   return url.indexOf('/api/log') === 0 ? { log: 'a\nb' } : url.indexOf('/api/config') === 0 ? CFG :
     url.indexOf('/api/games') === 0 ? { version: 'PS4Mount test', lang: REPLY_LANG, games: GAMES } : { ok: true, message: 'ok ' + url };
 }
@@ -35,7 +39,7 @@ function page(file, opts) {
         w.HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
         w.HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
       }
-      w.fetch = (url, o) => { reqs.push({ url, method: (o && o.method) || 'GET', body: o && o.body }); return Promise.resolve({ ok: true, json: () => Promise.resolve(reply(url)) }); };
+      w.fetch = (url, o) => { reqs.push({ url, method: (o && o.method) || 'GET', body: o && o.body, headers: (o && o.headers) || {} }); return Promise.resolve({ ok: true, json: () => Promise.resolve(reply(url)) }); };
       w.XMLHttpRequest = function () {
         const x = this; x.readyState = 0;
         x.open = (m, u) => { x.m = m; x.u = u; };
@@ -263,6 +267,72 @@ function tKeys(file) {
   // the settings have the internal storage switch
   d.getElementById('settingsbtn').click(); await tick();
   ok(d.getElementById('s-internal') !== null, 'settings have the /data/pkg switch');
+
+  // --- Google Drive
+  ok(d.getElementById('drivebtn').hidden, 'no Drive button when this build has no Drive');
+  DRIVE = { configured: true, connected: false, login: { active: false, error: '' }, job: { busy: false, queued: [] }, games: [] };
+  p = page('index.html', { dialog: true }); ({ w, d, reqs } = p);
+  await tick(); await tick();
+  ok(!d.getElementById('drivebtn').hidden && d.getElementById('drivelabel').textContent === 'Connect Google Drive', 'the corner button: Connect Google Drive');
+  ok(d.getElementById('backupbtn').hidden, 'no backup button before connecting');
+  d.getElementById('drivebtn').click(); await tick();
+  ok(d.getElementById('drivedlg').open && !d.getElementById('d-off').hidden && d.getElementById('d-on').hidden, 'the Drive window explains and offers Connect');
+  reqs.length = 0;
+  d.getElementById('d-connect').click(); await tick();
+  const conn = reqs.find((r) => r.url === '/api/drive/connect');
+  ok(conn && conn.method === 'POST' && conn.headers['X-PS4Mount'] === '1', 'Connect posts with the panel header');
+  DRIVE = Object.assign({}, DRIVE, { login: { active: true, code: 'ABCD-EFGH', url: 'https://www.google.com/device', expires: 1700, error: '' } });
+  w.loadDrive(); await tick();
+  ok(d.getElementById('d-usercode').textContent === 'ABCD-EFGH' && d.getElementById('d-url').href === 'https://www.google.com/device', 'the code and the address to type it in');
+  ok(!d.getElementById('d-code').hidden && d.getElementById('d-connect').disabled, 'waiting for the account: Connect is off');
+  DRIVE = { configured: true, connected: true, email: 'someone@example.com', quota_limit: 16e9, quota_used: 4e9, login: { active: false, error: '' },
+    job: { busy: false, queued: [], result: '', ok: true }, listed: true, list_error: '',
+    games: [{ title_id: 'CUSA00791', name: 'N++', size: 4e9, files: 2, update: true, addons: 0 },
+      { title_id: 'CUSA99999', name: 'Only In Drive', size: 3e9, files: 1, update: false, addons: 2 }] };
+  w.loadDrive(); await tick(); await tick();
+  ok(!d.getElementById('d-on').hidden && d.getElementById('d-email').textContent === 'someone@example.com', 'connected: the account');
+  ok(d.getElementById('d-quota').style.width === '25%', 'and its space used');
+  ok(!d.getElementById('backupbtn').hidden && d.getElementById('drivelabel').textContent === 'Google Drive', 'connected: a backup button appears');
+  let drows = d.querySelectorAll('#d-rows tr');
+  ok(drows.length === 2 && drows[0].textContent.includes('N++') && drows[0].textContent.includes('on the console'), 'the games in Drive, the ones on the console marked');
+  ok(!drows[0].querySelector('[data-dl]') && drows[1].querySelector('[data-dl]'), 'Download only for a game not on the console');
+  ok(drows[1].textContent.includes('2 add-ons'), 'with its add-ons');
+  ok(d.querySelector('.art[data-g="CUSA00791"] .b-drive') && !d.querySelector('.art[data-g="CUSA41712"] .b-drive'), 'cards of games in Drive say so');
+  w.loadDests(); await tick();
+  reqs.length = 0;
+  drows[1].querySelector('[data-dl]').click(); await tick();
+  const dl = reqs.find((r) => r.url.indexOf('/api/drive/download') === 0);
+  ok(dl && dl.url === '/api/drive/download?title_id=CUSA99999&dest=usb0' && dl.headers['X-PS4Mount'] === '1', 'Download goes to the chosen drive');
+  reqs.length = 0; w.__confirm = false;
+  drows[1].querySelector('[data-tr]').click(); await tick();
+  ok(!reqs.some((r) => r.url.indexOf('/api/drive/trash') === 0), 'Delete from Drive asks first (and a no stops it)');
+  w.__confirm = true;
+  drows[1].querySelector('[data-tr]').click(); await tick();
+  ok(reqs.some((r) => r.url === '/api/drive/trash?title_id=CUSA99999'), 'then moves it to the Drive trash');
+  reqs.length = 0;
+  d.getElementById('backupbtn').click(); await tick();
+  ok(reqs.some((r) => r.url === '/api/drive/upload' && r.method === 'POST'), 'Back up to Drive: the whole library');
+  d.getElementById('drivedlg').close();
+  w.showGame('CUSA41712');
+  const up = d.querySelector('#g-actions [data-d="upload"]');
+  ok(up && up.textContent === 'Send to Drive', 'the game page offers Send to Drive');
+  ok(d.getElementById('g-facts').textContent.includes('not in Drive'), 'and says it is not in Drive');
+  reqs.length = 0;
+  up.click(); await tick();
+  ok(reqs.some((r) => r.url === '/api/drive/upload?title_id=CUSA41712' && r.headers['X-PS4Mount'] === '1'), 'Send to Drive uploads that game');
+  w.showGame('CUSA00791');
+  ok(d.querySelector('#g-actions [data-d="upload"]').textContent === 'Send to Drive again' && d.getElementById('g-facts').textContent.includes('in Drive (3.7 GB)'), 'a game already there: Send to Drive again');
+  w.showGame('CUSA00190');
+  ok(!d.querySelector('#g-actions [data-d="upload"]'), 'not for a game installed the normal way');
+  d.getElementById('gamedlg').close();
+  DRIVE = Object.assign({}, DRIVE, { job: { busy: true, op: 'upload', title_id: 'CUSA41712', name: 'Soulstice', file: 'game.pkg', file_index: 1, files: 2, done: 5e8, total: 1e9, queued: [{ op: 'upload', title_id: 'CUSA00791' }] } });
+  w.loadDrive(); await tick();
+  const dbt = d.getElementById('db-text').textContent;
+  ok(d.getElementById('drivebar').style.display === 'flex' && dbt.includes('Uploading Soulstice to Drive') && dbt.includes('(1/2)') && dbt.includes('50%') && dbt.includes('1 more waiting'), 'the transfer in progress, under the header: ' + dbt);
+  reqs.length = 0;
+  d.getElementById('db-cancel').click(); await tick();
+  ok(reqs.some((r) => r.url === '/api/drive/cancel'), 'and it can be cancelled');
+  DRIVE = { configured: false };
 
   // --- in Spanish: the console says "es"
   REPLY_LANG = 'es';
