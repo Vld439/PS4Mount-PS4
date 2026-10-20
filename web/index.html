@@ -78,8 +78,10 @@ progress{width:100%;height:10px;margin-top:8px;accent-color:var(--accent)}
 button.small{padding:5px 10px;font-size:13px}
 .gd{display:inline-flex;align-items:center;gap:6px}
 .gd svg{width:16px;height:16px}
-#drivebar{display:none;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 20px;background:#11161f;border-bottom:1px solid var(--line);font-size:14px}
+#drivebar{display:none;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:8px 20px;background:#11161f;border-bottom:1px solid var(--line);font-size:14px}
 #drivebar progress{width:220px;margin:0}
+#drivebar .db-main{font-weight:600}
+#drivebar .db-sub{color:var(--muted);font-size:13px;flex-basis:100%}
 .code{font:600 30px/1.2 ui-monospace,Consolas,monospace;letter-spacing:3px;background:#0b0d11;border:1px solid var(--line);border-radius:10px;padding:12px 18px;display:inline-block;margin:8px 0;user-select:all}
 .drive-acct{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-bottom:10px}
 .quota{height:8px;background:#0b0d11;border-radius:99px;overflow:hidden;width:220px;border:1px solid var(--line)}
@@ -102,7 +104,8 @@ button.small{padding:5px 10px;font-size:13px}
     <button id="drivebtn" class="small gd" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#0f9d58" d="M7.7 3h8.6l5.4 9.3-4.3 7.5z" opacity=".9"/><path fill="#fbbc04" d="M2.3 12.3 7.7 3l4.3 7.4-5.4 9.4z"/><path fill="#4285f4" d="M6.6 19.8 12 10.4h9.7l-4.3 9.4z"/></svg><span id="drivelabel">Connect Google Drive</span></button>
   </div>
 </header>
-<div id="drivebar"><span id="db-text"></span><progress id="db-prog" max="1" value="0"></progress><button class="small" id="db-cancel">Cancel</button></div>
+<div id="drivebar"><span class="db-main" id="db-text"></span><progress id="db-prog" max="1" value="0"></progress><button class="small" id="db-cancel">Cancel</button>
+  <span class="db-sub" id="db-sub"></span></div>
 <main>
   <div class="summary" id="summary"></div>
   <div class="grid" id="grid"></div>
@@ -580,16 +583,34 @@ function renderDrive() {
   $('drivebtn').hidden = !d.configured;
   $('drivelabel').textContent = d.connected ? 'Google Drive' : t('Connect Google Drive');
   $('backupbtn').hidden = !d.connected;
-  var bar = job.busy && job.op !== 'list' && job.op !== 'login';
+  var login = d.login || {}, queued = job.queued || [];
+  /* a job that waits for a new code after Google ended the access */
+  var waitLogin = !job.busy && login.active && queued.length > 0;
+  var bar = (job.busy && job.op !== 'list' && job.op !== 'login') || waitLogin;
   $('drivebar').style.display = bar ? 'flex' : 'none';
   if (bar) {
-    var pct = job.total ? Math.floor(100 * job.done / job.total) : 0;
-    $('db-text').textContent = (opText[job.op] ? opText[job.op](job.name || job.title_id) : job.op) +
-      (job.file ? ' · ' + job.file + (job.files > 1 ? ' (' + job.file_index + '/' + job.files + ')' : '') + ' · ' + pct + '% · ' +
-        mb(job.done) + ' / ' + mb(job.total) : '') +
-      (job.queued && job.queued.length ? ' · ' + t('{0} more waiting', job.queued.length) : '');
-    $('db-prog').max = job.total || 1;
-    $('db-prog').value = job.done || 0;
+    var all = job.game_total || job.total || 0, done = job.game_total ? job.game_done : job.done;
+    var pct = all ? Math.floor(100 * done / all) : 0, main, sub = [];
+    if (waitLogin) {
+      main = t('Google Drive asks to connect again: open {0} and type {1}', login.url, login.code);
+      sub.push(t('The transfer goes on once you do'));
+    } else {
+      main = (opText[job.op] ? opText[job.op](job.name || job.title_id) : job.op);
+      if (all) main += ' · ' + pct + '% · ' + t('{0} of {1}', mb(done), mb(all));
+      if (job.phase === 'retrying') main += ' · ' + t('connection lost, trying again in {0} s', job.retry_in);
+      else if (job.phase === 'checking') main += ' · ' + (job.op === 'upload' ? t('reading again what Drive already has…') : t('checking the file…'));
+      else if (job.speed > 0 && all) main += ' · ' + mb(job.speed) + '/s · ' + t('{0} left', left((all - done) / job.speed));
+      else if (all) main += ' · ' + t('measuring the speed…');
+      if (job.file) sub.push(job.file + (job.files > 1 ? ' (' + job.file_index + '/' + job.files + ')' : ''));
+      if (job.elapsed) sub.push(t('running for {0}', left(job.elapsed, true)));
+    }
+    if (queued.length) sub.push(t('{0} more waiting', queued.length));
+    $('db-text').textContent = main;
+    $('db-sub').textContent = sub.join(' · ');
+    $('db-prog').max = all || 1;
+    $('db-prog').value = done || 0;
+    $('db-prog').hidden = waitLogin;
+    $('db-cancel').hidden = waitLogin;
   }
   if (!$('drivedlg').open) return;
   $('d-off').hidden = !!d.connected;
@@ -629,6 +650,12 @@ function renderDrive() {
       '<button class="small danger" data-tr="' + r.title_id + '">' + t('Delete from Drive') + '</button></td></tr>';
   }).join('');
   $('d-rows').innerHTML = rows || '<tr><td colspan="3" class="meta">' + (d.listed ? t('Nothing in Google Drive yet: use Back up the library, or Send to Drive on a game\'s page.') : t('Reading Google Drive')) + '</td></tr>';
+}
+/* "~25 min", "~1 h 40 min" (exact: no ~, for time already spent) */
+function left(seconds, exact) {
+  var m = Math.round(seconds / 60), p = exact ? '' : '~';
+  if (m < 1) return exact ? t('less than a minute') : t('less than a minute');
+  return m < 60 ? p + m + ' min' : p + Math.floor(m / 60) + ' h ' + (m % 60) + ' min';
 }
 function loadDrive() {
   return api('/api/drive').then(function (j) {

@@ -341,10 +341,26 @@ function tKeys(file) {
   w.showGame('CUSA00190');
   ok(!d.querySelector('#g-actions [data-d="upload"]'), 'not for a game installed the normal way');
   d.getElementById('gamedlg').close();
-  DRIVE = Object.assign({}, DRIVE, { job: { busy: true, op: 'upload', title_id: 'CUSA41712', name: 'Soulstice', file: 'game.pkg', file_index: 1, files: 2, done: 5e8, total: 1e9, queued: [{ op: 'upload', title_id: 'CUSA00791' }] } });
+  DRIVE = Object.assign({}, DRIVE, { job: { busy: true, op: 'upload', title_id: 'CUSA41712', name: 'Soulstice', file: 'game.pkg', file_index: 1, files: 2, done: 5e8, total: 1e9,
+    game_done: 5e8, game_total: 2e9, speed: 2.8e6, elapsed: 600, phase: 'sending', retry_in: 0, queued: [{ op: 'upload', title_id: 'CUSA00791' }] } });
   w.loadDrive(); await tick();
-  const dbt = d.getElementById('db-text').textContent;
-  ok(d.getElementById('drivebar').style.display === 'flex' && dbt.includes('Uploading Soulstice to Drive') && dbt.includes('(1/2)') && dbt.includes('50%') && dbt.includes('1 more waiting'), 'the transfer in progress, under the header: ' + dbt);
+  let dbt = d.getElementById('db-text').textContent, dbs = d.getElementById('db-sub').textContent;
+  ok(d.getElementById('drivebar').style.display === 'flex' && dbt.includes('Uploading Soulstice to Drive') && dbt.includes('25%') && dbt.includes('of 1.9 GB'), 'the whole game in progress, under the header: ' + dbt);
+  ok(dbt.includes('/s') && dbt.includes('~9 min left'), 'with its speed and the time left (1.5 GB at 2.8 MB/s)');
+  ok(dbs.includes('game.pkg (1/2)') && dbs.includes('running for 10 min') && dbs.includes('1 more waiting'), 'the file, the time so far and the queue: ' + dbs);
+  DRIVE.job = Object.assign({}, DRIVE.job, { phase: 'retrying', retry_in: 8 });
+  w.loadDrive(); await tick();
+  ok(d.getElementById('db-text').textContent.includes('trying again in 8 s'), 'a lost connection says when it tries again');
+  DRIVE.job = Object.assign({}, DRIVE.job, { phase: 'sending', speed: 0 });
+  w.loadDrive(); await tick();
+  ok(d.getElementById('db-text').textContent.includes('measuring the speed'), 'no time left before the speed is known');
+  DRIVE = Object.assign({}, DRIVE, { login: { active: true, code: 'WXYZ-1234', url: 'https://www.google.com/device', error: '' },
+    job: { busy: false, queued: [{ op: 'upload', title_id: 'CUSA41712' }] } });
+  w.loadDrive(); await tick();
+  dbt = d.getElementById('db-text').textContent;
+  ok(d.getElementById('drivebar').style.display === 'flex' && dbt.includes('WXYZ-1234') && dbt.includes('google.com/device'), 'an ended access: the new code where everyone looks');
+  DRIVE = Object.assign({}, DRIVE, { login: { active: false }, job: { busy: true, op: 'upload', title_id: 'CUSA41712', name: 'Soulstice', game_done: 1, game_total: 2, total: 2, done: 1, speed: 1, phase: 'sending', queued: [] } });
+  w.loadDrive(); await tick();
   reqs.length = 0;
   d.getElementById('db-cancel').click(); await tick();
   ok(reqs.some((r) => r.url === '/api/drive/cancel'), 'and it can be cancelled');

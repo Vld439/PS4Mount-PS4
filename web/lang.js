@@ -65,6 +65,16 @@ var LANGS = {
     'Cancel transfer': 'Cancelar el envío',
     'Send': 'Enviar',
     /* Google Drive */
+    'reading again what Drive already has…': 'releyendo lo que Drive ya tiene…',
+    'Google Drive asks to connect again: open {0} and type {1}': 'Google Drive pide conectar de nuevo: abre {0} y escribe {1}',
+    'The transfer goes on once you do': 'La transferencia sigue en cuanto lo hagas',
+    '{0} of {1}': '{0} de {1}',
+    'connection lost, trying again in {0} s': 'se cortó la conexión, reintento en {0} s',
+    'checking the file…': 'comprobando el archivo…',
+    '{0} left': 'quedan {0}',
+    'measuring the speed…': 'midiendo la velocidad…',
+    'running for {0}': 'lleva {0}',
+    'less than a minute': 'menos de un minuto',
     'First, your own Google client (once). PS4Mount comes with none: yours stays on this console only.':
       'Primero, tu propio cliente de Google (una sola vez). PS4Mount no trae ninguno: el tuyo se queda solo en esta consola.',
     'Open': 'Abre',

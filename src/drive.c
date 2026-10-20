@@ -92,6 +92,18 @@ static uint64_t g_done, g_total;
 static int g_file_i, g_file_n;
 static char g_result[512];
 static int g_result_ok = 1;
+/* the whole game: bytes of the files done (base) out of all it moves, the phase, and the
+ * samples the speed and the time left come from */
+static uint64_t g_base, g_all;
+static const char *g_phase = "";
+static time_t g_job_start, g_retry_until;
+static int g_milestone;
+#define SAMPLES 30
+static struct {
+    double t;
+    uint64_t b;
+} g_samples[SAMPLES];
+static int g_nsamples;
 
 /* the games in Drive, as last listed */
 static remote_game_t *g_remote;
@@ -182,6 +194,9 @@ static void load_state(void) {
 
 /* Sleeps s seconds, a second at a time: 0, or -1 when cancelled or stopping. */
 static int pause_s(int s) {
+    pthread_mutex_lock(&g_mu);
+    g_retry_until = time(NULL) + s;
+    pthread_mutex_unlock(&g_mu);
     for (int i = 0; i < s; i++) {
         if (g_cancel || g_quit)
             return -1;
@@ -626,10 +641,93 @@ static void md5_hex(br_md5_context *c, char out[33]) {
         snprintf(out + i * 2, 3, "%02x", d[i]);
 }
 
+static double mono(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+/* Bytes a second over the last half minute (0 while unknown). */
+static double speed_locked(void) {
+    if (g_nsamples < 2)
+        return 0;
+    double dt = g_samples[g_nsamples - 1].t - g_samples[0].t;
+    return dt >= 3 ? (double)(g_samples[g_nsamples - 1].b - g_samples[0].b) / dt : 0;
+}
+
+/* "~25 min", "~1 h 40 min". */
+static void fmt_left(double seconds, char *out, size_t n) {
+    long m = (long)(seconds / 60 + 0.5);
+    if (m < 1)
+        snprintf(out, n, "%s", TR("less than a minute", "menos de un minuto"));
+    else if (m < 60)
+        snprintf(out, n, "~%ld min", m);
+    else
+        snprintf(out, n, "~%ld h %ld min", m / 60, m % 60);
+}
+
+static void fmt_size(uint64_t b, char *out, size_t n) {
+    /* in units of 1024, as the panel and the console's own screens count */
+    if (b >= (1ull << 30))
+        snprintf(out, n, "%.1f GB", b / 1073741824.0);
+    else
+        snprintf(out, n, "%llu MB", (unsigned long long)((b + (1u << 20) - 1) >> 20));
+}
+
+static void set_phase(const char *p) {
+    pthread_mutex_lock(&g_mu);
+    g_phase = p;
+    pthread_mutex_unlock(&g_mu);
+}
+
+/* A new transfer of all bytes in all. */
+static void begin_total(uint64_t all) {
+    pthread_mutex_lock(&g_mu);
+    g_all = all;
+    g_base = g_done = 0;
+    g_milestone = 0;
+    g_nsamples = 0;
+    pthread_mutex_unlock(&g_mu);
+}
+
+static void file_done(uint64_t size) {
+    pthread_mutex_lock(&g_mu);
+    g_base += size;
+    g_done = 0;
+    pthread_mutex_unlock(&g_mu);
+}
+
+/* done: bytes of the current file. A quarter more of the game is told on the console's
+ * screen, with the time left: the panel may not be open. */
 static void progress(uint64_t done) {
+    char note[300] = "";
     pthread_mutex_lock(&g_mu);
     g_done = done;
+    uint64_t all = g_base + done;
+    double now = mono();
+    if (!g_nsamples || now - g_samples[g_nsamples - 1].t >= 1) {
+        if (g_nsamples == SAMPLES) {
+            memmove(g_samples, g_samples + 1, sizeof(g_samples[0]) * (SAMPLES - 1));
+            g_nsamples--;
+        }
+        g_samples[g_nsamples].t = now;
+        g_samples[g_nsamples].b = all;
+        g_nsamples++;
+    }
+    int quarter = g_all ? (int)(all * 4 / g_all) : 0;
+    double sp = speed_locked();
+    if (quarter > g_milestone && quarter < 4 && sp > 0 && (g_op == OP_UPLOAD || g_op == OP_DOWNLOAD)) {
+        g_milestone = quarter;
+        char left[48];
+        fmt_left((double)(g_all - all) / sp, left, sizeof(left));
+        snprintf(note, sizeof(note),
+                 g_op == OP_UPLOAD ? TR("%s: %d%% uploaded to Google Drive, %s left", "%s: %d%% subido a Google Drive, quedan %s")
+                                   : TR("%s: %d%% downloaded from Google Drive, %s left", "%s: %d%% descargado de Google Drive, quedan %s"),
+                 g_cur_name, quarter * 25, left);
+    }
     pthread_mutex_unlock(&g_mu);
+    if (note[0] && g_host.notify)
+        g_host.notify(note);
 }
 
 /* --- uploads --- */
@@ -706,9 +804,13 @@ static uint64_t range_next(const http_resp_t *r) {
     return d ? strtoull(d + 1, NULL, 10) + 1 : 0;
 }
 
-/* Hashes fd's bytes [from, to) into c. */
-static int hash_range(int fd, br_md5_context *c, uint64_t from, uint64_t to, uint8_t *buf, size_t bn) {
+static void progress(uint64_t done);
+
+/* Hashes fd's bytes [from, to) into c (report: shown as progress, for a long re-read). */
+static int hash_range_r(int fd, br_md5_context *c, uint64_t from, uint64_t to, uint8_t *buf, size_t bn, int report) {
     while (from < to) {
+        if (report)
+            progress(from);
         size_t want = to - from < bn ? (size_t)(to - from) : bn;
         ssize_t r = pread(fd, buf, want, (off_t)from);
         if (r <= 0)
@@ -717,6 +819,10 @@ static int hash_range(int fd, br_md5_context *c, uint64_t from, uint64_t to, uin
         from += (uint64_t)r;
     }
     return 0;
+}
+
+static int hash_range(int fd, br_md5_context *c, uint64_t from, uint64_t to, uint8_t *buf, size_t bn) {
+    return hash_range_r(fd, c, from, to, buf, bn, 0);
 }
 
 static int upload_file(const drive_file_t *f, const char *parent, const char *tid, const char *title, char *err, size_t n) {
@@ -770,11 +876,20 @@ static int upload_file(const drive_file_t *f, const char *parent, const char *ti
             br_md5_init(&md5); /* Drive has less than was hashed: hash again from 0 */
             hashed = 0;
         }
-        if (hash_range(fd, &md5, hashed, off, buf, g_drive_chunk)) {
+        int reread = off > hashed;
+        if (reread)
+            set_phase("checking"); /* the part Drive has, read again for the MD5 */
+        if (hash_range_r(fd, &md5, hashed, off, buf, g_drive_chunk, reread)) {
             snprintf(err, n, TR("%s cannot be read", "%s no se puede leer"), f->path);
             break;
         }
         hashed = off;
+        if (reread) {
+            pthread_mutex_lock(&g_mu);
+            g_nsamples = 0; /* a local read: not the upload's speed */
+            pthread_mutex_unlock(&g_mu);
+        }
+        set_phase("sending");
         progress(off);
         int done = 0;
         while (!done) {
@@ -898,40 +1013,58 @@ static void run_upload(const char *tid) {
         folder("ps4mount_game", tid, folder_name, root, dir, sizeof(dir), err, sizeof(err)) ||
         remote_files(tid, rem, DRIVE_MAX_FILES, &nr, err, sizeof(err)))
         goto fail;
-    int sent = 0, skipped = 0;
+    /* what Drive already has is skipped; an older pkg with the same name goes to the trash */
+    uint8_t have[DRIVE_MAX_FILES] = {0};
+    uint64_t all = 0;
+    int nsend = 0;
     for (int i = 0; i < nf; i++) {
-        drive_file_t *f = &files[i];
-        int have = 0;
         for (int k = 0; k < nr; k++) {
-            if (strcmp(rem[k].name, f->name))
+            if (strcmp(rem[k].name, files[i].name))
                 continue;
-            if (rem[k].size == f->size)
-                have = 1;
-            else if (trash_id(rem[k].id, err, sizeof(err))) /* an older pkg with that name */
+            if (rem[k].size == files[i].size)
+                have[i] = 1;
+            else if (trash_id(rem[k].id, err, sizeof(err)))
                 goto fail;
         }
+        if (!have[i]) {
+            all += files[i].size;
+            nsend++;
+        }
+    }
+    begin_total(all);
+    char size_text[32];
+    fmt_size(all, size_text, sizeof(size_text));
+    if (nsend && g_host.notify) {
+        char m[300];
+        snprintf(m, sizeof(m), TR("Uploading %s to Google Drive (%s)", "Subiendo %s a Google Drive (%s)"), title, size_text);
+        g_host.notify(m);
+    }
+    for (int i = 0, k = 0; i < nf; i++) {
+        drive_file_t *f = &files[i];
+        if (have[i])
+            continue;
         pthread_mutex_lock(&g_mu);
         snprintf(g_cur_file, sizeof(g_cur_file), "%s", f->name);
-        g_file_i = i + 1;
-        g_file_n = nf;
+        g_file_i = ++k;
+        g_file_n = nsend;
         g_done = 0;
         g_total = f->size;
         pthread_mutex_unlock(&g_mu);
-        if (have) {
-            skipped++;
-            continue;
-        }
         printf("[drive] %s: uploading %s (%llu bytes) as %s\n", tid, f->path, (unsigned long long)f->size, f->name);
         if (upload_file(f, dir, tid, title, err, sizeof(err)))
             goto fail;
-        sent++;
+        file_done(f->size);
     }
     rc = 0;
-    if (sent)
-        set_result(1, TR("%s is in Google Drive", "%s está en Google Drive"), title);
-    else
+    if (nsend) {
+        char took[48];
+        fmt_left((double)(time(NULL) - g_job_start), took, sizeof(took));
+        set_result(1, TR("%s is in Google Drive (%s in %s)", "%s está en Google Drive (%s en %s)"), title, size_text,
+                   took + (took[0] == '~'));
+        if (g_host.notify)
+            g_host.notify(g_result);
+    } else
         set_result(1, TR("%s was already in Google Drive", "%s ya estaba en Google Drive"), title);
-    (void)skipped;
 fail:
     if (rc) {
         set_result(0, TR("%s was not uploaded: %s", "%s no se subió: %s"), title, err);
@@ -1126,6 +1259,7 @@ static int download_file(const remote_file_t *f, const char *part, char *err, si
         rc = -1;
     }
     if (!rc && f->md5[0]) {
+        set_phase("checking");
         /* the whole file read once more: what Drive has, byte for byte */
         uint8_t *buf = mem_alloc(1u << 20);
         br_md5_context c;
@@ -1218,6 +1352,18 @@ static void run_download(const char *tid, const char *dest) {
                  (unsigned long long)(fb >> 20), (unsigned long long)(need >> 20));
         goto fail;
     }
+    uint64_t all = 0;
+    for (int i = 0; i < nr; i++)
+        all += rem[i].size;
+    begin_total(all);
+    set_phase("receiving");
+    char size_text[32];
+    fmt_size(all, size_text, sizeof(size_text));
+    if (g_host.notify) {
+        char m[300];
+        snprintf(m, sizeof(m), TR("Downloading %s from Google Drive (%s)", "Descargando %s de Google Drive (%s)"), title, size_text);
+        g_host.notify(m);
+    }
     clean_title(title, fname, sizeof(fname));
     snprintf(final_dir, sizeof(final_dir), "%.3800s/%.191s [%s]", scan, fname[0] ? fname : tid, tid);
     /* the game first, then its update and add-ons: the scan takes them in that order */
@@ -1243,10 +1389,15 @@ static void run_download(const char *tid, const char *dest) {
                 snprintf(err, sizeof(err), TR("%s could not be renamed (%s)", "%s no se pudo renombrar (%s)"), part, strerror(errno));
                 goto fail;
             }
+            file_done(rem[i].size);
+            set_phase("receiving");
         }
     rmdir(parts);
     rc = 0;
-    set_result(1, TR("%s was downloaded from Google Drive", "%s se descargó de Google Drive"), title);
+    char took[48];
+    fmt_left((double)(time(NULL) - g_job_start), took, sizeof(took));
+    set_result(1, TR("%s was downloaded from Google Drive (%s in %s)", "%s se descargó de Google Drive (%s en %s)"), title,
+               size_text, took + (took[0] == '~'));
     if (g_host.notify)
         g_host.notify(g_result);
     if (g_host.downloaded)
@@ -1452,6 +1603,12 @@ static void *worker(void *arg) {
         g_cur_name[0] = g_cur_file[0] = 0;
         g_done = g_total = 0;
         g_file_i = g_file_n = 0;
+        g_base = g_all = 0;
+        g_nsamples = 0;
+        g_milestone = 0;
+        g_retry_until = 0;
+        g_job_start = time(NULL);
+        g_phase = j.op == OP_UPLOAD ? "sending" : j.op == OP_DOWNLOAD ? "receiving" : "";
         int list_after = j.op == OP_UPLOAD || j.op == OP_DOWNLOAD || j.op == OP_TRASH;
         pthread_mutex_unlock(&g_mu);
         switch (j.op) {
@@ -1579,8 +1736,15 @@ void drive_status_json(buf_t *out) {
     json_esc(out, g_busy ? g_cur_name : "");
     buf_printf(out, ",\"file\":");
     json_esc(out, g_busy ? g_cur_file : "");
-    buf_printf(out, ",\"file_index\":%d,\"files\":%d,\"done\":%llu,\"total\":%llu,\"queued\":[", g_file_i, g_file_n,
+    buf_printf(out, ",\"file_index\":%d,\"files\":%d,\"done\":%llu,\"total\":%llu", g_file_i, g_file_n,
                (unsigned long long)g_done, (unsigned long long)g_total);
+    /* the whole game, its speed (bytes a second, 0 while unknown) and the phase: sending,
+     * receiving, checking (MD5), retrying (retry_in seconds), login (a new code is waited for) */
+    long retry_in = g_busy && g_retry_until > now ? (long)(g_retry_until - now) : 0;
+    const char *phase = !g_busy ? "" : g_login ? "login" : retry_in ? "retrying" : g_phase;
+    buf_printf(out, ",\"game_done\":%llu,\"game_total\":%llu,\"speed\":%.0f,\"elapsed\":%lld,\"retry_in\":%ld,\"phase\":\"%s\",\"queued\":[",
+               (unsigned long long)(g_base + g_done), (unsigned long long)g_all, g_busy ? speed_locked() : 0.0,
+               (long long)(g_busy ? now - g_job_start : 0), retry_in, phase);
     int first = 1;
     for (int i = 0; i < g_njobs; i++) {
         if (g_jobs[i].op != OP_UPLOAD && g_jobs[i].op != OP_DOWNLOAD && g_jobs[i].op != OP_TRASH)

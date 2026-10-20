@@ -419,7 +419,12 @@ static void t_downloaded(const char *tid) {
     g_downloaded_n++;
 }
 
-static void t_notify(const char *msg) { snprintf(g_notified, sizeof(g_notified), "%s", msg); }
+static char g_notes[8192]; /* every notification, one a line */
+static void t_notify(const char *msg) {
+    snprintf(g_notified, sizeof(g_notified), "%s", msg);
+    size_t l = strlen(g_notes);
+    snprintf(g_notes + l, sizeof(g_notes) - l, "%s\n", msg);
+}
 
 /* --- helpers --- */
 
@@ -582,10 +587,22 @@ int main(void) {
         fclose(sf);
 
     printf("== uploading a game in chunks\n");
+    g_notes[0] = 0;
     CHECK(drive_upload("CUSA00001", msg, sizeof(msg)) == 0);
+    int saw_progress = 0;
+    for (int i = 0; i < 400 && !saw_progress; i++) {
+        usleep(5000);
+        b = status();
+        saw_progress = strstr((char *)b.data, "\"phase\":\"sending\"") && strstr((char *)b.data, "\"game_total\":1594361");
+        buf_free(&b);
+    }
+    CHECK(saw_progress); /* the whole game (1331217 + 262144 + 1000), not one file */
     wait_idle();
     result(res, sizeof(res), &ok);
-    CHECK(ok && strstr(res, "Test: Game is in Google Drive"));
+    CHECK(ok && strstr(res, "Test: Game is in Google Drive (2 MB in "));
+    /* on the console's screen: when it starts and when it ends */
+    CHECK(strstr(g_notes, "Uploading Test: Game to Google Drive (2 MB)\n"));
+    CHECK(strstr(g_notes, "Test: Game is in Google Drive (2 MB in "));
     snprintf(p, sizeof(p), "%s/app.pkg", g_lib);
     CHECK(same(p, remote("game.pkg")));
     snprintf(p, sizeof(p), "%s/patch.pkg", g_lib);
