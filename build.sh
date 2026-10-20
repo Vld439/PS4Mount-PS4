@@ -29,12 +29,16 @@ SQ_FLAGS="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAULT_ME
 SQ="build/sqlite3-$(echo "$SQ_FLAGS" | md5sum | cut -c1-8).o"
 [ -f "$SQ" ] || $B/orbis-clang -O2 -w -c third_party/sqlite/sqlite3.c -o "$SQ" $SQ_FLAGS
 # BearSSL (TLS for Google Drive) once, as a library: only what is used is linked.
-BR="build/bearssl-$(cat third_party/bearssl/src/*.c third_party/bearssl/src/*/*.c | md5sum | cut -c1-8)"
+# For a PlayStation target, clang before 22 declares the AES-NI, PCLMUL and SSSE3
+# intrinsics only when those features are on: they are (the PS4's Jaguar has them, and
+# BearSSL checks the CPU before using them). The Jaguar has no RDRAND: off.
+BR_FLAGS="-O2 -w -maes -mpclmul -mssse3 -msse4.1 -DBR_RDRAND=0"
+BR="build/bearssl-$( (echo "$BR_FLAGS"; cat third_party/bearssl/src/*.c third_party/bearssl/src/*/*.c) | md5sum | cut -c1-8)"
 if [ ! -f "$BR/libbearssl.a" ]; then
     mkdir -p "$BR"
     for f in third_party/bearssl/src/*.c third_party/bearssl/src/*/*.c; do
         o="$BR/$(echo "${f#third_party/bearssl/src/}" | tr / _).o"
-        echo "$B/orbis-clang -O2 -w -Ithird_party/bearssl/inc -Ithird_party/bearssl/src -c $f -o $o"
+        echo "$B/orbis-clang $BR_FLAGS -Ithird_party/bearssl/inc -Ithird_party/bearssl/src -c $f -o $o"
     done | xargs -P "$(nproc)" -I{} sh -c '{}'
     $B/orbis-ar rcs "$BR/libbearssl.a" "$BR"/*.o
 fi
