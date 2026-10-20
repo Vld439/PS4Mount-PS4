@@ -156,7 +156,7 @@ PS4Mount no trae credenciales de Google: cada usuario usa **las suyas**, que se 
    ![El proyecto PS4Mount elegido](docs/gcloud-1-project-es.png)
 
    </details>
-2. En el buscador de arriba escribe **Google Drive API** → **Habilitar**.
+2. En el buscador de arriba escribe **Google Drive API** → **Habilitar** (si ya lo está, dice "API habilitada" y el botón es **Administrar**).
 
    <details><summary>Ver capturas</summary>
 
@@ -182,7 +182,7 @@ PS4Mount no trae credenciales de Google: cada usuario usa **las suyas**, que se 
    ![Tu correo en Usuarios de prueba](docs/gcloud-6-test-users-es.png)
 
    </details>
-6. *(Opcional)* **Acceso a los datos** → **Agregar o quitar permisos** → marca `…/auth/drive.file` → **Actualizar** → **Guardar**.
+6. *(Opcional)* **Acceso a los datos** → **Agregar o quitar permisos** → marca `…/auth/drive.file` → **Actualizar** → **Save** (abajo; sale en inglés).
 
    <details><summary>Ver capturas</summary>
 
@@ -432,7 +432,7 @@ PS4Mount ships no Google credentials: each user uses **their own**, which stay o
    ![The PS4Mount project chosen](docs/gcloud-1-project-es.png)
 
    </details>
-2. In the search box at the top type **Google Drive API** → **Enable**.
+2. In the search box at the top type **Google Drive API** → **Enable** (once enabled it says "API enabled" and the button is **Manage**).
 
    <details><summary>See the screenshots</summary>
 
