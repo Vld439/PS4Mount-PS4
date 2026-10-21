@@ -82,9 +82,9 @@ int drive_set_client(const char *id, const char *secret, char *msg, size_t n) {
 int drive_forget_client(char *msg, size_t n) { return record("drive_forget_client", NULL, msg, n); }
 
 void links_status_json(buf_t *out) { buf_printf(out, "{\"configured\":true,\"jobs\":[]}"); }
-int links_add(const char *text, const char *dest, char *msg, size_t n) {
+int links_add(const char *text, const char *dest, const char *password, char *msg, size_t n) {
     char arg[4096];
-    snprintf(arg, sizeof(arg), "%s|%zu|%.40s", dest, strlen(text), text);
+    snprintf(arg, sizeof(arg), "%s|%zu|%.40s|%s", dest, strlen(text), text, password ? password : "");
     return record("links_add", arg, msg, n);
 }
 int links_cancel(int id, char *msg, size_t n) {
@@ -92,8 +92,8 @@ int links_cancel(int id, char *msg, size_t n) {
     snprintf(arg, sizeof(arg), "%d", id);
     return record("links_cancel", arg, msg, n);
 }
-int links_retry(int id, char *msg, size_t n) {
-    char arg[16];
-    snprintf(arg, sizeof(arg), "%d", id);
+int links_retry(int id, const char *password, char *msg, size_t n) {
+    char arg[160];
+    snprintf(arg, sizeof(arg), "%d|%s", id, password ? password : "");
     return record("links_retry", arg, msg, n);
 }

@@ -80,6 +80,6 @@ $CC $FLAGS $BRF -o "$B/drive_test" test/drive_test.c src/drive.c src/https.c src
 "$B/drive_test"
 
 echo "== downloads from links"
-$CC $FLAGS $BRF $LAF -Itest -o "$B/links_test" test/links_test.c src/links.c src/https.c src/json.c src/lang.c src/build.c src/mem.c \
+$CC $FLAGS $BRF $LAF -Itest -o "$B/links_test" test/links_test.c src/links.c src/rar5dec.c src/https.c src/json.c src/lang.c src/build.c src/mem.c \
     src/crypto.c src/check.c src/pkg.c src/la_alloc.c "$BR/libbearssl.a" "$LA/libarchive.a" -lpthread
 "$B/links_test"

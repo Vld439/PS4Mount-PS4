@@ -219,7 +219,9 @@ button.small{padding:5px 10px;font-size:13px}
     or a RAR, also in parts. Paste the direct links, the ones that start the download, one per line; all the parts of a RAR
     (name.part1.rar, name.part2.rar...) become one download. Its pkgs are added to the library when they arrive.</div>
   <textarea id="l-text" spellcheck="false" placeholder="https://example.com/game.part1.rar&#10;https://example.com/game.part2.rar&#10;https://example.com/file?id=123 | name.pkg"></textarea>
-  <div class="meta">A link with no file name in it: add | and its name. RARs with a password cannot be opened.</div>
+  <div class="meta">A link with no file name in it: add | and its name.</div>
+  <label>Password (if the archive has one) <input id="l-pw" type="text" autocomplete="off" spellcheck="false"></label>
+  <div class="meta">Not needed for one that opened another download, nor for the site in brackets at the start of the name ([SITE]-game): those are tried by themselves.</div>
   <div class="sendbar"><label>Save to <select id="l-dest"></select></label>
     <button type="submit" class="primary" id="l-go">Download</button></div>
 </form>
@@ -761,9 +763,10 @@ loadDrive();
 
 /* --- downloads from links --- */
 var links = {}, linksBusyBefore = false;
-function linkAct(action, query, body) {
-  return fetch('/api/links/' + action + (query ? '?' + query : ''), {method: 'POST', cache: 'no-store', body: body || '',
-      headers: {'X-PS4Mount': '1', 'Content-Type': 'text/plain; charset=utf-8'}})
+function linkAct(action, query, body, password) {
+  var h = {'X-PS4Mount': '1', 'Content-Type': 'text/plain; charset=utf-8'};
+  if (password) h['X-PS4Mount-Password'] = encodeURIComponent(password);
+  return fetch('/api/links/' + action + (query ? '?' + query : ''), {method: 'POST', cache: 'no-store', body: body || '', headers: h})
     .then(function (r) { return r.json(); })
     .then(function (j) { toast(j.message || j.error); setTimeout(loadLinks, 500); return j; })
     .catch(function (err) { toast(t('Error: {0}', err.message)); });
@@ -802,7 +805,8 @@ function renderLinks() {
       '<div class="meta">' + esc(x.state === 'running' ? t('downloading') : t('waiting')) + '</div>';
     var parts = x.files > 1 ? ' · ' + t('{0} parts', x.files) : '';
     return '<tr><td>' + esc(x.name) + '<div class="meta">' + esc(x.dest) + parts + '</div>' + st + '</td><td style="white-space:nowrap;text-align:right">' +
-      (x.state === 'failed' ? '<button class="small primary" data-retry="' + x.id + '">' + t('Try again') + '</button> ' : '') +
+      (x.state === 'failed' ? '<button class="small primary" data-retry="' + x.id + '"' + (x.locked ? ' data-locked="1"' : '') + '>' +
+        t('Try again') + '</button> ' : '') +
       '<button class="small danger" data-drop="' + x.id + '">' + (x.state === 'running' ? t('Cancel') : t('Remove')) + '</button></td></tr>';
   }).join('');
 }
@@ -822,11 +826,20 @@ $('l-form').onsubmit = function (e) {
   var text = $('l-text').value;
   if (!text.trim()) { toast(t('paste at least one link')); return; }
   if (!$('l-dest').value) { toast(t('No drive connected')); return; }
-  linkAct('add', 'dest=' + encodeURIComponent($('l-dest').value), text).then(function (j) { if (j && j.ok) $('l-text').value = ''; });
+  linkAct('add', 'dest=' + encodeURIComponent($('l-dest').value), text, $('l-pw').value).then(function (j) {
+    if (j && j.ok) $('l-text').value = $('l-pw').value = '';
+  });
 };
 $('l-rows').onclick = function (e) {
   var r = e.target.closest('button[data-retry]'), d = e.target.closest('button[data-drop]');
-  if (r) linkAct('retry', 'id=' + r.getAttribute('data-retry'));
+  if (r) {
+    var pw = '';
+    if (r.getAttribute('data-locked')) {
+      pw = prompt(t('The password of the archive:'));
+      if (pw === null) return;
+    }
+    linkAct('retry', 'id=' + r.getAttribute('data-retry'), '', pw);
+  }
   if (d && confirm(t('Remove this download? What it downloaded so far is deleted.'))) linkAct('cancel', 'id=' + d.getAttribute('data-drop'));
 };
 $('lb-cancel').onclick = function () {

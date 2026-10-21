@@ -131,7 +131,8 @@ En el panel, **Descargar enlaces**: pega los enlaces, uno por línea, elige dón
 - Con los primeros 4 MB de cada pkg se hace la **misma comprobación** que al enviar desde el PC (si es fake, si tu firmware basta, si está completo…): si no sirve, la descarga se para ahí, sin bajar el resto.
 - Baja con varias conexiones a la vez, como Drive, y la consola no entra en reposo mientras descarga. Si se corta la conexión, sigue sola; si cierras PS4Mount, sigue al cargarlo.
 - Al terminar, los pkgs quedan en una carpeta con el nombre de la descarga dentro de la carpeta `PS4Mount` del disco, y el juego se añade solo.
-- No se puede: un RAR con **contraseña**, un **7z**, o un enlace que pide iniciar sesión.
+- Un RAR (5) con **contraseña**, también en partes y con la lista de archivos cifrada: escríbela en **Contraseña** al añadirlo, o pulsa **Reintentar** y escríbela si la descarga se paró por eso. No hace falta si ya abrió otra descarga (se guardan en `/data/ps4mount/passwords.txt`) ni si es el sitio entre corchetes al principio del nombre (`[SITIO.COM]-juego.part1.rar`): esas se prueban solas. Una contraseña equivocada se nota con el primer bloque, sin bajar el resto.
+- No se puede: un RAR antiguo (RAR4) o un ZIP AES con contraseña, un **7z**, o un enlace que pide iniciar sesión.
 
 ### Copias en Google Drive
 
@@ -291,7 +292,8 @@ Para informar de un problema, abre un [issue](https://github.com/Vld439/PS4Mount
 | `/data/ps4mount/drive.txt` | La conexión con tu cuenta de Google |
 | `/data/ps4mount/drive_queue.txt`, `drive_upload.txt` | Las transferencias de Drive a medias (para seguir con ellas) |
 | `<carpeta de búsqueda>/.ps4mount-drive/` | Descargas de Drive a medias |
-| `/data/ps4mount/links_queue.txt` | Las descargas de enlaces pendientes (con sus enlaces) |
+| `/data/ps4mount/links_queue.txt` | Las descargas de enlaces pendientes (con sus enlaces y la contraseña escrita) |
+| `/data/ps4mount/passwords.txt` | Las contraseñas que abrieron un archivo comprimido, para probarlas en los siguientes |
 | `<carpeta de búsqueda>/.ps4mount-links/` | Descargas de enlaces a medias |
 | `/system_data/ps4mount/` | Las carpetas internas de los juegos |
 
@@ -440,7 +442,8 @@ In the panel, **Download links**: paste the links, one per line, pick where to s
 - The first 4 MB of each pkg get the **same check** as when sending from a computer (fake, enough firmware, complete…): a pkg that will not do stops the download there, without fetching the rest.
 - It downloads over several connections at once, like Drive, and the console stays out of rest mode meanwhile. A lost connection goes on by itself; stopping PS4Mount, at its next load.
 - At the end, the pkgs are in a folder named after the download in the drive's `PS4Mount` folder, and the game is added by itself.
-- Not possible: a RAR with a **password**, a **7z**, or a link that needs a sign-in.
+- A RAR (5) with a **password**, also in parts and with its file list encrypted: write it in **Password** when adding it, or press **Try again** and write it when the download stopped for it. Not needed when it opened another download (they are kept in `/data/ps4mount/passwords.txt`) or when it is the site in brackets at the start of the name (`[SITE.COM]-game.part1.rar`): those are tried by themselves. A wrong password shows from the first block, without downloading the rest.
+- Not possible: an older RAR (RAR4) or an AES ZIP with a password, a **7z**, or a link that needs a sign-in.
 
 ### Google Drive backups
 
@@ -600,7 +603,8 @@ To report a problem, open an [issue](https://github.com/Vld439/PS4Mount-PS4/issu
 | `/data/ps4mount/drive.txt` | The connection with your Google account |
 | `/data/ps4mount/drive_queue.txt`, `drive_upload.txt` | Unfinished Drive transfers (to go on with them) |
 | `<scan folder>/.ps4mount-drive/` | Unfinished Drive downloads |
-| `/data/ps4mount/links_queue.txt` | Downloads from links still to do (with their links) |
+| `/data/ps4mount/links_queue.txt` | Downloads from links still to do (with their links and the password written) |
+| `/data/ps4mount/passwords.txt` | The passwords that opened an archive, tried on the next ones |
 | `<scan folder>/.ps4mount-links/` | Unfinished downloads from links |
 | `/system_data/ps4mount/` | The games' internal folders |
 

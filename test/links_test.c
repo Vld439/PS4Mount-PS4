@@ -441,7 +441,7 @@ static int exists(const char *p) {
 
 static char g_pkgs[512];
 
-static int add(const char *text, char *msg, size_t n) { return links_add(text, "usb0", msg, n); }
+static int add(const char *text, char *msg, size_t n) { return links_add(text, "usb0", NULL, msg, n); }
 
 static void url(char *out, size_t n, const char *kind, const char *name) {
     snprintf(out, n, "http://127.0.0.1:%d/%s/%s", g_port, kind, name);
@@ -545,7 +545,7 @@ int main(int argc, char **argv) {
     printf("== links that are refused\n");
     CHECK(add("", msg, sizeof(msg)) && strstr(msg, "paste"));
     CHECK(add("ftp://example.com/game.pkg", msg, sizeof(msg)) && strstr(msg, "http"));
-    CHECK(links_add("http://example.com/a.pkg", "../x", msg, sizeof(msg)) && strstr(msg, "where"));
+    CHECK(links_add("http://example.com/a.pkg", "../x", NULL, msg, sizeof(msg)) && strstr(msg, "where"));
     CHECK(add("http://example.com/a.part1.rar\nhttp://example.com/a.part3.rar", msg, sizeof(msg)) && strstr(msg, "part 2 is missing"));
     CHECK(add("http://example.com/a.part2.rar\nhttp://example.com/a.part1.rar\nhttp://example.com/a.part2.rar", msg, sizeof(msg)) &&
           strstr(msg, "part 2 is there twice"));
@@ -683,8 +683,8 @@ int main(int argc, char **argv) {
     jv_get(v, "jobs", &jobs);
     jv_index(jobs, 0, &j0);
     int id0 = (int)jv_get_int(j0, "id", 0);
-    CHECK(!links_retry(id0, msg, sizeof(msg)));
-    CHECK(links_retry(id0 + 1000, msg, sizeof(msg)) && strstr(msg, "not in the list"));
+    CHECK(!links_retry(id0, NULL, msg, sizeof(msg)));
+    CHECK(links_retry(id0 + 1000, NULL, msg, sizeof(msg)) && strstr(msg, "not in the list"));
     CHECK(!wait_idle(60));
     job_field(0, "error", err, sizeof(err));
     CHECK(strstr(err, "fake") != NULL);
@@ -696,6 +696,67 @@ int main(int argc, char **argv) {
         CHECK(!links_cancel((int)jv_get_int(j0, "id", 0), msg, sizeof(msg)) && strstr(msg, "removed"));
         status();
     }
+    CHECK(work_gone());
+
+    printf("== archives with a password\n");
+    reset_scan();
+    snprintf(p, sizeof(p), "%s/passwords.txt", g_state);
+    unlink(p);
+    /* none known: it stops at once, and says to give it */
+    url(u, sizeof(u), "f", "locked.rar");
+    CHECK(!add(u, msg, sizeof(msg)));
+    CHECK(!wait_idle(60));
+    job_field(0, "error", err, sizeof(err));
+    CHECK(strstr(err, "has a password") && strstr(err, "Try again"));
+    CHECK(strstr(g_status, "\"locked\":true") != NULL);
+    jv_get(jv_of(g_status, strlen(g_status)), "jobs", &jobs);
+    jv_index(jobs, 0, &j0);
+    id0 = (int)jv_get_int(j0, "id", 0);
+    /* a wrong one, then the right one: it opens, and is kept for the next archives */
+    CHECK(!links_retry(id0, "nope", msg, sizeof(msg)));
+    CHECK(!wait_idle(60));
+    job_field(0, "error", err, sizeof(err));
+    CHECK(strstr(err, "does not open") != NULL);
+    CHECK(!links_retry(id0, "ps4mount", msg, sizeof(msg)));
+    CHECK(!wait_idle(60));
+    CHECK(njobs() == 0);
+    result(res, sizeof(res));
+    CHECK(strstr(res, "locked was downloaded: 1 pkg(s)") != NULL);
+    snprintf(p, sizeof(p), "%s/locked/update.pkg", g_scan);
+    CHECK(exists(p));
+    snprintf(p, sizeof(p), "%s/passwords.txt", g_state);
+    {
+        size_t pl;
+        char *kept = (char *)slurp(p, &pl);
+        CHECK(kept && pl == 9 && !memcmp(kept, "ps4mount\n", 9));
+        free(kept);
+    }
+    CHECK(work_gone());
+    /* headers encrypted too, in volumes: the kept password opens it by itself */
+    reset_scan();
+    text[0] = 0;
+    for (int k = 1; k <= 6; k++) {
+        char nm[64];
+        snprintf(nm, sizeof(nm), "secret.part%03d.rar", k);
+        url(u, sizeof(u), "f", nm);
+        snprintf(text + strlen(text), sizeof(text) - strlen(text), "%s\n", u);
+    }
+    CHECK(!add(text, msg, sizeof(msg)));
+    CHECK(!wait_idle(60));
+    result(res, sizeof(res));
+    CHECK(strstr(res, "secret was downloaded: 2 pkg(s)") != NULL);
+    CHECK(has_game("secret", 1));
+    CHECK(work_gone());
+    /* the site in brackets at the start of the name ([SITE]-game) is tried too */
+    reset_scan();
+    unlink(p);
+    url(u, sizeof(u), "f", "guess.rar");
+    snprintf(text, sizeof(text), "%s | [GUESS.SITE]-guess.rar\n", u);
+    CHECK(!add(text, msg, sizeof(msg)));
+    CHECK(!wait_idle(60));
+    result(res, sizeof(res));
+    CHECK(strstr(res, "was downloaded: 1 pkg(s)") != NULL);
+    unlink(p);
     CHECK(work_gone());
 
     printf("== a cut, a server that limits connections, an address that expires\n");

@@ -207,8 +207,11 @@ var LANGS = {
     'Download links': 'Descargar enlaces',
     'The console downloads them itself (you can close this page): a pkg, a ZIP or a RAR, also in parts. Paste the direct links, the ones that start the download, one per line; all the parts of a RAR (name.part1.rar, name.part2.rar...) become one download. Its pkgs are added to the library when they arrive.':
       'La consola los descarga sola (puedes cerrar esta página): un pkg, un ZIP o un RAR, también en partes. Pega los enlaces directos, los que empiezan la descarga, uno por línea; todas las partes de un RAR (nombre.part1.rar, nombre.part2.rar...) son una sola descarga. Sus pkgs se añaden a la biblioteca al llegar.',
-    'A link with no file name in it: add | and its name. RARs with a password cannot be opened.':
-      'Un enlace sin nombre de archivo: añade | y su nombre. Los RAR con contraseña no se pueden abrir.',
+    'A link with no file name in it: add | and its name.': 'Un enlace sin nombre de archivo: añade | y su nombre.',
+    'Password (if the archive has one)': 'Contraseña (si el archivo la tiene)',
+    'Not needed for one that opened another download, nor for the site in brackets at the start of the name ([SITE]-game): those are tried by themselves.':
+      'No hace falta si ya abrió otra descarga, ni si es el sitio entre corchetes al principio del nombre ([SITIO]-juego): esas se prueban solas.',
+    'The password of the archive:': 'La contraseña del archivo comprimido:',
     'Save to': 'Guardar en',
     'Checking the links of {0}…': 'Comprobando los enlaces de {0}…',
     'Downloading {0}': 'Descargando {0}',

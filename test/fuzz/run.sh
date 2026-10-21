@@ -6,7 +6,7 @@ set -e
 cd "$(dirname "$0")/../.."
 SECONDS_EACH=${1:-60}
 shift || true
-TARGETS=${*:-"sfo pkg origin http"}
+TARGETS=${*:-"sfo pkg origin http rar5"}
 B=build/fuzz
 mkdir -p "$B"
 CC=${CC:-clang}
@@ -26,6 +26,8 @@ declare -A SRC=(
     [pkg]="src/pkg.c src/mem.c src/lang.c src/check.c src/crypto.c"
     [origin]="src/origin.c"
     [http]="src/web.c src/lang.c src/build.c src/mem.c src/crypto.c test/stubs.c"
+    # BearSSL calls through its vtables with generic types, which -fsanitize=function flags
+    [rar5]="-DRAR5DEC_FUZZ -fno-sanitize=function -Ithird_party/bearssl/inc -Ithird_party/bearssl/src src/rar5dec.c src/mem.c $(echo third_party/bearssl/src/{hash/*.c,mac/hmac.c,symcipher/aes_*.c,codec/*.c,settings.c})"
 )
 fail=0
 for t in $TARGETS; do

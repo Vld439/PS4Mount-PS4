@@ -241,7 +241,11 @@ int main(void) {
     r = post("/api/links/add?dest=usb0", "http://example.com/a.pkg");
     CHECK(status(r, "403") && g_stub_calls == before); /* downloads write files: the panel's header */
     r = ask("POST /api/links/add?dest=usb0 HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 24\r\n\r\nhttp://example.com/a.pkg");
-    CHECK(status(r, "200") && !strcmp(g_stub_call, "links_add") && !strcmp(g_stub_arg, "usb0|24|http://example.com/a.pkg"));
+    CHECK(status(r, "200") && !strcmp(g_stub_call, "links_add") && !strcmp(g_stub_arg, "usb0|24|http://example.com/a.pkg|"));
+    /* an archive's password, percent-encoded in its own header */
+    r = ask("POST /api/links/add?dest=usb0 HTTP/1.1\r\nX-PS4Mount: 1\r\nX-PS4Mount-Password: a%20b%26c%C3%B1\r\nContent-Length: 24\r\n\r\n"
+            "http://example.com/a.pkg");
+    CHECK(status(r, "200") && !strcmp(g_stub_arg, "usb0|24|http://example.com/a.pkg|a b&c\xc3\xb1"));
     before = g_stub_calls;
     r = ask("POST /api/links/add?dest=../x HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 3\r\n\r\nabc");
     CHECK(status(r, "400") && g_stub_calls == before);
@@ -261,7 +265,9 @@ int main(void) {
     r = ask("POST /api/links/cancel?id=7 HTTP/1.1\r\nX-PS4Mount: 1\r\n\r\n");
     CHECK(status(r, "200") && !strcmp(g_stub_call, "links_cancel") && !strcmp(g_stub_arg, "7"));
     r = ask("POST /api/links/retry?id=3 HTTP/1.1\r\nX-PS4Mount: 1\r\n\r\n");
-    CHECK(status(r, "200") && !strcmp(g_stub_call, "links_retry") && !strcmp(g_stub_arg, "3"));
+    CHECK(status(r, "200") && !strcmp(g_stub_call, "links_retry") && !strcmp(g_stub_arg, "3|"));
+    r = ask("POST /api/links/retry?id=3 HTTP/1.1\r\nX-PS4Mount: 1\r\nx-ps4mount-password: secret\r\n\r\n");
+    CHECK(status(r, "200") && !strcmp(g_stub_arg, "3|secret"));
     before = g_stub_calls;
     r = ask("POST /api/links/cancel HTTP/1.1\r\nX-PS4Mount: 1\r\n\r\n");
     CHECK(status(r, "400") && g_stub_calls == before);

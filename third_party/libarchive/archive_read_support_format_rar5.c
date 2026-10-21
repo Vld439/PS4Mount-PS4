@@ -899,6 +899,9 @@ static void reset_file_context(struct rar5 *rar5) {
 	rar5->file.redir_type = REDIR_TYPE_NONE;
 	rar5->file.redir_flags = 0;
 
+	/* PS4Mount: no last block of this file seen yet (see process_block). */
+	memset(&rar5->last_block_hdr, 0, sizeof(rar5->last_block_hdr));
+
 	free_filters(rar5);
 }
 
@@ -3829,6 +3832,17 @@ static int process_block(struct archive_read* a) {
 		}
 		if(ret != ARCHIVE_OK)
 			return ret;
+	}
+
+	/* PS4Mount: after the last block of a file only the padding of its
+	 * encryption can follow (src/rar5dec.c hands encrypted volumes over
+	 * plain, their data areas the size they were): it is skipped. */
+	if(rar5->cstate.block_parsing_finished &&
+	    bf_is_last_block(&rar5->last_block_hdr)) {
+		if(rar5->file.bytes_remaining > 0 &&
+		    consume(a, rar5->file.bytes_remaining) == ARCHIVE_OK)
+			rar5->file.bytes_remaining = 0;
+		return ARCHIVE_EOF;
 	}
 
 	if(rar5->cstate.block_parsing_finished) {

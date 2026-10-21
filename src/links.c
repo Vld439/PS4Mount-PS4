@@ -27,6 +27,7 @@
 #include "https.h"
 #include "lang.h"
 #include "mem.h"
+#include "rar5dec.h"
 
 #define TRIES 6           /* attempts of a request that fails for a passing reason */
 #define WORK_DIR ".ps4mount-links"
@@ -57,6 +58,8 @@ typedef struct {
 typedef struct {
     int id, kind, state, started;
     char dest[16], name[256], error[512];
+    char password[RAR5_PASSWORD_MAX + 1]; /* the one given, for a RAR with one */
+    int locked;                            /* failed for want of the right password */
     int nvol;
     link_t *vol;
 } ljob_t;
@@ -66,7 +69,7 @@ static pthread_cond_t g_cv = PTHREAD_COND_INITIALIZER;
 static pthread_t g_thread;
 static int g_started, g_quit;
 static volatile int g_cancel;
-static char g_queue_path[PATH_MAX];
+static char g_queue_path[PATH_MAX], g_pw_path[PATH_MAX];
 static links_host_t g_host;
 
 /* the queue (all under g_mu) */
@@ -115,6 +118,8 @@ static struct {
     int x_ok, npkgs;
     int stream;        /* little space: each file is deleted once read */
     int checked;       /* a pkg link: its start was checked */
+    rar5keys_t *keys;  /* a RAR's passwords to try */
+    int locked;        /* the archive wants a password none of them is */
 } g_rt = {.mu = PTHREAD_MUTEX_INITIALIZER, .cv = PTHREAD_COND_INITIALIZER};
 
 /* --- small helpers --- */
@@ -872,12 +877,13 @@ typedef struct {
     int i, fd;
     uint64_t pos;
     uint8_t *buf;
+    rar5dec_t *dec; /* a RAR's volume goes through it (plain when it had a password) */
 } xvol_t;
 
 static void part_path(int vi, char *out, size_t n) { snprintf(out, n, "%.4000s/v%03d" PART_EXT, g_rt.work, vi); }
 
-static ssize_t x_read(struct archive *a, void *cd, const void **out) {
-    xvol_t *x = cd;
+/* The next bytes of a volume as they are in its part file (in x->buf): 0 at its end. */
+static ssize_t raw_read(struct archive *a, xvol_t *x) {
     pthread_mutex_lock(&g_rt.mu);
     const vol_t *v = &g_rt.v[x->i];
     while (!g_rt.stop && !g_cancel && !g_quit && v->have <= x->pos && !v->complete) {
@@ -913,7 +919,6 @@ static ssize_t x_read(struct archive *a, void *cd, const void **out) {
         return -1;
     }
     x->pos += (uint64_t)r;
-    *out = x->buf;
     pthread_mutex_lock(&g_rt.mu);
     g_rt.consumed += (uint64_t)r;
     uint64_t consumed = g_rt.consumed;
@@ -924,6 +929,34 @@ static ssize_t x_read(struct archive *a, void *cd, const void **out) {
     if (extracting)
         progress(consumed);
     return r;
+}
+
+static ssize_t x_read(struct archive *a, void *cd, const void **out) {
+    xvol_t *x = cd;
+    for (;;) {
+        ssize_t r = raw_read(a, x);
+        if (r <= 0 || !x->dec) {
+            *out = x->buf;
+            if (!r && x->dec && rar5dec_end(x->dec)) {
+                archive_set_error(a, EINVAL, "%s", rar5dec_error(x->dec));
+                return -1;
+            }
+            return r;
+        }
+        const uint8_t *o;
+        ssize_t m = rar5dec_feed(x->dec, x->buf, (size_t)r, &o);
+        if (m < 0) {
+            pthread_mutex_lock(&g_rt.mu);
+            g_rt.locked |= rar5keys_refused(g_rt.keys);
+            pthread_mutex_unlock(&g_rt.mu);
+            archive_set_error(a, EINVAL, "%s", rar5dec_error(x->dec));
+            return -1;
+        }
+        if (m) {
+            *out = o;
+            return m;
+        }
+    }
 }
 
 static int x_close(struct archive *a, void *cd) {
@@ -970,11 +1003,26 @@ static void free_path(const char *dir, const char *name, char *out, size_t n) {
         snprintf(out, n, "%.3800s/%.*s (%d)%s", dir, (int)(l - e), name, i, name + l - e);
 }
 
+static void fail_locked(void) {
+    pthread_mutex_lock(&g_rt.mu);
+    g_rt.locked = 1;
+    int given = g_rt.job && g_rt.job->password[0];
+    pthread_mutex_unlock(&g_rt.mu);
+    if (given)
+        fail_job("%s", TR("the password does not open the archive: press Try again and write the right one",
+                          "la contraseña no abre el archivo comprimido: pulsa Reintentar y escribe la correcta"));
+    else
+        fail_job("%s", TR("the archive has a password: press Try again and write it",
+                          "el archivo comprimido tiene contraseña: pulsa Reintentar y escríbela"));
+}
+
 static int archive_failure(struct archive *a) {
     const char *e = archive_error_string(a);
-    if (archive_read_has_encrypted_entries(a) > 0 || (e && find_ci(e, "encrypt")))
-        fail_job("%s", TR("the archive has a password: PS4Mount cannot open archives with a password",
-                          "el archivo comprimido tiene contraseña: PS4Mount no puede abrir archivos con contraseña"));
+    if (g_rt.locked || (e && find_ci(e, "passphrase") && !find_ci(e, "unsupported")))
+        fail_locked();
+    else if (archive_read_has_encrypted_entries(a) > 0 || (e && find_ci(e, "encrypt")))
+        fail_job("%s", TR("the archive has a password of a kind PS4Mount cannot open (an older RAR, or a ZIP with AES)",
+                          "el archivo comprimido tiene una contraseña de un tipo que PS4Mount no puede abrir (un RAR antiguo o un ZIP con AES)"));
     else if (!halted())
         fail_job(TR("the archive could not be read: %s", "no se pudo leer el archivo comprimido: %s"), e ? e : "?");
     return -1;
@@ -1046,6 +1094,55 @@ static int extract_pkg(struct archive *a, struct archive_entry *e, const char *o
     return rc;
 }
 
+/* The passwords to try on an archive of job j: the one given, the site in brackets at the
+   start of its name ([SITE.COM]-game: many put it as the password), and the ones that
+   opened other downloads (g_pw_path, one a line). */
+static int passwords(const ljob_t *j, char out[][RAR5_PASSWORD_MAX + 1], int max) {
+    int n = 0;
+    if (j->password[0] && n < max)
+        snprintf(out[n++], RAR5_PASSWORD_MAX + 1, "%s", j->password);
+    const char *close = j->name[0] == '[' ? strchr(j->name, ']') : NULL;
+    if (close && close - j->name > 1 && close - j->name <= RAR5_PASSWORD_MAX && n + 2 <= max) {
+        int l = (int)(close - j->name - 1);
+        for (int k = 0; k < 2; k++, n++) {
+            snprintf(out[n], RAR5_PASSWORD_MAX + 1, "%.*s", l, j->name + 1);
+            for (char *c = out[n]; k && *c; c++)
+                *c = (char)tolower((unsigned char)*c);
+        }
+    }
+    FILE *f = fopen(g_pw_path, "r");
+    char line[RAR5_PASSWORD_MAX + 3];
+    while (f && n < max && fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\r\n")] = 0;
+        if (line[0])
+            snprintf(out[n++], RAR5_PASSWORD_MAX + 1, "%s", line);
+    }
+    if (f)
+        fclose(f);
+    return n;
+}
+
+/* A password that opened an archive, kept to be tried on the next ones. */
+static void remember_password(const char *pw) {
+    if (!pw || !pw[0] || strchr(pw, '\n') || strchr(pw, '\r'))
+        return;
+    FILE *f = fopen(g_pw_path, "r");
+    char line[RAR5_PASSWORD_MAX + 3];
+    while (f && fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\r\n")] = 0;
+        if (!strcmp(line, pw)) {
+            fclose(f);
+            return;
+        }
+    }
+    if (f)
+        fclose(f);
+    if ((f = fopen(g_pw_path, "a"))) {
+        fprintf(f, "%s\n", pw);
+        fclose(f);
+    }
+}
+
 static void *x_thread(void *arg) {
     xvol_t *xv = arg;
     char outdir[PATH_MAX];
@@ -1055,11 +1152,24 @@ static void *x_thread(void *arg) {
         fail_job("%s", TR("no memory for the archive", "no hay memoria para el archivo comprimido"));
         return NULL;
     }
-    if (g_rt.kind == K_ZIP)
+    static char pw[RAR5_MAX_PASSWORDS][RAR5_PASSWORD_MAX + 1];
+    int npw = passwords(g_rt.job, pw, RAR5_MAX_PASSWORDS);
+    if (g_rt.kind == K_ZIP) {
         archive_read_support_format_zip_streamable(a);
-    else {
+        for (int i = 0; i < npw; i++)
+            archive_read_add_passphrase(a, pw[i]);
+    } else {
         archive_read_support_format_rar(a);
         archive_read_support_format_rar5(a);
+        if (!(g_rt.keys = rar5keys_new())) {
+            archive_read_free(a);
+            fail_job("%s", TR("no memory for the archive", "no hay memoria para el archivo comprimido"));
+            return NULL;
+        }
+        for (int i = 0; i < npw; i++)
+            rar5keys_add(g_rt.keys, pw[i]);
+        for (int i = 0; i < g_rt.nvol; i++)
+            xv[i].dec = rar5dec_new(g_rt.keys);
     }
     archive_read_set_read_callback(a, x_read);
     archive_read_set_close_callback(a, x_close);
@@ -1082,9 +1192,10 @@ static void *x_thread(void *arg) {
                     base = s + 1;
             char name[256];
             clean_name(base, name, sizeof(name));
-            if (archive_entry_is_encrypted(e)) {
-                fail_job("%s", TR("the archive has a password: PS4Mount cannot open archives with a password",
-                                  "el archivo comprimido tiene contraseña: PS4Mount no puede abrir archivos con contraseña"));
+            if (archive_entry_is_encrypted(e) && g_rt.kind != K_ZIP) {
+                /* a RAR5's went through the decoder plain: this is an older RAR */
+                fail_job("%s", TR("the archive has a password of a kind PS4Mount cannot open (an older RAR, or a ZIP with AES)",
+                                  "el archivo comprimido tiene una contraseña de un tipo que PS4Mount no puede abrir (un RAR antiguo o un ZIP con AES)"));
                 break;
             }
             if (archive_entry_filetype(e) != AE_IFREG || !ends_with(name, ".pkg") || strlen(name) <= 4) {
@@ -1105,6 +1216,8 @@ static void *x_thread(void *arg) {
             int none = !g_rt.npkgs;
             g_rt.x_ok = !none;
             g_rt.stop = 1; /* the archive is read: nothing more is needed */
+            if (!none && g_rt.keys)
+                remember_password(rar5keys_found(g_rt.keys));
             pthread_cond_broadcast(&g_rt.cv);
             pthread_mutex_unlock(&g_rt.mu);
             if (none)
@@ -1113,8 +1226,15 @@ static void *x_thread(void *arg) {
             archive_failure(a);
     }
     archive_read_free(a);
-    for (int i = 0; i < g_rt.nvol; i++)
+    for (int i = 0; i < g_rt.nvol; i++) {
         x_close(NULL, &xv[i]);
+        rar5dec_free(xv[i].dec);
+        xv[i].dec = NULL;
+    }
+    pthread_mutex_lock(&g_rt.mu);
+    rar5keys_free(g_rt.keys);
+    g_rt.keys = NULL;
+    pthread_mutex_unlock(&g_rt.mu);
     return NULL;
 }
 
@@ -1346,6 +1466,7 @@ static int run_job(ljob_t *j) {
             xv[i].fd = -1;
             xv[i].pos = 0;
             xv[i].buf = NULL;
+            xv[i].dec = NULL;
         }
         pthread_attr_t at;
         pthread_attr_init(&at);
@@ -1464,8 +1585,14 @@ static void save_queue_locked(void) {
         return;
     for (int i = 0; i < g_njobs; i++) {
         const ljob_t *j = &g_jobs[i];
-        fprintf(f, "job\t%d\t%s\t%d\t%d\t%s\t%s\t%s\n", j->id, k_states[j->state == S_RUNNING ? S_QUEUED : j->state], j->started,
-                j->kind, j->dest, j->name, j->error);
+        fprintf(f, "job\t%d\t%s\t%d\t%d\t%s\t%s\t%s\t%d\n", j->id, k_states[j->state == S_RUNNING ? S_QUEUED : j->state],
+                j->started, j->kind, j->dest, j->name, j->error, j->locked);
+        if (j->password[0]) {
+            fprintf(f, "password\t");
+            for (const char *c = j->password; *c; c++)
+                fprintf(f, "%02x", (unsigned char)*c);
+            fprintf(f, "\n");
+        }
         for (int k = 0; k < j->nvol; k++)
             fprintf(f, "link\t%d\t%s\t%s\n", j->vol[k].named, j->vol[k].name, j->vol[k].url);
     }
@@ -1511,12 +1638,19 @@ static int load_queue_locked(void) {
             snprintf(j->dest, sizeof(j->dest), "%s", field(&p));
             snprintf(j->name, sizeof(j->name), "%s", field(&p));
             snprintf(j->error, sizeof(j->error), "%s", field(&p));
+            j->locked = atoi(field(&p));
             if (j->kind < K_UNKNOWN || j->kind > K_ZIP)
                 j->kind = K_UNKNOWN;
             if (!(j->vol = mem_alloc(sizeof(link_t) * LINKS_MAX_FILES)))
                 g_njobs--, j = NULL;
             else if (j->id >= g_next_id)
                 g_next_id = j->id + 1;
+        } else if (!strcmp(kind, "password") && j) {
+            const char *h = field(&p);
+            size_t o = 0;
+            for (unsigned b; o < RAR5_PASSWORD_MAX && sscanf(h, "%2x", &b) == 1 && b; h += 2)
+                j->password[o++] = (char)b;
+            j->password[o] = 0;
         } else if (!strcmp(kind, "link") && j && j->nvol < LINKS_MAX_FILES) {
             link_t *l = &j->vol[j->nvol];
             l->named = atoi(field(&p));
@@ -1583,7 +1717,7 @@ static void *worker(void *arg) {
         g_rt.nvol = run.nvol;
         g_rt.kind = run.kind;
         g_rt.job = &run;
-        g_rt.stop = g_rt.failed = g_rt.x_ok = g_rt.npkgs = g_rt.stream = g_rt.checked = 0;
+        g_rt.stop = g_rt.failed = g_rt.x_ok = g_rt.npkgs = g_rt.stream = g_rt.checked = g_rt.locked = 0;
         g_rt.x_vol = 0;
         g_rt.consumed = 0;
         g_rt.err[0] = 0;
@@ -1626,6 +1760,7 @@ static void *worker(void *arg) {
                 now->state = S_QUEUED;
             else if (rc < 0 && !g_cancel) {
                 now->state = S_FAILED;
+                now->locked = g_rt.locked;
                 snprintf(now->error, sizeof(now->error), "%.511s", g_rt.err);
             } else {
                 free_job(now);
@@ -1648,6 +1783,7 @@ static void *worker(void *arg) {
 void links_start(const char *state_dir, const links_host_t *host) {
     g_host = *host;
     snprintf(g_queue_path, sizeof(g_queue_path), "%s/links_queue.txt", state_dir);
+    snprintf(g_pw_path, sizeof(g_pw_path), "%s/passwords.txt", state_dir);
     if (g_started)
         return;
     g_quit = 0;
@@ -1712,7 +1848,8 @@ void links_status_json(buf_t *out) {
         json_esc(out, j->name);
         buf_printf(out, ",\"dest\":");
         json_esc(out, j->dest);
-        buf_printf(out, ",\"files\":%d,\"state\":\"%s\",\"error\":", j->nvol, k_states[j->state]);
+        buf_printf(out, ",\"files\":%d,\"state\":\"%s\",\"locked\":%s,\"error\":", j->nvol, k_states[j->state],
+                   j->locked ? "true" : "false");
         json_esc(out, j->error);
         buf_printf(out, "}");
     }
@@ -1894,13 +2031,18 @@ static int valid_dest(const char *d) {
     return 1;
 }
 
-int links_add(const char *text, const char *dest, char *msg, size_t n) {
+int links_add(const char *text, const char *dest, const char *password, char *msg, size_t n) {
     if (!g_started) {
         snprintf(msg, n, "%s", TR("downloads from links are not running", "las descargas de enlaces no están en marcha"));
         return -1;
     }
     if (!valid_dest(dest)) {
         snprintf(msg, n, "%s", TR("choose where to save it", "elige dónde guardarlo"));
+        return -1;
+    }
+    if (password && strlen(password) > RAR5_PASSWORD_MAX) {
+        snprintf(msg, n, TR("the password is too long (at most %d characters)", "la contraseña es demasiado larga (como máximo %d caracteres)"),
+                 RAR5_PASSWORD_MAX);
         return -1;
     }
     item_t *items = mem_alloc(sizeof(item_t) * LINKS_MAX_FILES);
@@ -1991,6 +2133,7 @@ int links_add(const char *text, const char *dest, char *msg, size_t n) {
         ljob_t *j = &add[na++];
         j->kind = items[first].kind;
         snprintf(j->dest, sizeof(j->dest), "%s", dest);
+        snprintf(j->password, sizeof(j->password), "%s", password ? password : "");
         if (!(j->vol = mem_alloc(sizeof(link_t) * LINKS_MAX_FILES))) {
             snprintf(err, sizeof(err), "no memory");
             rc = -1;
@@ -2084,7 +2227,7 @@ int links_cancel(int id, char *msg, size_t n) {
     return 0;
 }
 
-int links_retry(int id, char *msg, size_t n) {
+int links_retry(int id, const char *password, char *msg, size_t n) {
     pthread_mutex_lock(&g_mu);
     ljob_t *j = find_locked(id);
     int rc = -1;
@@ -2092,8 +2235,14 @@ int links_retry(int id, char *msg, size_t n) {
         snprintf(msg, n, "%s", TR("that download is not in the list", "esa descarga no está en la lista"));
     else if (j->state != S_FAILED)
         snprintf(msg, n, "%s", TR("that download has not failed", "esa descarga no ha fallado"));
+    else if (password && strlen(password) > RAR5_PASSWORD_MAX)
+        snprintf(msg, n, TR("the password is too long (at most %d characters)", "la contraseña es demasiado larga (como máximo %d caracteres)"),
+                 RAR5_PASSWORD_MAX);
     else {
+        if (password && password[0])
+            snprintf(j->password, sizeof(j->password), "%s", password);
         j->state = S_QUEUED;
+        j->locked = 0;
         j->error[0] = 0;
         save_queue_locked();
         pthread_cond_signal(&g_cv);

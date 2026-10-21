@@ -40,12 +40,13 @@ void links_status_json(buf_t *out);
 
 /* Panel actions; 0 when accepted, msg says what happens or why not. */
 /* text: one link a line, "link | name" to give it a name; the volumes of an archive
- * become one download. dest: usb0..usb7, ext0, ext1 or internal. */
-int links_add(const char *text, const char *dest, char *msg, size_t n);
+ * become one download. dest: usb0..usb7, ext0, ext1 or internal. password: an archive's
+ * (NULL or empty: the ones that opened others are tried). */
+int links_add(const char *text, const char *dest, const char *password, char *msg, size_t n);
 /* Stops the download id (or drops it from the queue), its partial files deleted. */
 int links_cancel(int id, char *msg, size_t n);
-/* A download that failed, once more from where it was. */
-int links_retry(int id, char *msg, size_t n);
+/* A download that failed, once more from where it was (with this password, when given). */
+int links_retry(int id, const char *password, char *msg, size_t n);
 
 /* Blocks of a download, fetched several at a time; the tests make them small. */
 extern size_t g_links_block;

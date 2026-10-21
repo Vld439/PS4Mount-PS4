@@ -38,6 +38,7 @@ function page(file, opts) {
       w.setInterval = () => 0;
       w.scrollTo = () => {};
       w.confirm = () => (w.__confirm !== undefined ? w.__confirm : true);
+      w.prompt = () => (w.__prompt !== undefined ? w.__prompt : null);
       if (opts.dialog) {
         w.HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
         w.HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
@@ -408,17 +409,31 @@ function tKeys(file) {
   ok(add && add.url === '/api/links/add?dest=usb0' && add.method === 'POST' && add.headers['X-PS4Mount'] === '1' && add.body === pasted,
     'the links go in the body as pasted, to the chosen drive, with the panel header');
   ok(d.getElementById('l-text').value === '', 'and the box is emptied once they are taken');
+  ok(!('X-PS4Mount-Password' in add.headers), 'no password given: none sent');
+  reqs.length = 0;
+  d.getElementById('l-text').value = pasted;
+  d.getElementById('l-pw').value = 'a b&cñ';
+  d.getElementById('l-form').dispatchEvent(new w.Event('submit', { cancelable: true })); await tick(); await tick();
+  const add2 = reqs.find((r) => r.url.indexOf('/api/links/add') === 0);
+  ok(add2 && add2.headers['X-PS4Mount-Password'] === 'a%20b%26c%C3%B1' && add2.url === '/api/links/add?dest=usb0',
+    'a password goes percent-encoded in its own header, never in the address');
+  ok(d.getElementById('l-pw').value === '', 'and is emptied with the links');
   LINKS = { configured: true, result: 'Big Game was downloaded: 2 pkg(s), 40.0 GB in ~1 h', ok: true, job: { busy: false },
     jobs: [{ id: 4, name: 'Big Game', dest: 'usb0', files: 12, state: 'queued', error: '' },
-      { id: 5, name: 'Other', dest: 'internal', files: 1, state: 'failed', error: 'the archive has a password: PS4Mount cannot open archives with a password' }] };
+      { id: 5, name: 'Other', dest: 'internal', files: 1, state: 'failed', locked: true, error: 'the archive has a password: press Try again and write it' }] };
   w.loadLinks(); await tick();
   let lrows = d.querySelectorAll('#l-rows tr');
   ok(lrows.length === 2 && lrows[0].textContent.includes('12 parts') && lrows[0].textContent.includes('waiting'), 'the list: a download waiting, with its parts');
   ok(lrows[1].querySelector('.bad').textContent.includes('password') && lrows[1].querySelector('[data-retry]'), 'a failed one says why, and can be tried again');
   ok(!d.getElementById('l-result').hidden && d.getElementById('l-result').textContent.includes('Big Game was downloaded'), 'the last result');
   reqs.length = 0;
+  w.__prompt = null;
   lrows[1].querySelector('[data-retry]').click(); await tick();
-  ok(reqs.some((r) => r.url === '/api/links/retry?id=5' && r.headers['X-PS4Mount'] === '1'), 'Try again');
+  ok(!reqs.some((r) => r.url.indexOf('/api/links/retry') === 0), 'Try again on a locked one asks for the password (cancel: nothing)');
+  w.__prompt = 'secret';
+  lrows[1].querySelector('[data-retry]').click(); await tick();
+  ok(reqs.some((r) => r.url === '/api/links/retry?id=5' && r.headers['X-PS4Mount'] === '1' && r.headers['X-PS4Mount-Password'] === 'secret'),
+    'Try again, with the password written');
   reqs.length = 0; w.__confirm = false;
   lrows[0].querySelector('[data-drop]').click(); await tick();
   ok(!reqs.some((r) => r.url.indexOf('/api/links/cancel') === 0), 'Remove asks first (and a no stops it)');

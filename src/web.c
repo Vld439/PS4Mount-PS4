@@ -235,17 +235,45 @@ static void drive_action(int fd, const char *path, const char *body) {
     json_msg(fd, !rc, msg);
 }
 
+/* The panel's X-PS4Mount-Password header (percent-encoded: any password is plain ASCII
+   there, and none is ever in a path the log could show), decoded into out; "" without it. */
+static void password_header(const char *req, char *out, size_t n) {
+    out[0] = 0;
+    for (const char *h = req; (h = strchr(h, '\n'));) {
+        h++;
+        if (*h == '\r' || *h == '\n')
+            return; /* the end of the headers */
+        if (strncasecmp(h, "X-PS4Mount-Password:", 20))
+            continue;
+        const char *v = h + 20;
+        while (*v == ' ')
+            v++;
+        size_t l = strcspn(v, "\r\n");
+        char *f = mem_alloc(l + 3);
+        if (f) {
+            memcpy(f, "p=", 2);
+            memcpy(f + 2, v, l);
+            f[l + 2] = 0;
+            form_field(f, "p", out, n);
+            mem_free(f);
+        }
+        return;
+    }
+}
+
 /* The pasted links of /api/links/add: at most this much text. */
 #define LINKS_TEXT_MAX (1u << 20)
 
 /* POST /api/links/<action>: add?dest=.. (the links are the body, one a line), cancel?id=..,
- * retry?id=.. The links thread does the work; the panel follows it in GET /api/links. */
-static void links_action(int fd, const char *path, const char *body, size_t have, unsigned long long length) {
+ * retry?id=..; add and retry take an archive's password in X-PS4Mount-Password. The links
+ * thread does the work; the panel follows it in GET /api/links. */
+static void links_action(int fd, const char *req, const char *path, const char *body, size_t have, unsigned long long length) {
     const char *a = path + 11;
     size_t al = strcspn(a, "?");
     const char *idp = strstr(path, "id=");
     int id = idp ? atoi(idp + 3) : 0, rc;
-    char msg[512];
+    char msg[512], pw[256];
+    password_header(req, pw, sizeof(pw));
 #define IS(name) (al == sizeof(name) - 1 && !strncmp(a, name, al))
     if (IS("add")) {
         char dest[16];
@@ -260,19 +288,20 @@ static void links_action(int fd, const char *path, const char *body, size_t have
         else {
             memcpy(text, data, (size_t)length);
             text[length] = 0;
-            rc = links_add(text, dest, msg, sizeof(msg));
+            rc = links_add(text, dest, pw, msg, sizeof(msg));
         }
         mem_free(data);
         mem_free(text);
     } else if (IS("cancel"))
         rc = id > 0 ? links_cancel(id, msg, sizeof(msg)) : (snprintf(msg, sizeof(msg), "invalid id"), -1);
     else if (IS("retry"))
-        rc = id > 0 ? links_retry(id, msg, sizeof(msg)) : (snprintf(msg, sizeof(msg), "invalid id"), -1);
+        rc = id > 0 ? links_retry(id, pw, msg, sizeof(msg)) : (snprintf(msg, sizeof(msg), "invalid id"), -1);
     else {
         reply(fd, "404 Not Found", "text/plain", "not found\n", 10);
         return;
     }
 #undef IS
+    memset(pw, 0, sizeof(pw));
     json_msg(fd, !rc, msg);
 }
 
@@ -437,7 +466,7 @@ void web_handle(int fd) {
         if (!may_write(fd, req))
             reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
         else
-            links_action(fd, path, body, (size_t)(req + n - body), length);
+            links_action(fd, req, path, body, (size_t)(req + n - body), length);
     } else if (!strcmp(path, "/api/log")) {
         send_log(fd);
     } else if (post && !strcmp(path, "/api/stop")) {

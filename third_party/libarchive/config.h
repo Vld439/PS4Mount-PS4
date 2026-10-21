@@ -1,7 +1,9 @@
 /* PS4Mount's configuration of libarchive 3.8.10 (third_party/libarchive holds only the
  * files it needs): reading RAR (4 and 5, in volumes) and ZIP, nothing written. The same on
  * the console (FreeBSD's libc, built with -fno-short-wchar so L"" matches its 32-bit
- * wchar_t) and in the host tests (glibc). Memory goes through src/la_alloc.h. */
+ * wchar_t) and in the host tests (glibc). Memory goes through src/la_alloc.h. One change of
+ * ours, marked PS4Mount: in archive_read_support_format_rar5.c: the padding after a file's
+ * last block (an encrypted RAR5 made plain by src/rar5dec.c) is skipped. */
 #define __LIBARCHIVE_CONFIG_H_INCLUDED 1
 #define HAVE_DECL_INT32_MAX 1
 #define HAVE_DECL_INT32_MIN 1
