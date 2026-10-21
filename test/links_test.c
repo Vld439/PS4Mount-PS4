@@ -665,7 +665,10 @@ int main(int argc, char **argv) {
     {
         pthread_t ht;
         CHECK(links_relay_port() > 0);
-        /* it brings them all, the console's own connections wait */
+        status();
+        CHECK(jv_get_int(jv_of(g_status, strlen(g_status)), "relay_port", 0) == links_relay_port());
+        /* it brings blocks alongside the console's own connection (one here, so it gets some) */
+        g_links_threads = 1;
         reset_scan();
         helper_run(&ht, -1, 0);
         text[0] = 0;
@@ -683,7 +686,7 @@ int main(int argc, char **argv) {
         CHECK(strstr(res, "game was downloaded: 2 pkg(s)") != NULL);
         CHECK(has_game("game", 1));
         printf("  the helper brought %d blocks\n", g_helper_put);
-        CHECK(g_helper_put >= 10);
+        CHECK(g_helper_put >= 3);
         CHECK(work_gone());
         /* it gives some back: the console fetches those */
         reset_scan();
@@ -693,7 +696,7 @@ int main(int argc, char **argv) {
         CHECK(!wait_idle(60));
         helper_end(ht);
         result(res, sizeof(res));
-        CHECK(strstr(res, "game was downloaded: 2 pkg(s)") != NULL && g_helper_dropped > 0 && g_helper_put > 0);
+        CHECK(strstr(res, "game was downloaded: 2 pkg(s)") != NULL && g_helper_dropped > 0);
         CHECK(has_game("game", 1));
         CHECK(work_gone());
         /* it goes away holding a block: the console takes it again and goes on alone */
@@ -716,6 +719,7 @@ int main(int argc, char **argv) {
         http_resp_t r;
         CHECK(!http_request(&q, &r, err, sizeof(err)) && r.status == 403);
         http_resp_free(&r);
+        g_links_threads = 4;
     }
 
     printf("== the same volumes named old.rar, old.r00...\n");

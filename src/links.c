@@ -520,14 +520,17 @@ typedef struct {
 /* The browser extension can fetch the blocks of a download at the computer's speed (the
  * console's own HTTPS tops out near 10-15 MB/s, its network takes twice that) and hand
  * them over in plain HTTP on port g_links_relay_port: POST /claim gives it a block to
- * fetch (the address, the range), /put delivers it, /drop gives it back. While a helper
- * is heard from, the console's own connections take no new block; a block taken and not
- * delivered in g_links_relay_claim seconds, or given back, is fetched by the console again. */
+ * fetch (the address, the range), /put delivers it, /drop gives it back. The console's own
+ * connections go on alongside (a browser has one connection to a server, which many hosts
+ * slow down: together they go faster); a block taken and not delivered in
+ * g_links_relay_claim seconds, or given back, is fetched by the console again. */
 static pthread_mutex_t g_relay_mu = PTHREAD_MUTEX_INITIALIZER;
 static dl_t *g_relay_dl; /* the file whose blocks can be taken */
 static int g_relay_users, g_relay_conns;
 static time_t g_relay_seen; /* atomic: read without g_relay_mu */
 static int g_relay_fd = -1;
+static volatile int g_relay_quit;
+static pthread_t g_relay_thread;
 
 static int relay_active(void) {
     time_t seen = __atomic_load_n(&g_relay_seen, __ATOMIC_RELAXED);
@@ -552,14 +555,14 @@ static int relay_claims_locked(const dl_t *d) {
     return 0;
 }
 
-/* The next block to fetch (with d->mu held): one to fetch again (always the console's), or
- * the next in the window (the helper's while it works). */
+/* The next block to fetch (with d->mu held): one to fetch again (always the console's: a
+ * helper gave it back), or the next in the window. */
 static int take_block_locked(dl_t *d, int helper, uint64_t *b) {
     if (!helper && d->nredo) {
         *b = d->redo[--d->nredo];
         return 1;
     }
-    if ((!helper && relay_active()) || d->next >= d->nblocks || d->next >= d->written + (uint64_t)d->slots)
+    if (d->next >= d->nblocks || d->next >= d->written + (uint64_t)d->slots)
         return 0;
     *b = d->next++;
     return 1;
@@ -883,7 +886,7 @@ static void relay_deliver(int fd, const char *path, int put, const uint8_t *pre,
 
 static void *relay_conn(void *arg) {
     int fd = (int)(intptr_t)arg;
-    struct timeval tv = {30, 0};
+    struct timeval tv = {10, 0};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     char req[4096];
     size_t n = 0;
@@ -919,13 +922,14 @@ static void *relay_conn(void *arg) {
     return NULL;
 }
 
-/* For as long as PS4Mount runs: with no download, a claim is just told so. */
+/* Until links_stop (a payload's threads outlive its main: it must end by itself). */
 static void *relay_thread(void *arg) {
     (void)arg;
-    for (;;) {
+    while (!g_relay_quit) {
         int fd = accept(g_relay_fd, NULL, NULL);
         if (fd < 0) {
-            usleep(100000);
+            if (!g_relay_quit)
+                usleep(100000);
             continue;
         }
         pthread_mutex_lock(&g_relay_mu);
@@ -952,30 +956,55 @@ static void *relay_thread(void *arg) {
     return NULL;
 }
 
-/* Listens for a helper (port g_links_relay_port; 0: any, links_relay_port() tells it). */
+/* Listens for a helper on g_links_relay_port or one of the next ones (taken by another
+   program, or by a PS4Mount whose threads outlived it); 0: any. links_relay_port() and
+   GET /api/links tell which. */
 static void relay_start(void) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0)
         return;
-    int one = 1;
+    int one = 1, bound = 0;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-    struct sockaddr_in sa = {0};
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons((uint16_t)g_links_relay_port);
-    sa.sin_addr.s_addr = htonl(INADDR_ANY);
-    pthread_t t;
-    if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) || listen(fd, 16)) {
-        printf("[links] no helper port %d (%s)\n", g_links_relay_port, strerror(errno));
+    for (int i = 0; i < 10 && !bound; i++) {
+        struct sockaddr_in sa = {0};
+        sa.sin_family = AF_INET;
+        sa.sin_port = htons((uint16_t)(g_links_relay_port ? g_links_relay_port + i : 0));
+        sa.sin_addr.s_addr = htonl(INADDR_ANY);
+        bound = !bind(fd, (struct sockaddr *)&sa, sizeof(sa));
+    }
+    if (!bound || listen(fd, 16)) {
+        printf("[links] no helper port from %d (%s)\n", g_links_relay_port, strerror(errno));
         close(fd);
         return;
     }
     g_relay_fd = fd;
-    if (pthread_create(&t, NULL, relay_thread, NULL)) {
+    g_relay_quit = 0;
+    if (pthread_create(&g_relay_thread, NULL, relay_thread, NULL)) {
         close(fd);
         g_relay_fd = -1;
         return;
     }
-    pthread_detach(t);
+    printf("[links] helpers on port %d\n", links_relay_port());
+}
+
+static void relay_stop(void) {
+    if (g_relay_fd < 0)
+        return;
+    g_relay_quit = 1;
+    shutdown(g_relay_fd, SHUT_RDWR);
+    pthread_join(g_relay_thread, NULL);
+    close(g_relay_fd);
+    g_relay_fd = -1;
+    /* connections still served end on their own (their download is gone, or 10 s without a
+       byte): none may outlive PS4Mount */
+    for (int i = 0; i < 240; i++) {
+        pthread_mutex_lock(&g_relay_mu);
+        int left = g_relay_conns;
+        pthread_mutex_unlock(&g_relay_mu);
+        if (!left)
+            break;
+        usleep(50000);
+    }
 }
 
 int links_relay_port(void) {
@@ -2135,6 +2164,7 @@ void links_stop(void) {
     pthread_mutex_unlock(&g_mu);
     g_rt.stop = 1;
     pthread_join(g_thread, NULL);
+    relay_stop();
     g_started = 0;
     pthread_mutex_lock(&g_mu);
     for (int i = 0; i < g_njobs; i++)
@@ -2157,7 +2187,7 @@ int links_active(void) {
 void links_status_json(buf_t *out) {
     pthread_mutex_lock(&g_mu);
     time_t now = time(NULL);
-    buf_printf(out, "{\"configured\":%s,\"jobs\":[", g_started ? "true" : "false");
+    buf_printf(out, "{\"configured\":%s,\"relay_port\":%d,\"jobs\":[", g_started ? "true" : "false", links_relay_port());
     for (int i = 0; i < g_njobs; i++) {
         const ljob_t *j = &g_jobs[i];
         buf_printf(out, "%s{\"id\":%d,\"name\":", i ? "," : "", j->id);

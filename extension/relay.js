@@ -5,12 +5,12 @@
  * port 8771: /claim gives one (the address, the range), the browser fetches it at the
  * computer's speed (with its cookies) and delivers it with /put, or gives it back with
  * /drop when it cannot. With the browser closed, the console goes on alone. */
-var RELAY_PORT = 8771, WORKERS = 12, running = 0, fails = 0;
+var WORKERS = 12, running = 0, fails = 0, relayPort = 8771;
 
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
 function relayPost(host, path, body) {
-  return fetch('http://' + host + ':' + RELAY_PORT + path, { method: 'POST', headers: { 'X-PS4Mount': '1' }, body: body || '' });
+  return fetch('http://' + host + ':' + relayPort + path, { method: 'POST', headers: { 'X-PS4Mount': '1' }, body: body || '' });
 }
 
 async function relayWorker(host) {
@@ -42,10 +42,30 @@ async function relayWorker(host) {
    download is sent; they end by themselves when it has none. */
 function relayKick() {
   settings().then(function (s) {
-    if (!s.relay || !s.host) return;
-    while (running < WORKERS) relayWorker(s.host);
-  });
+    if (!s.relay || !s.host || running) return;
+    /* the port PS4Mount listens on (8771, or a next one when that was taken) */
+    return panel(s.host, '/api/links').then(function (j) {
+      if (!j.relay_port) return;
+      relayPort = j.relay_port;
+      while (running < WORKERS) relayWorker(s.host);
+    });
+  }).catch(function () {});
 }
+
+/* Hosts that guard their files refuse (403) what does not look like the browser's own
+   download: a request marked with this extension's Origin, or a browser's request that is
+   not for a document. So the extension's own requests (initiator this extension, no tab)
+   go without Origin and as for a document, like the download the browser would make. */
+function headerRule(id, header) {
+  if (!api.declarativeNetRequest) return;
+  api.declarativeNetRequest.updateSessionRules({
+    removeRuleIds: [id],
+    addRules: [{ id: id, priority: 1, action: { type: 'modifyHeaders', requestHeaders: [header] },
+      condition: { initiatorDomains: [api.runtime.id], tabIds: [-1], resourceTypes: ['xmlhttprequest'] } }]
+  }).catch(function (e) { console.log('header rule', header.header, e); });
+}
+headerRule(1, { header: 'origin', operation: 'remove' });
+headerRule(2, { header: 'sec-fetch-dest', operation: 'set', value: 'document' });
 
 api.alarms.create('relay', { periodInMinutes: 0.5 });
 api.alarms.onAlarm.addListener(function (a) { if (a.name === 'relay') relayKick(); });
