@@ -10,6 +10,10 @@ CC=${CC:-cc}
 FLAGS="-O1 -g -Wall -Wextra -I$B -Isrc"
 if [ "${SANITIZE:-0}" = 1 ]; then
     FLAGS="$FLAGS -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+    # clang's -fsanitize=function flags BearSSL's calls through its vtables (generic types)
+    if $CC --version 2>/dev/null | grep -q clang; then
+        FLAGS="$FLAGS -fno-sanitize=function"
+    fi
     export ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=print_stacktrace=1
 fi
 
