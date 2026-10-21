@@ -136,6 +136,9 @@ En el panel, **Descargar enlaces**: pega los enlaces, uno por línea, elige dón
 - Un ZIP con contraseña también se abre, clásica o AES, igual que un RAR.
 - No se puede: un RAR antiguo (RAR4) con contraseña, un **7z**, o un enlace que pide iniciar sesión.
 
+| ![El panel descargando un RAR en 3 partes mientras lo extrae](docs/links-panel-es.png) | ![El aviso en la consola al empezar la descarga](docs/links-console-es.jpg) |
+|---|---|
+
 ### Extensión del navegador
 
 Opcional, para el ordenador: con ella no hace falta buscar el enlace directo. Pulsas **Descargar** en cualquier web, como siempre, y la descarga va a la consola en vez de al ordenador.
@@ -146,6 +149,9 @@ Opcional, para el ordenador: con ella no hace falta buscar el enlace directo. Pu
 - Manda la dirección final del archivo (tras las redirecciones) y cancela la descarga en el ordenador, así que también sirve con los enlaces de un solo uso.
 - **Experimental:** bajar también a través del navegador. La consola sigue bajando por su cuenta y el navegador le pasa además parte de los bloques, con sus cookies, por la red local (puerto 8771). Solo ayuda con sitios que no limitan cada conexión, y mientras el navegador siga abierto; si lo cierras, la consola sigue sola.
 - No hay extensiones en Chrome para Android ni en iPhone: desde el móvil, usa **Descargar enlaces** del panel.
+
+| ![La cesta con las 3 partes de un RAR, lista para enviar](docs/extension-basket-es.png) | ![El aviso del navegador al guardar una parte en la cesta](docs/extension-notice-es.png) |
+|---|---|
 
 ### Copias en Google Drive
 
@@ -460,6 +466,9 @@ In the panel, **Download links**: paste the links, one per line, pick where to s
 - A ZIP with a password opens too, classic or AES, the same way as a RAR.
 - Not possible: an older RAR (RAR4) with a password, a **7z**, or a link that needs a sign-in.
 
+| ![The panel downloading a RAR in 3 parts while it extracts it](docs/links-panel-es.png) | ![The console's notice when the download starts](docs/links-console-es.jpg) |
+|---|---|
+
 ### Browser extension
 
 Optional, for the computer: with it there is no need to look for the direct link. Press **Download** on any site, as always, and the download goes to the console instead of the computer.
@@ -470,6 +479,9 @@ Optional, for the computer: with it there is no need to look for the direct link
 - It sends the file's final address (after redirects) and cancels the download on the computer, so links that work only once do too.
 - **Experimental:** fetching through the browser too. The console keeps downloading by itself and the browser hands it part of the blocks as well, with its cookies, over your network (port 8771). It helps only with sites that do not slow each connection down, and while the browser stays open; closed, the console goes on by itself.
 - Chrome on Android and the iPhone have no extensions: from a phone, use the panel's **Download links**.
+
+| ![The basket with the 3 parts of a RAR, ready to send](docs/extension-basket-es.png) | ![The browser's notice when a part goes to the basket](docs/extension-notice-es.png) |
+|---|---|
 
 ### Google Drive backups
 
