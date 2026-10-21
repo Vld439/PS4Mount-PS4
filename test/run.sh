@@ -40,6 +40,17 @@ if [ ! -f "$BR/libbearssl.a" ]; then
 fi
 BRF="-Ithird_party/bearssl/inc"
 
+# libarchive and zlib once per compiler and flags, as build.sh makes them
+LA="$B/libarchive-$( (echo "$CC $FLAGS"; cat src/la_alloc.h third_party/libarchive/*.[ch] third_party/zlib/*.[ch]) | md5sum | cut -c1-8)"
+if [ ! -f "$LA/libarchive.a" ]; then
+    mkdir -p "$LA"
+    for f in third_party/libarchive/*.c third_party/zlib/*.c; do
+        echo "$CC $FLAGS -w -include src/la_alloc.h -DHAVE_CONFIG_H -Ithird_party/libarchive -Ithird_party/zlib -c $f -o $LA/$(basename "$f" .c).o"
+    done | xargs -P "$(nproc)" -I{} sh -c '{}'
+    ar rcs "$LA/libarchive.a" "$LA"/*.o
+fi
+LAF="-Ithird_party/libarchive"
+
 echo "== unit"
 $CC $FLAGS -o "$B/unit" test/unit.c src/build.c src/mem.c src/lang.c src/check.c src/crypto.c src/pkg.c src/origin.c
 "$B/unit"
@@ -67,3 +78,8 @@ $CC $FLAGS -o "$B/log_test" test/log_test.c src/logts.c -lpthread
 echo "== Google Drive backups"
 $CC $FLAGS $BRF -o "$B/drive_test" test/drive_test.c src/drive.c src/https.c src/json.c src/lang.c src/build.c src/mem.c src/crypto.c "$BR/libbearssl.a" -lpthread
 "$B/drive_test"
+
+echo "== downloads from links"
+$CC $FLAGS $BRF $LAF -Itest -o "$B/links_test" test/links_test.c src/links.c src/https.c src/json.c src/lang.c src/build.c src/mem.c \
+    src/crypto.c src/check.c src/pkg.c src/la_alloc.c "$BR/libbearssl.a" "$LA/libarchive.a" -lpthread
+"$B/links_test"

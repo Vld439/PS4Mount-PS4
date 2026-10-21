@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "drive.h"
+#include "links.h"
 #include "stubs.h"
 #include "web.h"
 
@@ -79,3 +80,20 @@ int drive_set_client(const char *id, const char *secret, char *msg, size_t n) {
     return record("drive_client", arg, msg, n);
 }
 int drive_forget_client(char *msg, size_t n) { return record("drive_forget_client", NULL, msg, n); }
+
+void links_status_json(buf_t *out) { buf_printf(out, "{\"configured\":true,\"jobs\":[]}"); }
+int links_add(const char *text, const char *dest, char *msg, size_t n) {
+    char arg[4096];
+    snprintf(arg, sizeof(arg), "%s|%zu|%.40s", dest, strlen(text), text);
+    return record("links_add", arg, msg, n);
+}
+int links_cancel(int id, char *msg, size_t n) {
+    char arg[16];
+    snprintf(arg, sizeof(arg), "%d", id);
+    return record("links_cancel", arg, msg, n);
+}
+int links_retry(int id, char *msg, size_t n) {
+    char arg[16];
+    snprintf(arg, sizeof(arg), "%d", id);
+    return record("links_retry", arg, msg, n);
+}

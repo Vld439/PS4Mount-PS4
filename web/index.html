@@ -79,10 +79,12 @@ progress{width:100%;height:10px;margin-top:8px;accent-color:var(--accent)}
 button.small{padding:5px 10px;font-size:13px}
 .gd{display:inline-flex;align-items:center;gap:6px}
 .gd svg{width:16px;height:16px}
-#drivebar{display:none;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:8px 20px;background:#11161f;border-bottom:1px solid var(--line);font-size:14px}
-#drivebar progress{width:220px;margin:0}
-#drivebar .db-main{font-weight:600}
-#drivebar .db-sub{color:var(--muted);font-size:13px;flex-basis:100%}
+#drivebar,#linkbar{display:none;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:8px 20px;background:#11161f;border-bottom:1px solid var(--line);font-size:14px}
+#drivebar progress,#linkbar progress{width:220px;margin:0}
+#drivebar .db-main,#linkbar .db-main{font-weight:600}
+#drivebar .db-sub,#linkbar .db-sub{color:var(--muted);font-size:13px;flex-basis:100%}
+#l-text{width:100%;min-height:140px;white-space:pre;overflow-wrap:normal;overflow-x:auto}
+#l-dest{background:#0b0d11;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
 .code{font:600 30px/1.2 ui-monospace,Consolas,monospace;letter-spacing:3px;background:#0b0d11;border:1px solid var(--line);border-radius:10px;padding:12px 18px;display:inline-block;margin:8px 0;user-select:all}
 .drive-acct{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-bottom:10px}
 .quota{height:8px;background:#0b0d11;border-radius:99px;overflow:hidden;width:220px;border:1px solid var(--line)}
@@ -101,6 +103,7 @@ button.small{padding:5px 10px;font-size:13px}
     <input id="q" type="search" placeholder="Search game or CUSA">
     <button id="rescan" class="primary">Scan for games</button>
     <button id="sendbtn" hidden>Send games</button>
+    <button id="linkbtn" hidden>Download links</button>
     <button id="backupbtn" hidden>Back up to Drive</button>
     <button id="settingsbtn">Settings</button>
     <button id="logbtn">Log</button>
@@ -110,6 +113,8 @@ button.small{padding:5px 10px;font-size:13px}
 </header>
 <div id="drivebar"><span class="db-main" id="db-text"></span><progress id="db-prog" max="1" value="0"></progress><button class="small" id="db-cancel">Cancel</button>
   <span class="db-sub" id="db-sub"></span></div>
+<div id="linkbar"><span class="db-main" id="lb-text"></span><progress id="lb-prog" max="1" value="0"></progress><button class="small" id="lb-cancel">Cancel</button>
+  <span class="db-sub" id="lb-sub"></span></div>
 <main>
   <div class="summary" id="summary"></div>
   <div class="grid" id="grid"></div>
@@ -208,6 +213,19 @@ button.small{padding:5px 10px;font-size:13px}
   <div class="pickwrap"><table class="picker"><thead><tr><th>Game</th><th>In Drive</th><th></th></tr></thead><tbody id="d-rows"></tbody></table></div>
   <div class="row" style="display:flex;justify-content:flex-end"><button type="button" id="d-close2">Close</button></div>
 </div></dialog>
+<dialog id="linkdlg"><h3>Download links</h3>
+<form class="settings" id="l-form">
+  <div class="hint" style="color:var(--muted);font-size:13px">The console downloads them itself (you can close this page): a pkg, a ZIP
+    or a RAR, also in parts. Paste the direct links, the ones that start the download, one per line; all the parts of a RAR
+    (name.part1.rar, name.part2.rar...) become one download. Its pkgs are added to the library when they arrive.</div>
+  <textarea id="l-text" spellcheck="false" placeholder="https://example.com/game.part1.rar&#10;https://example.com/game.part2.rar&#10;https://example.com/file?id=123 | name.pkg"></textarea>
+  <div class="meta">A link with no file name in it: add | and its name. RARs with a password cannot be opened.</div>
+  <div class="sendbar"><label>Save to <select id="l-dest"></select></label>
+    <button type="submit" class="primary" id="l-go">Download</button></div>
+</form>
+<div class="note" id="l-result" hidden></div>
+<div class="pickwrap"><table class="picker"><tbody id="l-rows"></tbody></table></div>
+<div class="row" style="display:flex;justify-content:flex-end"><button type="button" id="l-close">Close</button></div></dialog>
 <dialog id="logdlg"><h3>Log</h3><pre id="log"></pre><form method="dialog"><button>Close</button></form></dialog>
 <div id="toast"></div>
 <!--LANG-->
@@ -692,13 +710,16 @@ function loadDrive() {
     renderDrive();
   }).catch(function () { /* an older PS4Mount: no Drive */ });
 }
+/* The drives Drive downloads and links can go to, in both selects. */
 function loadDests() {
   api('/api/dests').then(function (j) {
-    var cur = $('d-dest').value;
-    $('d-dest').innerHTML = (j.dests || []).map(function (x) {
-      return '<option value="' + esc(x.id) + '">' + esc(x.label) + ' — ' + esc(x.folder) + ' (' + esc(t('{0} free', mb(x.free))) + ')</option>';
-    }).join('') || '<option value="">' + t('No drive connected') + '</option>';
-    if (cur) $('d-dest').value = cur;
+    ['d-dest', 'l-dest'].forEach(function (id) {
+      var cur = $(id).value;
+      $(id).innerHTML = (j.dests || []).map(function (x) {
+        return '<option value="' + esc(x.id) + '">' + esc(x.label) + ' — ' + esc(x.folder) + ' (' + esc(t('{0} free', mb(x.free))) + ')</option>';
+      }).join('') || '<option value="">' + t('No drive connected') + '</option>';
+      if (cur) $(id).value = cur;
+    });
   });
 }
 $('drivebtn').onclick = function () { $('drivedlg').showModal(); renderDrive(); loadDests(); loadDrive(); };
@@ -737,6 +758,84 @@ $('d-rows').onclick = function (e) {
 setInterval(function () { if ($('drivedlg').open || (drive.job && drive.job.busy) || (drive.login && drive.login.active)) loadDrive(); }, 2000);
 setInterval(function () { if (!$('drivedlg').open && !(drive.job && drive.job.busy)) loadDrive(); }, 15000);
 loadDrive();
+
+/* --- downloads from links --- */
+var links = {}, linksBusyBefore = false;
+function linkAct(action, query, body) {
+  return fetch('/api/links/' + action + (query ? '?' + query : ''), {method: 'POST', cache: 'no-store', body: body || '',
+      headers: {'X-PS4Mount': '1', 'Content-Type': 'text/plain; charset=utf-8'}})
+    .then(function (r) { return r.json(); })
+    .then(function (j) { toast(j.message || j.error); setTimeout(loadLinks, 500); return j; })
+    .catch(function (err) { toast(t('Error: {0}', err.message)); });
+}
+function renderLinks() {
+  var l = links, job = l.job || {}, jobs = l.jobs || [];
+  $('linkbtn').hidden = !l.configured;
+  var waiting = jobs.filter(function (x) { return x.state === 'queued'; }).length;
+  $('linkbar').style.display = job.busy ? 'flex' : 'none';
+  if (job.busy) {
+    var all = job.total || 0, done = job.done || 0, pct = all ? Math.floor(100 * done / all) : 0, sub = [], main;
+    if (job.phase === 'probing') main = t('Checking the links of {0}…', job.name);
+    else {
+      main = (job.phase === 'extracting' ? t('Extracting {0}', job.name) : t('Downloading {0}', job.name));
+      if (all) main += ' · ' + pct + '% · ' + t('{0} of {1}', mb(done), mb(all));
+      else if (done) main += ' · ' + mb(done);
+      if (job.phase === 'retrying') main += ' · ' + t('connection lost, trying again in {0} s', job.retry_in);
+      else if (job.speed > 0 && all) main += ' · ' + rate(job.speed) + ' · ' + t('{0} left', left((all - done) / job.speed));
+      else if (all) main += ' · ' + t('measuring the speed…');
+    }
+    if (job.file && job.files > 1) sub.push(job.file + ' (' + job.file_index + '/' + job.files + ')');
+    if (job.pkg) sub.push(t('extracting {0}', job.pkg));
+    if (job.elapsed) sub.push(t('running for {0}', left(job.elapsed, true)));
+    if (waiting) sub.push(t('{0} more waiting', waiting));
+    $('lb-text').textContent = main;
+    $('lb-sub').textContent = sub.join(' · ');
+    $('lb-prog').max = all || 1;
+    $('lb-prog').value = done;
+  }
+  if (!$('linkdlg').open) return;
+  $('l-result').hidden = !l.result || job.busy;
+  $('l-result').textContent = l.result || '';
+  $('l-result').className = l.ok ? 'note' : 'bad';
+  $('l-rows').innerHTML = jobs.map(function (x) {
+    var st = x.state === 'failed' ? '<div class="bad">' + esc(x.error) + '</div>' :
+      '<div class="meta">' + esc(x.state === 'running' ? t('downloading') : t('waiting')) + '</div>';
+    var parts = x.files > 1 ? ' · ' + t('{0} parts', x.files) : '';
+    return '<tr><td>' + esc(x.name) + '<div class="meta">' + esc(x.dest) + parts + '</div>' + st + '</td><td style="white-space:nowrap;text-align:right">' +
+      (x.state === 'failed' ? '<button class="small primary" data-retry="' + x.id + '">' + t('Try again') + '</button> ' : '') +
+      '<button class="small danger" data-drop="' + x.id + '">' + (x.state === 'running' ? t('Cancel') : t('Remove')) + '</button></td></tr>';
+  }).join('');
+}
+function loadLinks() {
+  return api('/api/links').then(function (j) {
+    links = j;
+    var busyNow = !!(j.job && j.job.busy);
+    if (linksBusyBefore && !busyNow) load(); /* new pkgs are in the library soon */
+    linksBusyBefore = busyNow;
+    renderLinks();
+  }).catch(function () { /* an older PS4Mount: no links */ });
+}
+$('linkbtn').onclick = function () { $('linkdlg').showModal(); renderLinks(); loadDests(); loadLinks(); };
+$('l-close').onclick = function () { $('linkdlg').close(); };
+$('l-form').onsubmit = function (e) {
+  e.preventDefault();
+  var text = $('l-text').value;
+  if (!text.trim()) { toast(t('paste at least one link')); return; }
+  if (!$('l-dest').value) { toast(t('No drive connected')); return; }
+  linkAct('add', 'dest=' + encodeURIComponent($('l-dest').value), text).then(function (j) { if (j && j.ok) $('l-text').value = ''; });
+};
+$('l-rows').onclick = function (e) {
+  var r = e.target.closest('button[data-retry]'), d = e.target.closest('button[data-drop]');
+  if (r) linkAct('retry', 'id=' + r.getAttribute('data-retry'));
+  if (d && confirm(t('Remove this download? What it downloaded so far is deleted.'))) linkAct('cancel', 'id=' + d.getAttribute('data-drop'));
+};
+$('lb-cancel').onclick = function () {
+  if (links.job && links.job.busy && confirm(t('Cancel the download of {0}? What it downloaded so far is deleted.', links.job.name)))
+    linkAct('cancel', 'id=' + links.job.id);
+};
+setInterval(function () { if ($('linkdlg').open || (links.job && links.job.busy)) loadLinks(); }, 2000);
+setInterval(function () { if (!$('linkdlg').open && !(links.job && links.job.busy)) loadLinks(); }, 15000);
+loadLinks();
 </script>
 </body>
 </html>

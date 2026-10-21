@@ -42,9 +42,21 @@ if [ ! -f "$BR/libbearssl.a" ]; then
     done | xargs -P "$(nproc)" -I{} sh -c '{}'
     $B/orbis-ar rcs "$BR/libbearssl.a" "$BR"/*.o
 fi
-$B/orbis-clang -O2 -Wall -Wextra -Ibuild -Ithird_party/sqlite -Ithird_party/bearssl/inc -o build/ps4mount-ps4.elf \
+# libarchive (RAR and ZIP of downloads from links) and the zlib it inflates ZIPs with, once,
+# as a library. Its L"" texts must be 32-bit like the wchar_t of the SDK's FreeBSD libc
+# (the PlayStation target makes them 16-bit), and its memory goes through la_alloc.h.
+LA_FLAGS="-O2 -w -fno-short-wchar -include src/la_alloc.h -DHAVE_CONFIG_H"
+LA="build/libarchive-$( (echo "$LA_FLAGS"; cat src/la_alloc.h third_party/libarchive/*.[ch] third_party/zlib/*.[ch]) | md5sum | cut -c1-8)"
+if [ ! -f "$LA/libarchive.a" ]; then
+    mkdir -p "$LA"
+    for f in third_party/libarchive/*.c third_party/zlib/*.c; do
+        echo "$B/orbis-clang $LA_FLAGS -Ithird_party/libarchive -Ithird_party/zlib -c $f -o $LA/$(basename "$f" .c).o"
+    done | xargs -P "$(nproc)" -I{} sh -c '{}'
+    $B/orbis-ar rcs "$LA/libarchive.a" "$LA"/*.o
+fi
+$B/orbis-clang -O2 -Wall -Wextra -Ibuild -Ithird_party/sqlite -Ithird_party/bearssl/inc -Ithird_party/libarchive -o build/ps4mount-ps4.elf \
     src/main.c src/fw.c src/logts.c src/web.c src/pkg.c src/build.c src/check.c src/upload.c src/install.c src/lang.c src/mem.c src/db.c src/origin.c src/crypto.c \
-    src/drive.c src/https.c src/json.c "$SQ" "$BR/libbearssl.a" \
+    src/drive.c src/https.c src/json.c src/links.c src/la_alloc.c "$SQ" "$BR/libbearssl.a" "$LA/libarchive.a" \
     -lSceUserService -lSceAppInstUtil -lSceSystemService -lkernel_sys
 # Payload Guest only lists .bin payloads (and hands them to GoldHEN's BinLoader,
 # which takes the ELF as it is).

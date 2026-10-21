@@ -41,6 +41,7 @@
 #include "crypto.h"
 #include "db.h"
 #include "drive.h"
+#include "links.h"
 #include "fw.h"
 #include "install.h"
 #include "lang.h"
@@ -3693,6 +3694,21 @@ static void dests_json(buf_t *out, uint64_t need) {
     buf_printf(out, "]");
 }
 
+/* Why PS4Mount cannot use a checked pkg of size bytes (0: not known); empty when it can. */
+static void check_problem(const pkg_check_t *c, uint64_t size, char *problem, size_t n) {
+    snprintf(problem, n, "%s", c->problem);
+    if (!problem[0] && size && size != c->pkg_size)
+        snprintf(problem, n,
+                 TR("the file is %llu bytes but its header says %llu: it is incomplete or damaged",
+                    "el archivo tiene %llu bytes pero su cabecera dice %llu: está incompleto o dañado"),
+                 (unsigned long long)size, (unsigned long long)c->pkg_size);
+    if (!problem[0] && c->kind != PKG_KIND_ADDON && installed_internally(c->title_id))
+        snprintf(problem, n,
+                 TR("%s is installed on the console the normal way: PS4Mount leaves it alone",
+                    "%s está instalado en la consola de la forma normal: PS4Mount no lo toca"),
+                 c->title_id);
+}
+
 void app_check(const void *data, size_t len, uint64_t size, buf_t *out) {
     static const char *tmp = STATE_DIR "/check.part";
     pkg_check_t c;
@@ -3705,17 +3721,7 @@ void app_check(const void *data, size_t len, uint64_t size, buf_t *out) {
     }
     char problem[256], notes[3][200], sv[16], fw[16], where[32];
     int nnotes = 0;
-    snprintf(problem, sizeof(problem), "%s", c.problem);
-    if (!problem[0] && size && size != c.pkg_size)
-        snprintf(problem, sizeof(problem),
-                 TR("the file is %llu bytes but its header says %llu: it is incomplete or damaged",
-                    "el archivo tiene %llu bytes pero su cabecera dice %llu: está incompleto o dañado"),
-                 (unsigned long long)size, (unsigned long long)c.pkg_size);
-    if (!problem[0] && c.kind != PKG_KIND_ADDON && installed_internally(c.title_id))
-        snprintf(problem, sizeof(problem),
-                 TR("%s is installed on the console the normal way: PS4Mount leaves it alone",
-                    "%s está instalado en la consola de la forma normal: PS4Mount no lo toca"),
-                 c.title_id);
+    check_problem(&c, size, problem, sizeof(problem));
     if (c.kind == PKG_KIND_ADDON && !g_cfg.dlc)
         snprintf(notes[nnotes++], sizeof(notes[0]), "%s",
                  TR("add-ons are turned off in the settings: it will wait in the folder",
@@ -3927,6 +3933,28 @@ static void drive_begin(void) {
     drive_start(STATE_DIR, NULL, &host);
 }
 
+/* --- downloads from links --- */
+
+static int links_check(const char *path, uint64_t size, char *problem, size_t n) {
+    pkg_check_t c;
+    if (pkg_check(path, g_fw, &c)) {
+        snprintf(problem, n, "%s", TR("not a PS4 pkg", "no es un pkg de PS4"));
+        return -1;
+    }
+    check_problem(&c, size, problem, n);
+    return problem[0] ? -1 : 0;
+}
+
+static void links_arrived(const char *dir) {
+    (void)dir;
+    app_rescan(); /* the scan adds them now */
+}
+
+static void links_begin(void) {
+    static const links_host_t host = {drive_dest_dir, free_bytes, links_check, links_arrived, drive_notify};
+    links_start(STATE_DIR, &host);
+}
+
 /* --- Media tab shortcut (category 65536 + deeplinkUri, as other PS5 web panels) --- */
 
 #define PANEL_ID "PMNT00001"
@@ -3985,6 +4013,7 @@ static int g_klog = -1, g_web = -1;
 /* Closes the ports and the log before main returns: the process stays (it is the
  * loader's) and anything left open in it would keep the next PS4Mount out. */
 static void shutdown_daemon(int lock) {
+    links_stop();
     drive_stop();
     install_close();
     if (g_web >= 0)
@@ -4021,16 +4050,16 @@ static int still_listening(int s) {
 
 static int g_live; /* klogsrv replays its backlog first: live after the first quiet 100 ms */
 
-/* Rest mode would cut a Drive transfer (and close the payload's sockets): while one runs,
+/* Rest mode would cut a Drive transfer or a download (and close the payload's sockets): while one runs,
  * the system is told every few seconds that the console is in use, as when a pad is
  * pressed. Once it ends the usual rest settings apply again. */
 static void keep_awake(void) {
     static time_t last;
     static int on;
-    int active = drive_active();
+    int active = drive_active() || links_active();
     if (active != on) {
         on = active;
-        printf("[drive] %s\n", on ? "keeping the console out of rest mode while it transfers" : "rest mode allowed again");
+        printf("[power] %s\n", on ? "keeping the console out of rest mode while it transfers" : "rest mode allowed again");
     }
     if (on && time(NULL) - last >= 10) {
         last = time(NULL);
@@ -4134,6 +4163,7 @@ int main(void) {
      * a browser */
     g_web = web_listen();
     drive_begin();
+    links_begin();
     if (g_reg_mode == REG_ALL)
         notify("%s", g_web >= 0 ? TR(VERSION " running. Panel at http://<PS4 IP>:8770",
                                VERSION " en marcha. Panel en http://<IP de la PS4>:8770")

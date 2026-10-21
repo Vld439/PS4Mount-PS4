@@ -202,7 +202,25 @@ var LANGS = {
     'cancelled': 'cancelado',
     'Cancel the transfer in progress?': '¿Cancelar el envío en curso?',
     'Stop PS4Mount? The games stay unavailable until it is loaded again.':
-      '¿Detener PS4Mount? Los juegos no se podrán abrir hasta que se vuelva a cargar.'
+      '¿Detener PS4Mount? Los juegos no se podrán abrir hasta que se vuelva a cargar.',
+    /* downloads from links */
+    'Download links': 'Descargar enlaces',
+    'The console downloads them itself (you can close this page): a pkg, a ZIP or a RAR, also in parts. Paste the direct links, the ones that start the download, one per line; all the parts of a RAR (name.part1.rar, name.part2.rar...) become one download. Its pkgs are added to the library when they arrive.':
+      'La consola los descarga sola (puedes cerrar esta página): un pkg, un ZIP o un RAR, también en partes. Pega los enlaces directos, los que empiezan la descarga, uno por línea; todas las partes de un RAR (nombre.part1.rar, nombre.part2.rar...) son una sola descarga. Sus pkgs se añaden a la biblioteca al llegar.',
+    'A link with no file name in it: add | and its name. RARs with a password cannot be opened.':
+      'Un enlace sin nombre de archivo: añade | y su nombre. Los RAR con contraseña no se pueden abrir.',
+    'Save to': 'Guardar en',
+    'Checking the links of {0}…': 'Comprobando los enlaces de {0}…',
+    'Downloading {0}': 'Descargando {0}',
+    'Extracting {0}': 'Extrayendo {0}',
+    'extracting {0}': 'extrayendo {0}',
+    'downloading': 'descargando',
+    'waiting': 'en espera',
+    '{0} parts': '{0} partes',
+    'Try again': 'Reintentar',
+    'paste at least one link': 'pega al menos un enlace',
+    'Remove this download? What it downloaded so far is deleted.': '¿Quitar esta descarga? Se borra lo que ya bajó.',
+    'Cancel the download of {0}? What it downloaded so far is deleted.': '¿Cancelar la descarga de {0}? Se borra lo que ya bajó.'
   }
 };
 var LANG = 'en';

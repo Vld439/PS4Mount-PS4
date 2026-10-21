@@ -234,6 +234,40 @@ int main(void) {
     CHECK(!strcmp(g_stub_call, "drive_forget_client"));
 #undef DRIVE_POST
 
+    printf("downloads from links\n");
+    r = ask("GET /api/links HTTP/1.1\r\n\r\n");
+    CHECK(status(r, "200") && strstr(r, "\"jobs\""));
+    before = g_stub_calls;
+    r = post("/api/links/add?dest=usb0", "http://example.com/a.pkg");
+    CHECK(status(r, "403") && g_stub_calls == before); /* downloads write files: the panel's header */
+    r = ask("POST /api/links/add?dest=usb0 HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 24\r\n\r\nhttp://example.com/a.pkg");
+    CHECK(status(r, "200") && !strcmp(g_stub_call, "links_add") && !strcmp(g_stub_arg, "usb0|24|http://example.com/a.pkg"));
+    before = g_stub_calls;
+    r = ask("POST /api/links/add?dest=../x HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 3\r\n\r\nabc");
+    CHECK(status(r, "400") && g_stub_calls == before);
+    r = ask("POST /api/links/add?dest=usb0 HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 99999999\r\n\r\nabc");
+    CHECK(status(r, "400") && g_stub_calls == before);
+    {
+        /* many links: a body far past the request buffer, sent after the headers */
+        static char many[60001];
+        memset(many, 'x', sizeof(many) - 1);
+        memcpy(many, "http://e.com/", 13);
+        char h[200];
+        snprintf(h, sizeof(h), "POST /api/links/add?dest=internal HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: %zu\r\n\r\n",
+                 sizeof(many) - 1);
+        r = ask2(h, strlen(h), many);
+        CHECK(status(r, "200") && !strncmp(g_stub_arg, "internal|60000|http://e.com/xxx", 31));
+    }
+    r = ask("POST /api/links/cancel?id=7 HTTP/1.1\r\nX-PS4Mount: 1\r\n\r\n");
+    CHECK(status(r, "200") && !strcmp(g_stub_call, "links_cancel") && !strcmp(g_stub_arg, "7"));
+    r = ask("POST /api/links/retry?id=3 HTTP/1.1\r\nX-PS4Mount: 1\r\n\r\n");
+    CHECK(status(r, "200") && !strcmp(g_stub_call, "links_retry") && !strcmp(g_stub_arg, "3"));
+    before = g_stub_calls;
+    r = ask("POST /api/links/cancel HTTP/1.1\r\nX-PS4Mount: 1\r\n\r\n");
+    CHECK(status(r, "400") && g_stub_calls == before);
+    r = ask("POST /api/links/start HTTP/1.1\r\nX-PS4Mount: 1\r\n\r\n");
+    CHECK(status(r, "404") && g_stub_calls == before);
+
     printf("a body that arrives after the headers\n");
     const char *head = "POST /api/config HTTP/1.1\r\nContent-Length: 15\r\n\r\n";
     ask2(head, strlen(head), "restore_batch=7");

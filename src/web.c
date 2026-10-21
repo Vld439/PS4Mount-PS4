@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include "drive.h"
+#include "links.h"
 #include "page_data.h"
 #include "lang.h"
 #include "mem.h"
@@ -234,6 +235,47 @@ static void drive_action(int fd, const char *path, const char *body) {
     json_msg(fd, !rc, msg);
 }
 
+/* The pasted links of /api/links/add: at most this much text. */
+#define LINKS_TEXT_MAX (1u << 20)
+
+/* POST /api/links/<action>: add?dest=.. (the links are the body, one a line), cancel?id=..,
+ * retry?id=.. The links thread does the work; the panel follows it in GET /api/links. */
+static void links_action(int fd, const char *path, const char *body, size_t have, unsigned long long length) {
+    const char *a = path + 11;
+    size_t al = strcspn(a, "?");
+    const char *idp = strstr(path, "id=");
+    int id = idp ? atoi(idp + 3) : 0, rc;
+    char msg[512];
+#define IS(name) (al == sizeof(name) - 1 && !strncmp(a, name, al))
+    if (IS("add")) {
+        char dest[16];
+        uint8_t *data = NULL;
+        char *text = NULL;
+        if (dest_param(path, dest, sizeof(dest)))
+            rc = (snprintf(msg, sizeof(msg), "%s", TR("choose where to save it", "elige dónde guardarlo")), -1);
+        else if (!length || length > LINKS_TEXT_MAX)
+            rc = (snprintf(msg, sizeof(msg), "%s", TR("paste at least one link", "pega al menos un enlace")), -1);
+        else if (!(data = read_body(fd, body, have, (size_t)length)) || !(text = mem_alloc((size_t)length + 1)))
+            rc = (snprintf(msg, sizeof(msg), "%s", TR("the links did not arrive whole", "los enlaces no llegaron enteros")), -1);
+        else {
+            memcpy(text, data, (size_t)length);
+            text[length] = 0;
+            rc = links_add(text, dest, msg, sizeof(msg));
+        }
+        mem_free(data);
+        mem_free(text);
+    } else if (IS("cancel"))
+        rc = id > 0 ? links_cancel(id, msg, sizeof(msg)) : (snprintf(msg, sizeof(msg), "invalid id"), -1);
+    else if (IS("retry"))
+        rc = id > 0 ? links_retry(id, msg, sizeof(msg)) : (snprintf(msg, sizeof(msg), "invalid id"), -1);
+    else {
+        reply(fd, "404 Not Found", "text/plain", "not found\n", 10);
+        return;
+    }
+#undef IS
+    json_msg(fd, !rc, msg);
+}
+
 void web_serve(int listen_fd) {
     int fd = accept(listen_fd, NULL, NULL);
     if (fd >= 0)
@@ -385,6 +427,17 @@ void web_handle(int fd) {
             reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
         else
             drive_action(fd, path, body);
+    } else if (!strcmp(path, "/api/links")) {
+        buf_t b = {0};
+        links_status_json(&b);
+        reply(fd, "200 OK", "application/json; charset=utf-8", b.data, b.len);
+        buf_free(&b);
+    } else if (post && !strncmp(path, "/api/links/", 11)) {
+        /* downloads write files: the panel's own requests only */
+        if (!may_write(fd, req))
+            reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
+        else
+            links_action(fd, path, body, (size_t)(req + n - body), length);
     } else if (!strcmp(path, "/api/log")) {
         send_log(fd);
     } else if (post && !strcmp(path, "/api/stop")) {

@@ -16,9 +16,11 @@ const CFG = { batch: true, batch_size: 5, dlc: true, restore_batch: 5, max_resto
 let REPLY_LANG; // the language the console reports (undefined: none, English)
 let GAMES_VERSION = 'PS4Mount test';
 let DRIVE = { configured: false }; // GET /api/drive (an object: the tests change it)
+let LINKS = { configured: false }; // GET /api/links
 const DESTS = { dests: [{ id: 'usb0', label: 'usb0', folder: '/mnt/usb0/PS4Mount', free: 5e11, fits: true }] };
 function reply(url) {
   if (url === '/api/drive') return DRIVE;
+  if (url === '/api/links') return LINKS;
   if (url === '/api/dests') return DESTS;
   return url.indexOf('/api/log') === 0 ? { log: 'a\nb' } : url.indexOf('/api/config') === 0 ? CFG :
     url.indexOf('/api/games') === 0 ? { version: GAMES_VERSION, lang: REPLY_LANG, games: GAMES } : { ok: true, message: 'ok ' + url };
@@ -387,6 +389,62 @@ function tKeys(file) {
   d.getElementById('db-cancel').click(); await tick();
   ok(reqs.some((r) => r.url === '/api/drive/cancel'), 'and it can be cancelled');
   DRIVE = { configured: false };
+
+  // --- downloads from links
+  ok(d.getElementById('linkbtn').hidden, 'no Download links button when this build has none');
+  LINKS = { configured: true, jobs: [], job: { busy: false }, result: '', ok: true };
+  p = page('index.html', { dialog: true }); ({ w, d, reqs } = p);
+  await tick(); await tick();
+  ok(!d.getElementById('linkbtn').hidden && d.getElementById('linkbtn').textContent === 'Download links', 'the Download links button');
+  d.getElementById('linkbtn').click(); await tick(); await tick();
+  ok(d.getElementById('linkdlg').open && d.querySelector('#l-dest option').value === 'usb0', 'its window, with the drives to save to');
+  reqs.length = 0;
+  d.getElementById('l-form').dispatchEvent(new w.Event('submit', { cancelable: true })); await tick();
+  ok(!reqs.some((r) => r.url.indexOf('/api/links/') === 0), 'nothing pasted: nothing sent');
+  const pasted = 'https://example.com/game.part1.rar\nhttps://example.com/game.part2.rar\nhttps://example.com/f?id=1 | x.pkg';
+  d.getElementById('l-text').value = pasted;
+  d.getElementById('l-form').dispatchEvent(new w.Event('submit', { cancelable: true })); await tick(); await tick();
+  const add = reqs.find((r) => r.url.indexOf('/api/links/add') === 0);
+  ok(add && add.url === '/api/links/add?dest=usb0' && add.method === 'POST' && add.headers['X-PS4Mount'] === '1' && add.body === pasted,
+    'the links go in the body as pasted, to the chosen drive, with the panel header');
+  ok(d.getElementById('l-text').value === '', 'and the box is emptied once they are taken');
+  LINKS = { configured: true, result: 'Big Game was downloaded: 2 pkg(s), 40.0 GB in ~1 h', ok: true, job: { busy: false },
+    jobs: [{ id: 4, name: 'Big Game', dest: 'usb0', files: 12, state: 'queued', error: '' },
+      { id: 5, name: 'Other', dest: 'internal', files: 1, state: 'failed', error: 'the archive has a password: PS4Mount cannot open archives with a password' }] };
+  w.loadLinks(); await tick();
+  let lrows = d.querySelectorAll('#l-rows tr');
+  ok(lrows.length === 2 && lrows[0].textContent.includes('12 parts') && lrows[0].textContent.includes('waiting'), 'the list: a download waiting, with its parts');
+  ok(lrows[1].querySelector('.bad').textContent.includes('password') && lrows[1].querySelector('[data-retry]'), 'a failed one says why, and can be tried again');
+  ok(!d.getElementById('l-result').hidden && d.getElementById('l-result').textContent.includes('Big Game was downloaded'), 'the last result');
+  reqs.length = 0;
+  lrows[1].querySelector('[data-retry]').click(); await tick();
+  ok(reqs.some((r) => r.url === '/api/links/retry?id=5' && r.headers['X-PS4Mount'] === '1'), 'Try again');
+  reqs.length = 0; w.__confirm = false;
+  lrows[0].querySelector('[data-drop]').click(); await tick();
+  ok(!reqs.some((r) => r.url.indexOf('/api/links/cancel') === 0), 'Remove asks first (and a no stops it)');
+  w.__confirm = true;
+  lrows[0].querySelector('[data-drop]').click(); await tick();
+  ok(reqs.some((r) => r.url === '/api/links/cancel?id=4'), 'then removes it');
+  LINKS = { configured: true, result: '', ok: true, jobs: [{ id: 4, name: 'Big Game', dest: 'usb0', files: 12, state: 'running', error: '' },
+    { id: 6, name: 'Next', dest: 'usb0', files: 1, state: 'queued', error: '' }],
+    job: { busy: true, id: 4, name: 'Big Game', file: 'game.part02.rar', pkg: 'game.pkg', file_index: 2, files: 12, done: 1073741824, total: 4294967296,
+      speed: 12582912, elapsed: 120, retry_in: 0, phase: 'receiving' } };
+  w.loadLinks(); await tick();
+  let lbt = d.getElementById('lb-text').textContent, lbs = d.getElementById('lb-sub').textContent;
+  ok(d.getElementById('linkbar').style.display === 'flex' && lbt.includes('Downloading Big Game') && lbt.includes('25%') && lbt.includes('12 MB/s') && lbt.includes('~4 min left'),
+    'the bar under the header: ' + lbt);
+  ok(lbs.includes('game.part02.rar (2/12)') && lbs.includes('extracting game.pkg') && lbs.includes('1 more waiting'), 'the part, the pkg coming out of it and the queue: ' + lbs);
+  ok(d.querySelector('#l-rows tr [data-drop]').textContent === 'Cancel', 'the running one is cancelled, not removed');
+  LINKS.job = Object.assign({}, LINKS.job, { phase: 'probing' });
+  w.loadLinks(); await tick();
+  ok(d.getElementById('lb-text').textContent === 'Checking the links of Big Game…', 'first it checks the links');
+  LINKS.job = Object.assign({}, LINKS.job, { phase: 'extracting', speed: 0 });
+  w.loadLinks(); await tick();
+  ok(d.getElementById('lb-text').textContent.includes('Extracting Big Game'), 'then extracts what is left');
+  reqs.length = 0;
+  d.getElementById('lb-cancel').click(); await tick();
+  ok(reqs.some((r) => r.url === '/api/links/cancel?id=4'), 'the bar cancels the download');
+  LINKS = { configured: false };
 
   // --- in Spanish: the console says "es"
   REPLY_LANG = 'es';

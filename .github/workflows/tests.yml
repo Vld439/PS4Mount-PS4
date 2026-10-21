@@ -118,7 +118,7 @@ jobs:
           cppcheck --enable=warning,portability --inline-suppr --error-exitcode=1 --std=c11 \
             --suppress=missingIncludeSystem -I src -i third_party src
       - name: shellcheck
-        run: shellcheck --severity=warning build.sh test/run.sh test/policy.sh test/fuzz/run.sh
+        run: shellcheck --severity=warning build.sh test/run.sh test/policy.sh test/fuzz/run.sh test/data/links/make.sh
       - name: Secret scan (gitleaks)
         env:
           GITLEAKS_VERSION: 8.30.1
