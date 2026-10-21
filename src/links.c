@@ -1739,6 +1739,7 @@ typedef struct {
     link_t l;
     int kind, style, idx; /* style: 0 one file, 1 name.partN.rar, 2 name.rar + name.rNN */
     char base[256];       /* the archive's name without the volume part (lowercase) */
+    int boff;             /* where base starts in the name */
     int used;
 } item_t;
 
@@ -1785,6 +1786,50 @@ static void classify(item_t *it) {
 static int item_cmp(const void *a, const void *b) {
     const item_t *x = a, *y = b;
     return x->idx - y->idx;
+}
+
+/* name.partN.rar after a host's own code (code-name.partN.rar), or NULL. */
+static const char *coded_base(const item_t *it) {
+    const char *d = it->style == 1 ? strchr(it->base, '-') : NULL;
+    return d && d[1] ? d + 1 : NULL;
+}
+
+/* Whether the name.partN.rar volumes with this base (or, coded, base after the code) are
+   parts 1 to N, each once. */
+static int whole_archive(const item_t *items, int ni, const char *base, int coded) {
+    unsigned char seen[LINKS_MAX_FILES + 1] = {0};
+    int count = 0, top = 0;
+    for (int k = 0; k < ni; k++) {
+        const char *b = coded ? coded_base(&items[k]) : items[k].style == 1 ? items[k].base : NULL;
+        if (!b || strcmp(b, base))
+            continue;
+        int x = items[k].idx;
+        if (x < 1 || x > LINKS_MAX_FILES || seen[x]++)
+            return 0;
+        count++;
+        top = x > top ? x : top;
+    }
+    return count && top == count;
+}
+
+/* Some hosts put a code of their own before each file's name, a different one for each part
+   (covFB...-game.part1.rar, coBCQ...-game.part2.rar): parts that are no whole archive by
+   their names become one by the names after the code, when those are. */
+static void join_coded(item_t *items, int ni) {
+    for (int i = 0; i < ni; i++) {
+        const char *t = coded_base(&items[i]);
+        if (!t || whole_archive(items, ni, items[i].base, 0) || !whole_archive(items, ni, t, 1))
+            continue;
+        char key[256];
+        snprintf(key, sizeof(key), "%s", t);
+        for (int k = 0; k < ni; k++) {
+            const char *tk = coded_base(&items[k]);
+            if (tk && !strcmp(tk, key)) {
+                items[k].boff += (int)(tk - items[k].base);
+                memmove(items[k].base, tk, strlen(tk) + 1);
+            }
+        }
+    }
 }
 
 /* One line: "link" or "link | name". 0 with it in it, -1 with why not in err. */
@@ -1895,6 +1940,8 @@ int links_add(const char *text, const char *dest, char *msg, size_t n) {
         snprintf(err, sizeof(err), "%s", TR("paste at least one link", "pega al menos un enlace"));
         rc = -1;
     }
+    if (!rc)
+        join_coded(items, ni);
     /* the volumes of each archive together, in order, all of them there */
     ljob_t add[LINKS_MAX_JOBS];
     int na = 0;
@@ -1955,7 +2002,7 @@ int links_add(const char *text, const char *dest, char *msg, size_t n) {
         const item_t *f = &items[first];
         if (f->kind == K_RAR) {
             size_t bl = strlen(f->base);
-            snprintf(j->name, sizeof(j->name), "%.*s", (int)bl, f->l.name);
+            snprintf(j->name, sizeof(j->name), "%.*s", (int)bl, f->l.name + f->boff);
         } else
             snprintf(j->name, sizeof(j->name), "%s", f->l.name);
         if (ends_with(j->name, ".zip") || ends_with(j->name, ".pkg"))

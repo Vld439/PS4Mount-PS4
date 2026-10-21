@@ -513,6 +513,9 @@ int main(int argc, char **argv) {
             else
                 snprintf(old, sizeof(old), "old.r%02d", k - 2);
             add_path(old, p);
+            /* and with a host's code before each name, a different one for each part */
+            snprintf(old, sizeof(old), "c%dX%d-dl-Coded.part%03d.rar", k * 7, k, k);
+            add_path(old, p);
         }
     }
     if (d)
@@ -591,6 +594,25 @@ int main(int argc, char **argv) {
     CHECK(!add(text, msg, sizeof(msg)));
     CHECK(!wait_idle(60));
     CHECK(has_game("old", 1));
+
+    printf("== the same volumes with a host's code before each name\n");
+    reset_scan();
+    text[0] = 0;
+    for (int k = 1; k <= g_nvol; k++) {
+        char nm[64];
+        snprintf(nm, sizeof(nm), "c%dX%d-dl-Coded.part%03d.rar", k * 7, k, k);
+        url(u, sizeof(u), "f", nm);
+        size_t l = strlen(text);
+        snprintf(text + l, sizeof(text) - l, "%s\n", u);
+    }
+    CHECK(!add(text, msg, sizeof(msg)) && strstr(msg, "1 download"));
+    status();
+    job_field(0, "name", name, sizeof(name));
+    CHECK(!strcmp(name, "dl-Coded"));
+    CHECK(!wait_idle(60));
+    CHECK(has_game("dl-Coded", 1));
+    CHECK(add("http://example.com/c1-a.part1.rar\nhttp://example.com/c2-a.part3.rar", msg, sizeof(msg)) &&
+          strstr(msg, "is missing"));
 
     printf("== a ZIP, a pkg, a pkg named by the server, a server without ranges\n");
     reset_scan();
