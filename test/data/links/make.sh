@@ -1,6 +1,6 @@
 #!/bin/bash
 # Makes the archives test/links_test.c downloads (they are kept in the repository: the
-# tests' machines have no rar). Needs rar 5 or later and python3; run from the repository
+# tests' machines have no rar). Needs rar 5 or later, 7z and python3; run from the repository
 # root after bash test/run.sh has built build/test/links_test:
 #   bash test/data/links/make.sh
 #   game.partN.rar  RAR5 in volumes of 20 KB: game.pkg (5 MB), update.pkg, readme.txt
@@ -9,6 +9,8 @@
 #   secret.partN.rar game.pkg and update.pkg in volumes of an odd size (a block cut across
 #                   two), headers and all encrypted (rar -hp)
 #   guess.rar       update.pkg, headers encrypted, with the password guess.site
+#   zipcrypto.zip   update.pkg with the classic ZIP password (ps4mount; 7z)
+#   zipaes.zip      the same with AES (which PS4Mount cannot open)
 #   stray.rar       guess.rar with stray bytes as its service header's password check
 #                   (stray.c; a rar seen in the wild wrote it so)
 #   rar4.partN.rar  an older RAR (format 4) in volumes with no pkg inside: libarchive's
@@ -31,6 +33,8 @@ with zipfile.ZipFile(d + "/bundle.zip", "w", zipfile.ZIP_DEFLATED) as z:
 PY
 ${CC:-cc} -O1 -Ithird_party/bearssl/inc -o "$T/stray" "$D/stray.c" third_party/bearssl/src/{hash/*.c,mac/hmac.c,symcipher/aes_ct*.c,codec/*.c,settings.c}
 "$T/stray" "$T/guess.rar" "$T/stray.rar" guess.site
+(cd "$T" && 7z a -tzip -pps4mount -mem=ZipCrypto zipcrypto.zip update.pkg >/dev/null &&
+    7z a -tzip -pps4mount -mem=AES256 zipaes.zip update.pkg >/dev/null)
 rm -f "$D"/game.part*.rar "$D"/secret.part*.rar
-cp "$T"/game.part*.rar "$T"/secret.part*.rar "$T"/locked.rar "$T"/guess.rar "$T"/stray.rar "$T"/bundle.zip "$D"/
+cp "$T"/game.part*.rar "$T"/secret.part*.rar "$T"/locked.rar "$T"/guess.rar "$T"/stray.rar "$T"/zipcrypto.zip "$T"/zipaes.zip "$T"/bundle.zip "$D"/
 ls -la "$D"
