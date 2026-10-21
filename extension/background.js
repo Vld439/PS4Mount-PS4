@@ -5,7 +5,7 @@
  * works once is not spent twice) sent to PS4Mount. The parts of a RAR wait in the basket
  * until the popup sends them together, as one download. Chrome (and Brave, Edge) asks
  * through onDeterminingFilename, before its "Save as" window; Firefox has only onCreated. */
-if (typeof importScripts === 'function') importScripts('common.js');
+if (typeof importScripts === 'function') importScripts('common.js', 'relay.js');
 
 function notify(text) {
   api.notifications.create({ type: 'basic', iconUrl: 'icons/icon128.png', title: msg('name'), message: text });
@@ -33,6 +33,7 @@ function take(item, name) {
     if (kind === 'file') {
       sendLinks(s.host, s.dest, [line], '').then(function (j) {
         notify(j.ok ? msg('sent', [name]) : msg('refused', [j.message || '?']));
+        if (j.ok) relayKick();
       }).catch(function (e) { notify(msg('unreachable', [s.host, e.message])); });
       return true;
     }
@@ -72,5 +73,7 @@ if (api.downloads.onDeterminingFilename) {
     });
   });
 }
+
+api.runtime.onMessage.addListener(function (m) { if (m === 'relay') relayKick(); });
 
 settings().then(function (s) { badge(s.basket); });

@@ -783,6 +783,7 @@ function renderLinks() {
       main = (job.phase === 'extracting' ? t('Extracting {0}', job.name) : t('Downloading {0}', job.name));
       if (all) main += ' · ' + pct + '% · ' + t('{0} of {1}', mb(done), mb(all));
       else if (done) main += ' · ' + mb(done);
+      if (job.relay) main += ' · ' + t('through the browser');
       if (job.phase === 'retrying') main += ' · ' + t('connection lost, trying again in {0} s', job.retry_in);
       else if (job.speed > 0 && all) main += ' · ' + rate(job.speed) + ' · ' + t('{0} left', left((all - done) / job.speed));
       else if (all) main += ' · ' + t('measuring the speed…');

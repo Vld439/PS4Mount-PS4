@@ -14,6 +14,7 @@
 
 #define LINKS_MAX_JOBS 32
 #define LINKS_MAX_FILES 256 /* volumes of one archive */
+#define LINKS_RELAY_PORT 8771 /* where a helper (the browser extension) fetches blocks for the console */
 
 /* What PS4Mount gives the links thread (main.c; the tests give their own). */
 typedef struct {
@@ -52,5 +53,10 @@ int links_retry(int id, const char *password, char *msg, size_t n);
 extern size_t g_links_block;
 /* First wait before a request is tried again (it doubles each time). */
 extern int g_links_retry_seconds;
+extern int g_links_relay_port; /* the tests' 0: any free port */
+extern int g_links_relay_claim, g_links_relay_gone; /* seconds (the tests' shorter) */
+/* The helper port listened on (0: none), and whether a helper is at work now. */
+int links_relay_port(void);
+int links_relay_active(void);
 /* Connections at a time for one file. */
 extern int g_links_threads;

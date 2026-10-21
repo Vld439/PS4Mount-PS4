@@ -2,12 +2,12 @@
   "manifest_version": 3,
   "name": "__MSG_name__",
   "description": "__MSG_description__",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "default_locale": "en",
   "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
   "action": { "default_popup": "popup.html", "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png" } },
-  "background": { "service_worker": "background.js", "scripts": ["common.js", "background.js"] },
-  "permissions": ["downloads", "storage", "notifications"],
-  "optional_host_permissions": ["http://*/*"],
+  "background": { "service_worker": "background.js", "scripts": ["common.js", "relay.js", "background.js"] },
+  "permissions": ["downloads", "storage", "notifications", "alarms"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
   "browser_specific_settings": { "gecko": { "id": "ps4mount-send@vld439.github.io", "strict_min_version": "128.0" } }
 }

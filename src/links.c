@@ -18,6 +18,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <stdint.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
@@ -40,10 +44,14 @@
 #define REDIRECTS 10
 #define URL_MAX 2048
 #define XBUF (1u << 20)   /* what the archive reader takes from a part file at a time */
+#define RELAY_CONNS 32    /* helper connections served at once */
 
 size_t g_links_block = 8u << 20;
 int g_links_retry_seconds = 2;
 int g_links_threads = MAX_THREADS;
+int g_links_relay_port = LINKS_RELAY_PORT;
+int g_links_relay_claim = 60; /* seconds a helper has to deliver a block it took; then it is fetched again */
+int g_links_relay_gone = 5;   /* seconds without hearing from a helper before the console goes on alone */
 
 enum { K_UNKNOWN, K_PKG, K_RAR, K_ZIP };
 enum { S_QUEUED, S_RUNNING, S_FAILED };
@@ -499,7 +507,63 @@ typedef struct {
     pthread_cond_t cv;
     int fails, stop, slots, active, allowed, resolves;
     char err[512];
+    /* blocks a helper took (by slot), and blocks to fetch again (a helper's that never came) */
+    int claimed[SLOTS], receiving[SLOTS];
+    uint64_t cblock[SLOTS];
+    time_t until[SLOTS];
+    uint64_t redo[SLOTS];
+    int nredo;
 } dl_t;
+
+/* --- a helper on the network fetching blocks for the console --- */
+
+/* The browser extension can fetch the blocks of a download at the computer's speed (the
+ * console's own HTTPS tops out near 10-15 MB/s, its network takes twice that) and hand
+ * them over in plain HTTP on port g_links_relay_port: POST /claim gives it a block to
+ * fetch (the address, the range), /put delivers it, /drop gives it back. While a helper
+ * is heard from, the console's own connections take no new block; a block taken and not
+ * delivered in g_links_relay_claim seconds, or given back, is fetched by the console again. */
+static pthread_mutex_t g_relay_mu = PTHREAD_MUTEX_INITIALIZER;
+static dl_t *g_relay_dl; /* the file whose blocks can be taken */
+static int g_relay_users, g_relay_conns;
+static time_t g_relay_seen; /* atomic: read without g_relay_mu */
+static int g_relay_fd = -1;
+
+static int relay_active(void) {
+    time_t seen = __atomic_load_n(&g_relay_seen, __ATOMIC_RELAXED);
+    return seen && time(NULL) - seen <= g_links_relay_gone;
+}
+
+/* Blocks a helper took and did not deliver in time: fetched again (with d->mu held). */
+static void relay_expire_locked(dl_t *d) {
+    time_t now = time(NULL);
+    for (int s = 0; s < d->slots; s++)
+        if (d->claimed[s] && !d->receiving[s] && now > d->until[s] && d->nredo < SLOTS) {
+            d->claimed[s] = 0;
+            d->redo[d->nredo++] = d->cblock[s];
+            printf("[links] %s block %llu: the helper did not bring it, fetched here\n", d->part, (unsigned long long)d->cblock[s]);
+        }
+}
+
+static int relay_claims_locked(const dl_t *d) {
+    for (int s = 0; s < d->slots; s++)
+        if (d->claimed[s])
+            return 1;
+    return 0;
+}
+
+/* The next block to fetch (with d->mu held): one to fetch again (always the console's), or
+ * the next in the window (the helper's while it works). */
+static int take_block_locked(dl_t *d, int helper, uint64_t *b) {
+    if (!helper && d->nredo) {
+        *b = d->redo[--d->nredo];
+        return 1;
+    }
+    if ((!helper && relay_active()) || d->next >= d->nblocks || d->next >= d->written + (uint64_t)d->slots)
+        return 0;
+    *b = d->next++;
+    return 1;
+}
 
 typedef struct {
     dl_t *d;
@@ -608,21 +672,27 @@ static void *dl_worker(void *arg) {
     http_keep_t *keep = http_keep_new();
     for (;;) {
         pthread_mutex_lock(&d->mu);
-        while (!d->stop && !halted() && d->next < d->nblocks && d->next >= d->written + (uint64_t)d->slots) {
+        uint64_t b = 0;
+        int have = 0;
+        for (;;) {
+            relay_expire_locked(d);
+            /* a server that limits connections: this one ends (its block was done) */
+            if (d->stop || halted() || d->active > d->allowed || (have = take_block_locked(d, 0, &b)))
+                break;
+            if (d->next >= d->nblocks && !d->nredo && !relay_claims_locked(d))
+                break;
             struct timespec ts;
             clock_gettime(CLOCK_REALTIME, &ts);
             ts.tv_sec += 1;
             pthread_cond_timedwait(&d->cv, &d->mu, &ts);
         }
-        /* a server that limits connections: this one ends (its block was done) */
-        if (d->stop || halted() || d->next >= d->nblocks || d->active > d->allowed) {
+        if (!have) {
             d->active--;
             pthread_cond_broadcast(&d->cv);
             pthread_mutex_unlock(&d->mu);
             http_keep_free(keep);
             return NULL;
         }
-        uint64_t b = d->next++;
         int s = (int)(b % (uint64_t)d->slots);
         pthread_mutex_unlock(&d->mu);
         uint64_t from = b * g_links_block, to = from + g_links_block < d->v->size ? from + g_links_block : d->v->size;
@@ -687,6 +757,236 @@ static void *dl_worker(void *arg) {
         pthread_mutex_unlock(&d->mu);
     }
 }
+
+/* --- the helper's side (see g_relay_dl) --- */
+
+static void relay_reply(int fd, const char *status, const char *json) {
+    char h[256];
+    int hl = snprintf(h, sizeof(h), "HTTP/1.1 %s\r\nContent-Type: application/json\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
+                      status, strlen(json));
+    if (write(fd, h, (size_t)hl) == hl && write(fd, json, strlen(json))) {
+    }
+}
+
+/* The query's value of key (a number), or -1. */
+static long long query_num(const char *path, const char *key) {
+    char k[16];
+    snprintf(k, sizeof(k), "%s=", key);
+    const char *p = strstr(path, k);
+    return p ? strtoll(p + strlen(k), NULL, 10) : -1;
+}
+
+/* The file being downloaded, held for a request of the helper (NULL: none now). */
+static dl_t *relay_hold(void) {
+    pthread_mutex_lock(&g_relay_mu);
+    dl_t *d = g_relay_dl;
+    if (d)
+        g_relay_users++;
+    __atomic_store_n(&g_relay_seen, time(NULL), __ATOMIC_RELAXED);
+    pthread_mutex_unlock(&g_relay_mu);
+    return d;
+}
+
+static void relay_release(void) {
+    pthread_mutex_lock(&g_relay_mu);
+    g_relay_users--;
+    pthread_mutex_unlock(&g_relay_mu);
+}
+
+/* POST /claim: a block to fetch, {"job","vol","block","from","to","url"} (to: past its
+   last byte); {"wait":ms} when none is free yet, {"idle":true} with no download running. */
+static void relay_claim(int fd) {
+    dl_t *d = relay_hold();
+    if (!d) {
+        relay_reply(fd, "200 OK", "{\"idle\":true}");
+        return;
+    }
+    buf_t out = {0};
+    pthread_mutex_lock(&d->mu);
+    relay_expire_locked(d);
+    uint64_t b;
+    if (d->stop || halted())
+        buf_printf(&out, "{\"idle\":true}");
+    else if (!take_block_locked(d, 1, &b))
+        buf_printf(&out, "{\"wait\":%d}", d->next >= d->nblocks ? 2000 : 300);
+    else {
+        int s = (int)(b % (uint64_t)d->slots);
+        d->claimed[s] = 1;
+        d->receiving[s] = 0;
+        d->cblock[s] = b;
+        d->until[s] = time(NULL) + g_links_relay_claim;
+        uint64_t from = b * g_links_block, to = from + g_links_block < d->v->size ? from + g_links_block : d->v->size;
+        buf_printf(&out, "{\"job\":%d,\"vol\":%d,\"block\":%llu,\"from\":%llu,\"to\":%llu,\"url\":", g_cur_id, d->vi,
+                   (unsigned long long)b, (unsigned long long)from, (unsigned long long)to);
+        json_esc(&out, d->v->url);
+        buf_printf(&out, "}");
+    }
+    pthread_mutex_unlock(&d->mu);
+    relay_release();
+    relay_reply(fd, "200 OK", out.data ? (const char *)out.data : "{}");
+    buf_free(&out);
+}
+
+/* POST /put?job=&vol=&block= (the block, whole) or /drop?... (it could not be fetched). pre:
+   the body's bytes that came with the headers. */
+static void relay_deliver(int fd, const char *path, int put, const uint8_t *pre, size_t npre, unsigned long long length) {
+    long long job = query_num(path, "job"), vol = query_num(path, "vol"), blk = query_num(path, "block");
+    dl_t *d = relay_hold();
+    if (!d) {
+        relay_reply(fd, "409 Conflict", "{\"ok\":false}");
+        return;
+    }
+    pthread_mutex_lock(&d->mu);
+    int s = blk >= 0 ? (int)((uint64_t)blk % (uint64_t)d->slots) : 0;
+    int mine = job == g_cur_id && vol == d->vi && blk >= 0 && d->claimed[s] && !d->receiving[s] && d->cblock[s] == (uint64_t)blk;
+    uint64_t from = (uint64_t)blk * g_links_block, to = from + g_links_block < d->v->size ? from + g_links_block : d->v->size;
+    size_t want = mine ? (size_t)(to - from) : 0;
+    if (mine && put && length == want)
+        d->receiving[s] = 1;
+    else if (mine) {
+        d->claimed[s] = 0; /* given back, or not whole: fetched again */
+        if (d->nredo < SLOTS)
+            d->redo[d->nredo++] = (uint64_t)blk;
+        pthread_cond_broadcast(&d->cv);
+        mine = 0;
+    }
+    pthread_mutex_unlock(&d->mu);
+    int ok = 0;
+    if (mine) {
+        /* straight into its slot: no copy of 8 MB more */
+        uint8_t *dst = d->buf[s];
+        size_t have = npre < want ? npre : want;
+        memcpy(dst, pre, have);
+        while (have < want && !halted()) {
+            ssize_t m = read(fd, dst + have, want - have);
+            if (m <= 0)
+                break;
+            have += (size_t)m;
+        }
+        ok = have == want;
+        pthread_mutex_lock(&d->mu);
+        d->receiving[s] = 0;
+        d->claimed[s] = 0;
+        if (ok && !d->stop) {
+            d->inflight += want;
+            d->len[s] = want;
+            d->ready[s] = 1;
+            dl_flush_locked(d);
+        } else if (d->nredo < SLOTS)
+            d->redo[d->nredo++] = (uint64_t)blk;
+        pthread_cond_broadcast(&d->cv);
+        pthread_mutex_unlock(&d->mu);
+    }
+    relay_release();
+    relay_reply(fd, ok ? "200 OK" : put ? "409 Conflict" : "200 OK", ok || !put ? "{\"ok\":true}" : "{\"ok\":false}");
+}
+
+static void *relay_conn(void *arg) {
+    int fd = (int)(intptr_t)arg;
+    struct timeval tv = {30, 0};
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    char req[4096];
+    size_t n = 0;
+    char *end = NULL;
+    while (n < sizeof(req) - 1 && !end) {
+        ssize_t m = read(fd, req + n, sizeof(req) - 1 - n);
+        if (m <= 0)
+            break;
+        n += (size_t)m;
+        req[n] = 0;
+        end = strstr(req, "\r\n\r\n");
+    }
+    if (end) {
+        char *body = end + 4;
+        const char *cl = find_ci(req, "content-length:");
+        unsigned long long length = cl ? strtoull(cl + 15, NULL, 10) : 0;
+        /* the panel's header: a page on another site cannot send it */
+        int ours = find_ci(req, "\r\nx-ps4mount:") != NULL;
+        char path[512];
+        if (!ours || sscanf(req, "POST %511s", path) != 1)
+            relay_reply(fd, "403 Forbidden", "{\"ok\":false}");
+        else if (!strcmp(path, "/claim"))
+            relay_claim(fd);
+        else if (!strncmp(path, "/put?", 5) || !strncmp(path, "/drop?", 6))
+            relay_deliver(fd, path, path[1] == 'p', (const uint8_t *)body, (size_t)(req + n - body), length);
+        else
+            relay_reply(fd, "404 Not Found", "{\"ok\":false}");
+    }
+    close(fd);
+    pthread_mutex_lock(&g_relay_mu);
+    g_relay_conns--;
+    pthread_mutex_unlock(&g_relay_mu);
+    return NULL;
+}
+
+/* For as long as PS4Mount runs: with no download, a claim is just told so. */
+static void *relay_thread(void *arg) {
+    (void)arg;
+    for (;;) {
+        int fd = accept(g_relay_fd, NULL, NULL);
+        if (fd < 0) {
+            usleep(100000);
+            continue;
+        }
+        pthread_mutex_lock(&g_relay_mu);
+        int busy = g_relay_conns >= RELAY_CONNS;
+        if (!busy)
+            g_relay_conns++;
+        pthread_mutex_unlock(&g_relay_mu);
+        pthread_t t;
+        pthread_attr_t at;
+        pthread_attr_init(&at);
+        pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
+        pthread_attr_setstacksize(&at, 64 << 10);
+        if (busy || pthread_create(&t, &at, relay_conn, (void *)(intptr_t)fd)) {
+            if (!busy) {
+                pthread_mutex_lock(&g_relay_mu);
+                g_relay_conns--;
+                pthread_mutex_unlock(&g_relay_mu);
+            }
+            relay_reply(fd, "503 Service Unavailable", "{\"wait\":1000}");
+            close(fd);
+        }
+        pthread_attr_destroy(&at);
+    }
+    return NULL;
+}
+
+/* Listens for a helper (port g_links_relay_port; 0: any, links_relay_port() tells it). */
+static void relay_start(void) {
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0)
+        return;
+    int one = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    struct sockaddr_in sa = {0};
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons((uint16_t)g_links_relay_port);
+    sa.sin_addr.s_addr = htonl(INADDR_ANY);
+    pthread_t t;
+    if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) || listen(fd, 16)) {
+        printf("[links] no helper port %d (%s)\n", g_links_relay_port, strerror(errno));
+        close(fd);
+        return;
+    }
+    g_relay_fd = fd;
+    if (pthread_create(&t, NULL, relay_thread, NULL)) {
+        close(fd);
+        g_relay_fd = -1;
+        return;
+    }
+    pthread_detach(t);
+}
+
+int links_relay_port(void) {
+    struct sockaddr_in sa;
+    socklen_t sl = sizeof(sa);
+    if (g_relay_fd < 0 || getsockname(g_relay_fd, (struct sockaddr *)&sa, &sl))
+        return 0;
+    return ntohs(sa.sin_port);
+}
+
+int links_relay_active(void) { return relay_active(); }
 
 /* A server that does not send pieces: the file in one request, again from the start when
  * it is cut. */
@@ -831,6 +1131,9 @@ static int download_file(int vi, const char *part, char *err, size_t n) {
     save_info(vi);
     d->written = d->next = keep;
     have_now(vi, dl_have_locked(d));
+    pthread_mutex_lock(&g_relay_mu);
+    g_relay_dl = d;
+    pthread_mutex_unlock(&g_relay_mu);
     pthread_t th[MAX_THREADS];
     int nth = 0, want = d->slots - 1 < g_links_threads ? d->slots - 1 : g_links_threads;
     if (want > MAX_THREADS)
@@ -854,6 +1157,15 @@ static int download_file(int vi, const char *part, char *err, size_t n) {
     }
     for (int i = 0; i < nth; i++)
         pthread_join(th[i], NULL);
+    /* no helper may use it any more: wait for the ones still in it */
+    pthread_mutex_lock(&g_relay_mu);
+    g_relay_dl = NULL;
+    while (g_relay_users) {
+        pthread_mutex_unlock(&g_relay_mu);
+        usleep(20000);
+        pthread_mutex_lock(&g_relay_mu);
+    }
+    pthread_mutex_unlock(&g_relay_mu);
     if (d->written < d->nblocks) {
         rc = -1;
         snprintf(err, n, "%s", halted() ? TR("cancelled", "cancelado") : d->err[0] ? d->err : TR("the download stopped", "la descarga se detuvo"));
@@ -1797,6 +2109,8 @@ void links_start(const char *state_dir, const links_host_t *host) {
     pthread_attr_setstacksize(&at, 1 << 20);
     if (!pthread_create(&g_thread, &at, worker, NULL)) {
         g_started = 1;
+        if (g_relay_fd < 0)
+            relay_start();
         if (resumed) {
             printf("[links] %d download(s) left by the last run: going on with them\n", resumed);
             if (g_host.notify) {
@@ -1857,7 +2171,8 @@ void links_status_json(buf_t *out) {
     }
     long retry_in = g_busy && g_retry_until > now ? (long)(g_retry_until - now) : 0;
     const char *phase = !g_busy ? "" : retry_in ? "retrying" : g_phase;
-    buf_printf(out, "],\"job\":{\"busy\":%s,\"id\":%d,\"name\":", g_busy ? "true" : "false", g_busy ? g_cur_id : 0);
+    buf_printf(out, "],\"job\":{\"busy\":%s,\"relay\":%s,\"id\":%d,\"name\":", g_busy ? "true" : "false",
+               g_busy && relay_active() ? "true" : "false", g_busy ? g_cur_id : 0);
     json_esc(out, g_busy ? g_cur_name : "");
     buf_printf(out, ",\"file\":");
     json_esc(out, g_busy ? g_cur_file : "");

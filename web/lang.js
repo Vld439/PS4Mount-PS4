@@ -214,6 +214,7 @@ var LANGS = {
     'The password of the archive:': 'La contraseña del archivo comprimido:',
     'Save to': 'Guardar en',
     'Checking the links of {0}…': 'Comprobando los enlaces de {0}…',
+    'through the browser': 'a través del navegador',
     'Downloading {0}': 'Descargando {0}',
     'Extracting {0}': 'Extrayendo {0}',
     'extracting {0}': 'extrayendo {0}',

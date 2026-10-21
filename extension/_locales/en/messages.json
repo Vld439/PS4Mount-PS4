@@ -5,6 +5,8 @@
   "connect": { "message": "Connect" },
   "destLabel": { "message": "Save to" },
   "onLabel": { "message": "Send pkg, ZIP and RAR downloads to the console" },
+  "relayLabel": { "message": "Fetch the console's downloads through this browser (faster)" },
+  "relayHint": { "message": "The console takes the files from this computer, at its speed: keep the browser open while it downloads. Closed, the console goes on by itself." },
   "basketTitle": { "message": "Parts of a RAR" },
   "basketHint": { "message": "Download every part, then press Send: they go together, as one download." },
   "passwordLabel": { "message": "Password (if the archive has one)" },

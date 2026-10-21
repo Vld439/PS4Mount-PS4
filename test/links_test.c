@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include "check.h"
+#include "https.h"
 #include "json.h"
 #include "links.h"
 #include "pkgmake.h"
@@ -443,6 +444,84 @@ static char g_pkgs[512];
 
 static int add(const char *text, char *msg, size_t n) { return links_add(text, "usb0", NULL, msg, n); }
 
+/* --- a helper like the browser extension: takes blocks, fetches them, hands them over --- */
+
+static int g_helper_stop, g_helper_vanish = -1, g_helper_drop_every; /* set before it runs, but stop */
+static int g_helper_put, g_helper_dropped;
+
+static int relay_post(const char *path, const void *body, size_t len, char *out, size_t n) {
+    char url[256], err[256];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d%s", links_relay_port(), path);
+    http_req_t q = {0};
+    q.method = "POST";
+    q.url = url;
+    q.headers = "X-PS4Mount: 1\r\n";
+    q.body = body;
+    q.body_len = len;
+    q.stall = 10;
+    http_resp_t r;
+    if (http_request(&q, &r, err, sizeof(err)))
+        return -1;
+    snprintf(out, n, "%.*s", (int)r.body.len, r.body.data ? (const char *)r.body.data : "");
+    int st = r.status;
+    http_resp_free(&r);
+    return st;
+}
+
+static void *helper(void *arg) {
+    (void)arg;
+    int taken = 0;
+    while (!__atomic_load_n(&g_helper_stop, __ATOMIC_RELAXED)) {
+        char j[4096], u[2048], q[128], range[96], err[256], ack[256];
+        if (relay_post("/claim", NULL, 0, j, sizeof(j)) != 200 || strstr(j, "\"idle\"") || strstr(j, "\"wait\"")) {
+            usleep(20000);
+            continue;
+        }
+        jv_t v = jv_of(j, strlen(j));
+        long long from = jv_get_int(v, "from", -1), to = jv_get_int(v, "to", -1);
+        jv_get_string(v, "url", u, sizeof(u));
+        snprintf(q, sizeof(q), "?job=%lld&vol=%lld&block=%lld", jv_get_int(v, "job", -1), jv_get_int(v, "vol", -1),
+                 jv_get_int(v, "block", -1));
+        if (++taken == g_helper_vanish)
+            break; /* gone with a block taken */
+        char path[160];
+        if (g_helper_drop_every && taken % g_helper_drop_every == 0) {
+            snprintf(path, sizeof(path), "/drop%s", q);
+            relay_post(path, NULL, 0, ack, sizeof(ack));
+            g_helper_dropped++;
+            continue;
+        }
+        snprintf(range, sizeof(range), "Range: bytes=%lld-%lld\r\n", from, to - 1);
+        http_req_t g = {0};
+        g.method = "GET";
+        g.url = u;
+        g.headers = range;
+        g.stall = 10;
+        http_resp_t r;
+        if (http_request(&g, &r, err, sizeof(err)))
+            continue;
+        snprintf(path, sizeof(path), "/put%s", q);
+        if (r.status == 206 && (long long)r.body.len == to - from && relay_post(path, r.body.data, r.body.len, ack, sizeof(ack)) == 200)
+            g_helper_put++;
+        http_resp_free(&r);
+    }
+    return NULL;
+}
+
+static void helper_run(pthread_t *t, int vanish, int drop_every) {
+    g_helper_stop = 0;
+    g_helper_vanish = vanish;
+    g_helper_drop_every = drop_every;
+    g_helper_put = g_helper_dropped = 0;
+    pthread_create(t, NULL, helper, NULL);
+}
+
+static void helper_end(pthread_t t) {
+    __atomic_store_n(&g_helper_stop, 1, __ATOMIC_RELAXED);
+    pthread_join(t, NULL);
+}
+
+
 static void url(char *out, size_t n, const char *kind, const char *name) {
     snprintf(out, n, "http://127.0.0.1:%d/%s/%s", g_port, kind, name);
 }
@@ -537,6 +616,9 @@ int main(int argc, char **argv) {
     g_links_block = 8192;
     g_links_threads = 4;
     g_links_retry_seconds = 0;
+    g_links_relay_port = 0;
+    g_links_relay_claim = 1;
+    g_links_relay_gone = 1;
     reset_scan();
     links_start(g_state, &k_host);
 
@@ -577,6 +659,64 @@ int main(int argc, char **argv) {
     CHECK(strstr(g_last_note, "was downloaded") != NULL);
     snprintf(p, sizeof(p), "%s/links_queue.txt", g_state);
     CHECK(!exists(p));
+
+
+    printf("== a helper on the network fetches the blocks (the browser extension)\n");
+    {
+        pthread_t ht;
+        CHECK(links_relay_port() > 0);
+        /* it brings them all, the console's own connections wait */
+        reset_scan();
+        helper_run(&ht, -1, 0);
+        text[0] = 0;
+        for (int k = 1; k <= g_nvol; k++) {
+            char nm[64];
+            snprintf(nm, sizeof(nm), "game.part%03d.rar", k);
+            url(u, sizeof(u), "f", nm);
+            snprintf(text + strlen(text), sizeof(text) - strlen(text), "%s\n", u);
+        }
+        usleep(100000); /* heard from before the download starts */
+        CHECK(!add(text, msg, sizeof(msg)));
+        CHECK(!wait_idle(60));
+        helper_end(ht);
+        result(res, sizeof(res));
+        CHECK(strstr(res, "game was downloaded: 2 pkg(s)") != NULL);
+        CHECK(has_game("game", 1));
+        printf("  the helper brought %d blocks\n", g_helper_put);
+        CHECK(g_helper_put >= 10);
+        CHECK(work_gone());
+        /* it gives some back: the console fetches those */
+        reset_scan();
+        helper_run(&ht, -1, 2);
+        usleep(100000);
+        CHECK(!add(text, msg, sizeof(msg)));
+        CHECK(!wait_idle(60));
+        helper_end(ht);
+        result(res, sizeof(res));
+        CHECK(strstr(res, "game was downloaded: 2 pkg(s)") != NULL && g_helper_dropped > 0 && g_helper_put > 0);
+        CHECK(has_game("game", 1));
+        CHECK(work_gone());
+        /* it goes away holding a block: the console takes it again and goes on alone */
+        reset_scan();
+        helper_run(&ht, 4, 0);
+        usleep(100000);
+        CHECK(!add(text, msg, sizeof(msg)));
+        CHECK(!wait_idle(60));
+        helper_end(ht);
+        result(res, sizeof(res));
+        CHECK(strstr(res, "game was downloaded: 2 pkg(s)") != NULL);
+        CHECK(has_game("game", 1));
+        CHECK(work_gone());
+        /* a request without the panel's header is refused */
+        char url2[128], err[200];
+        snprintf(url2, sizeof(url2), "http://127.0.0.1:%d/claim", links_relay_port());
+        http_req_t q = {0};
+        q.method = "POST";
+        q.url = url2;
+        http_resp_t r;
+        CHECK(!http_request(&q, &r, err, sizeof(err)) && r.status == 403);
+        http_resp_free(&r);
+    }
 
     printf("== the same volumes named old.rar, old.r00...\n");
     reset_scan();

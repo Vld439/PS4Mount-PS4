@@ -5,6 +5,8 @@
   "connect": { "message": "Conectar" },
   "destLabel": { "message": "Guardar en" },
   "onLabel": { "message": "Enviar a la consola las descargas de pkg, ZIP y RAR" },
+  "relayLabel": { "message": "Bajar las descargas de la consola a través de este navegador (más rápido)" },
+  "relayHint": { "message": "La consola recibe los archivos desde este ordenador, a su velocidad: deja el navegador abierto mientras descarga. Si lo cierras, la consola sigue sola." },
   "basketTitle": { "message": "Partes de un RAR" },
   "basketHint": { "message": "Descarga todas las partes y pulsa Enviar: van juntas, como una sola descarga." },
   "passwordLabel": { "message": "Contraseña (si el archivo la tiene)" },

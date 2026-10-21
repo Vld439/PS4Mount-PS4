@@ -7,10 +7,11 @@ var PORT = 8770;
 
 function msg(key, sub) { return api.i18n.getMessage(key, sub) || key; }
 
-/* host: the console's address; dest: where it saves (usb0.., internal); on: sending at all.
+/* host: the console's address; dest: where it saves (usb0.., internal); on: sending at all;
+   relay: this browser fetches the blocks of the console's downloads (relay.js).
    basket: RAR parts waiting for the rest, [{line, name, base}]. */
 function settings() {
-  return api.storage.local.get({ host: '', dest: '', on: true, basket: [] });
+  return api.storage.local.get({ host: '', dest: '', on: true, relay: false, basket: [] });
 }
 function save(obj) { return api.storage.local.set(obj); }
 

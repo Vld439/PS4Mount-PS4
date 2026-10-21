@@ -47,6 +47,7 @@ function renderBasket(basket) {
 settings().then(function (s) {
   $('host').value = s.host;
   $('on').checked = s.on;
+  $('relay').checked = s.relay;
   renderBasket(s.basket);
   if (s.host) connect(s.host, s.dest);
 });
@@ -62,6 +63,14 @@ $('test').onclick = function () {
 };
 $('dest').onchange = function () { save({ dest: $('dest').value }); };
 $('on').onchange = function () { save({ on: $('on').checked }); };
+$('relay').onchange = function () {
+  if (!$('relay').checked) { save({ relay: false }); return; }
+  /* fetching the files means reaching any site: asked from this click */
+  api.permissions.request({ origins: ['https://*/*', 'http://*/*'] }).then(function (ok) {
+    $('relay').checked = ok;
+    save({ relay: ok }).then(function () { if (ok) api.runtime.sendMessage('relay'); });
+  });
+};
 $('clear').onclick = function () { save({ basket: [] }).then(function () { renderBasket([]); }); };
 $('send').onclick = function () {
   settings().then(function (s) {
@@ -70,6 +79,7 @@ $('send').onclick = function () {
     sendLinks(s.host, s.dest, s.basket.map(function (b) { return b.line; }), $('pw').value).then(function (j) {
       status('bstatus', j.message || '', j.ok ? 'good' : 'bad');
       if (j.ok) {
+        api.runtime.sendMessage('relay');
         $('pw').value = '';
         save({ basket: [] }).then(function () { setTimeout(function () { renderBasket([]); }, 1500); });
       }
