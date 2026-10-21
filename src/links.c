@@ -1095,15 +1095,17 @@ static int extract_pkg(struct archive *a, struct archive_entry *e, const char *o
 }
 
 /* The passwords to try on an archive of job j: the one given, the site in brackets at the
-   start of its name ([SITE.COM]-game: many put it as the password), and the ones that
-   opened other downloads (g_pw_path, one a line). */
+   start of its name ([SITE.COM]-game: many put it as the password, as "[SITE.COM]",
+   "SITE.COM" or "site.com"), and the ones that opened other downloads (g_pw_path, one a
+   line). */
 static int passwords(const ljob_t *j, char out[][RAR5_PASSWORD_MAX + 1], int max) {
     int n = 0;
     if (j->password[0] && n < max)
         snprintf(out[n++], RAR5_PASSWORD_MAX + 1, "%s", j->password);
     const char *close = j->name[0] == '[' ? strchr(j->name, ']') : NULL;
-    if (close && close - j->name > 1 && close - j->name <= RAR5_PASSWORD_MAX && n + 2 <= max) {
+    if (close && close - j->name > 1 && close - j->name < RAR5_PASSWORD_MAX && n + 3 <= max) {
         int l = (int)(close - j->name - 1);
+        snprintf(out[n++], RAR5_PASSWORD_MAX + 1, "%.*s", l + 2, j->name);
         for (int k = 0; k < 2; k++, n++) {
             snprintf(out[n], RAR5_PASSWORD_MAX + 1, "%.*s", l, j->name + 1);
             for (char *c = out[n]; k && *c; c++)
