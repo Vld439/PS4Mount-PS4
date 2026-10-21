@@ -16,6 +16,8 @@ PS4Mount's use of information received from Google APIs adheres to the [Google A
 
 **Downloads from links (optional).** The links you paste in the panel are stored on your console only (`/data/ps4mount/links_queue.txt`, until the download ends or you remove it), as are the passwords of archives you write and the ones that opened one (`/data/ps4mount/passwords.txt`, until you delete it), and your console connects directly to the websites in them. Those websites see your console's address, as with any download; PS4Mount sends them nothing else (no cookies, no account).
 
+**The browser extension (optional).** It keeps on your computer only the console's address, where to save, its switches and the basket of RAR parts. When it takes a download, it sends the file's address (and the password you write) to your console's panel, on your own network, and nothing anywhere else. With the experimental option on, your browser also fetches parts of the files from those websites, with your browser's cookies for them, and hands them to your console over your network.
+
 **The web panel** runs on your console (port 8770) and is reachable from your local network only. It has no password: stop PS4Mount when you are done if others share your network.
 
 Questions: open an issue at https://github.com/Vld439/PS4Mount-PS4/issues.
@@ -35,6 +37,8 @@ PS4Mount PS4 es un payload que se ejecuta en tu propia PlayStation 4. No tiene s
 El uso que PS4Mount hace de la información recibida de las APIs de Google cumple la [Política de Datos de Usuario de los Servicios de API de Google](https://developers.google.com/terms/api-services-user-data-policy), incluidos los requisitos de Uso Limitado.
 
 **Descargas desde enlaces (opcional).** Los enlaces que pegas en el panel se guardan solo en tu consola (`/data/ps4mount/links_queue.txt`, hasta que termina la descarga o la quitas), igual que las contraseñas de archivos comprimidos que escribes y las que abrieron alguno (`/data/ps4mount/passwords.txt`, hasta que lo borres), y tu consola se conecta directamente a las webs de esos enlaces. Esas webs ven la dirección de tu consola, como en cualquier descarga; PS4Mount no les envía nada más (ni cookies, ni cuenta).
+
+**La extensión del navegador (opcional).** Guarda solo en tu ordenador la dirección de la consola, dónde guardar, sus interruptores y la cesta de partes de RAR. Cuando toma una descarga, envía la dirección del archivo (y la contraseña que escribas) al panel de tu consola, por tu propia red, y nada a ningún otro sitio. Con la opción experimental activada, tu navegador además baja partes de los archivos de esas webs, con las cookies que tu navegador tenga de ellas, y se las pasa a tu consola por tu red.
 
 **El panel web** se ejecuta en tu consola (puerto 8770) y solo es accesible desde tu red local. No tiene contraseña: detén PS4Mount al terminar si compartes la red con otras personas.
 

@@ -2,9 +2,9 @@
 
 PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount) by gasb07 (PS5); its versions start again at 0.1.0. The history of the original is in its project and in this repository's git history.
 
-## 0.3.0-beta (unreleased)
+## 0.4.15-beta
 
-Downloads from links. Tested on a PS4 on firmware 13.52 with GoldHEN: a pkg and a RAR in 5 parts from a computer on the network, a pkg over HTTPS from a file host, a RAR whose host puts a code before each part's name; RARs with a password on a computer.
+Downloads from links, and a browser extension that sends downloads to the console. Tested on a PS4 on firmware 13.52 with GoldHEN: a pkg and a RAR in 5 parts from a computer on the network, pkgs over HTTPS from file hosts, a 24.6 GB game in a RAR5 with its file list encrypted, in 3 parts with a code before each name, its password tried by itself (the game plays), a ZIP with AES; the extension in Brave. (The version number jumps from 0.2.0: no 0.3.)
 
 **Español**
 
@@ -15,6 +15,8 @@ Downloads from links. Tested on a PS4 on firmware 13.52 with GoldHEN: a pkg and 
 - **RAR5 con contraseña**, también con la lista de archivos cifrada (`rar -hp`) y en partes: se escribe al añadir la descarga, o al pulsar Reintentar si falta. Se prueban solas las que ya abrieron otra descarga (`/data/ps4mount/passwords.txt`) y el sitio entre corchetes al principio del nombre (`[SITIO]-juego`); una equivocada se nota al instante, sin bajar el resto. También ZIP con contraseña, clásica o AES.
 - Junta las partes de un RAR aunque el sitio ponga un código distinto delante de cada nombre (`abc-juego.part1.rar`, `xyz-juego.part2.rar`).
 - No abre RAR4 con contraseña, 7z, ni enlaces que piden iniciar sesión.
+- **Extensión del navegador** (Chrome, Brave, Edge, Firefox; se carga a mano desde `ps4mount-extension.zip`): las descargas de pkg, ZIP y RAR van a la consola en vez de al ordenador; las partes de un RAR esperan en una cesta hasta pulsar Enviar, con la contraseña si hace falta.
+- Experimental, en la extensión: el navegador baja también parte de los bloques y se los pasa a la consola por la red local (puerto 8771); si se cierra, la consola sigue sola.
 
 **English**
 
@@ -25,6 +27,8 @@ Downloads from links. Tested on a PS4 on firmware 13.52 with GoldHEN: a pkg and 
 - **RAR5 with a password**, also with its file list encrypted (`rar -hp`) and in parts: written when adding the download, or when pressing Try again if it is missing. The ones that opened another download (`/data/ps4mount/passwords.txt`) and the site in brackets at the start of the name (`[SITE]-game`) are tried by themselves; a wrong one shows at once, without downloading the rest. ZIPs with a password too, classic or AES.
 - The parts of a RAR join up even when the host puts a different code before each name (`abc-game.part1.rar`, `xyz-game.part2.rar`).
 - It does not open older RARs (4) with a password, 7z, nor links that need a sign-in.
+- **Browser extension** (Chrome, Brave, Edge, Firefox; loaded by hand from `ps4mount-extension.zip`): pkg, ZIP and RAR downloads go to the console instead of the computer; the parts of a RAR wait in a basket until Send, with the password if needed.
+- Experimental, in the extension: the browser fetches part of the blocks too and hands them to the console over your network (port 8771); closed, the console goes on by itself.
 
 ## 0.2.0-beta
 

@@ -41,7 +41,8 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 | **Enviar juegos desde el PC** por la red, con comprobación previa | ✅ probado (unos 16 MB/s por cable) |
 | **Borrar** un juego desde la consola | ✅ probado: borra también sus pkgs y libera el espacio |
 | **Copias en Google Drive**: subir y volver a bajar juegos desde la consola | ✅ probado: la subida va a la velocidad de tu conexión, la bajada a unos 15 MB/s (el máximo de la PS4) |
-| **Descargar desde enlaces**: un pkg, un ZIP o un RAR (también en partes), descargado y descomprimido por la propia consola | ⚠️ nuevo: probado en el ordenador, todavía no en una consola |
+| **Descargar desde enlaces**: un pkg, un ZIP o un RAR (también en partes y con contraseña), descargado y descomprimido por la propia consola | ✅ probado en la consola (un juego de 24,6 GB en un RAR con contraseña en 3 partes) |
+| **Extensión del navegador**: las descargas de pkg, ZIP y RAR van a la consola | ✅ probado en Brave; Firefox sin probar |
 | Un juego **nuevo**, o una actualización que llega después del juego | ⚠️ necesita **reiniciar la consola una vez**; después se juega siempre |
 | Otros firmwares | ⚠️ sin probar todavía |
 | Pkgs **retail** (no fake) | ❌ |
@@ -134,6 +135,17 @@ En el panel, **Descargar enlaces**: pega los enlaces, uno por línea, elige dón
 - Un RAR (5) con **contraseña**, también en partes y con la lista de archivos cifrada: escríbela en **Contraseña** al añadirlo, o pulsa **Reintentar** y escríbela si la descarga se paró por eso. No hace falta si ya abrió otra descarga (se guardan en `/data/ps4mount/passwords.txt`) ni si es el sitio entre corchetes al principio del nombre (`[SITIO.COM]-juego.part1.rar`: se prueba `[SITIO.COM]`, `SITIO.COM` y `sitio.com`): esas se prueban solas. Una contraseña equivocada se nota con el primer bloque, sin bajar el resto.
 - Un ZIP con contraseña también se abre, clásica o AES, igual que un RAR.
 - No se puede: un RAR antiguo (RAR4) con contraseña, un **7z**, o un enlace que pide iniciar sesión.
+
+### Extensión del navegador
+
+Opcional, para el ordenador: con ella no hace falta buscar el enlace directo. Pulsas **Descargar** en cualquier web, como siempre, y la descarga va a la consola en vez de al ordenador.
+
+- **Cargarla** (todavía no está en las tiendas): descarga `ps4mount-extension.zip` de [Releases](https://github.com/Vld439/PS4Mount-PS4/releases) y descomprímelo. En Chrome, Brave o Edge: `chrome://extensions` → activa **Modo desarrollador** → **Cargar descomprimida** → elige la carpeta. En Firefox: `about:debugging#/runtime/this-firefox` → **Cargar complemento temporal** → el archivo `manifest.json` (se quita al cerrar Firefox).
+- Pulsa su icono, escribe la dirección de la consola, pulsa **Conectar** (el navegador pide permiso para llegar a ella) y elige dónde guardar.
+- Un **pkg**, un **ZIP** o un **RAR** suelto va a la consola al momento. Las **partes de un RAR** esperan en la **cesta** del icono: descárgalas todas y pulsa **Enviar**, con la contraseña si la tiene. Lo demás (un .exe, un .pdf…) se descarga en el ordenador como siempre.
+- Manda la dirección final del archivo (tras las redirecciones) y cancela la descarga en el ordenador, así que también sirve con los enlaces de un solo uso.
+- **Experimental:** bajar también a través del navegador. La consola sigue bajando por su cuenta y el navegador le pasa además parte de los bloques, con sus cookies, por la red local (puerto 8771). Solo ayuda con sitios que no limitan cada conexión, y mientras el navegador siga abierto; si lo cierras, la consola sigue sola.
+- No hay extensiones en Chrome para Android ni en iPhone: desde el móvil, usa **Descargar enlaces** del panel.
 
 ### Copias en Google Drive
 
@@ -353,7 +365,8 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 | **Sending games from a computer** over the network, checked first | ✅ tested (about 16 MB/s over a cable) |
 | **Deleting** a game on the console | ✅ tested: its pkgs are deleted too and the space is freed |
 | **Google Drive backups**: uploading games and downloading them back from the console | ✅ tested: uploads go at your line's speed, downloads at about 15 MB/s (the PS4's most) |
-| **Downloading from links**: a pkg, a ZIP or a RAR (also in parts), downloaded and extracted by the console itself | ⚠️ new: tested on a computer, not on a console yet |
+| **Downloading from links**: a pkg, a ZIP or a RAR (also in parts and with a password), downloaded and extracted by the console itself | ✅ tested on the console (a 24.6 GB game in a RAR with a password, in 3 parts) |
+| **Browser extension**: pkg, ZIP and RAR downloads go to the console | ✅ tested in Brave; Firefox not tested |
 | A **new** game, or an update that arrives after its game | ⚠️ needs **one console restart**; it plays every time after that |
 | Other firmwares | ⚠️ not tested yet |
 | **Retail** (not fake) pkgs | ❌ |
@@ -446,6 +459,17 @@ In the panel, **Download links**: paste the links, one per line, pick where to s
 - A RAR (5) with a **password**, also in parts and with its file list encrypted: write it in **Password** when adding it, or press **Try again** and write it when the download stopped for it. Not needed when it opened another download (they are kept in `/data/ps4mount/passwords.txt`) or when it is the site in brackets at the start of the name (`[SITE.COM]-game.part1.rar`: `[SITE.COM]`, `SITE.COM` and `site.com` are tried): those are tried by themselves. A wrong password shows from the first block, without downloading the rest.
 - A ZIP with a password opens too, classic or AES, the same way as a RAR.
 - Not possible: an older RAR (RAR4) with a password, a **7z**, or a link that needs a sign-in.
+
+### Browser extension
+
+Optional, for the computer: with it there is no need to look for the direct link. Press **Download** on any site, as always, and the download goes to the console instead of the computer.
+
+- **Loading it** (it is not in the stores yet): download `ps4mount-extension.zip` from [Releases](https://github.com/Vld439/PS4Mount-PS4/releases) and unzip it. In Chrome, Brave or Edge: `chrome://extensions` → turn on **Developer mode** → **Load unpacked** → pick the folder. In Firefox: `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** → the `manifest.json` file (it goes away when Firefox closes).
+- Press its icon, write the console's address, press **Connect** (the browser asks for leave to reach it) and pick where to save.
+- A **pkg**, a **ZIP** or a **RAR** of its own goes to the console at once. The **parts of a RAR** wait in the icon's **basket**: download them all and press **Send**, with the password if it has one. Anything else (an .exe, a .pdf…) downloads to the computer as always.
+- It sends the file's final address (after redirects) and cancels the download on the computer, so links that work only once do too.
+- **Experimental:** fetching through the browser too. The console keeps downloading by itself and the browser hands it part of the blocks as well, with its cookies, over your network (port 8771). It helps only with sites that do not slow each connection down, and while the browser stays open; closed, the console goes on by itself.
+- Chrome on Android and the iPhone have no extensions: from a phone, use the panel's **Download links**.
 
 ### Google Drive backups
 

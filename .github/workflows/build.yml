@@ -101,11 +101,14 @@ jobs:
           } > notes.md
           cat notes.md
 
+      - name: The browser extension, as a zip to load by hand
+        run: cd extension && zip -qr ../ps4mount-extension.zip . && cd .. && sha256sum ps4mount-extension.zip >> ps4mount-ps4.sha256
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" ps4mount-ps4.elf ps4mount-ps4.bin ps4mount-ps4.sha256 \
+          gh release create "${GITHUB_REF_NAME}" ps4mount-ps4.elf ps4mount-ps4.bin ps4mount-ps4.sha256 ps4mount-extension.zip \
             --repo "${GITHUB_REPOSITORY}" \
             --title "PS4Mount-PS4 ${GITHUB_REF_NAME#v}" \
             --notes-file notes.md \

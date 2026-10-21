@@ -3,7 +3,7 @@
   "private": true,
   "description": "Web panel tests: both pages in jsdom with a mock API, and syntax checks for the browsers of older firmwares",
   "scripts": {
-    "test": "node panel.test.js"
+    "test": "node panel.test.js && node extension.test.js"
   },
   "devDependencies": {
     "acorn": "8.14.0",
