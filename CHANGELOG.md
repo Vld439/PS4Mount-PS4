@@ -12,9 +12,9 @@ Downloads from links. Tested on a PS4 on firmware 13.52 with GoldHEN: a pkg and 
 - Un RAR o ZIP se descomprime mientras baja y solo se sacan sus pkgs; con poco espacio, cada parte se borra al descomprimirse.
 - Cada pkg se comprueba con sus primeros 4 MB, como al enviar desde el PC: uno que no sirve para la descarga ahí.
 - Sigue sola tras un corte de red o al volver a cargar PS4Mount; la consola no entra en reposo mientras descarga. Sigue las redirecciones, pide de nuevo un enlace que caduca y baja el número de conexiones si el servidor lo pide.
-- **RAR5 con contraseña**, también con la lista de archivos cifrada (`rar -hp`) y en partes: se escribe al añadir la descarga, o al pulsar Reintentar si falta. Se prueban solas las que ya abrieron otra descarga (`/data/ps4mount/passwords.txt`) y el sitio entre corchetes al principio del nombre (`[SITIO]-juego`); una equivocada se nota al instante, sin bajar el resto. También ZIP con contraseña clásica.
+- **RAR5 con contraseña**, también con la lista de archivos cifrada (`rar -hp`) y en partes: se escribe al añadir la descarga, o al pulsar Reintentar si falta. Se prueban solas las que ya abrieron otra descarga (`/data/ps4mount/passwords.txt`) y el sitio entre corchetes al principio del nombre (`[SITIO]-juego`); una equivocada se nota al instante, sin bajar el resto. También ZIP con contraseña, clásica o AES.
 - Junta las partes de un RAR aunque el sitio ponga un código distinto delante de cada nombre (`abc-juego.part1.rar`, `xyz-juego.part2.rar`).
-- No abre RAR4 ni ZIP AES con contraseña, 7z, ni enlaces que piden iniciar sesión.
+- No abre RAR4 con contraseña, 7z, ni enlaces que piden iniciar sesión.
 
 **English**
 
@@ -22,9 +22,9 @@ Downloads from links. Tested on a PS4 on firmware 13.52 with GoldHEN: a pkg and 
 - A RAR or ZIP is extracted while it downloads and only its pkgs come out; with little space, each part is deleted once extracted.
 - Every pkg is checked from its first 4 MB, as when sending from a computer: one that will not do stops the download there.
 - It goes on by itself after a lost connection or when PS4Mount loads again; the console stays out of rest mode while it downloads. It follows redirects, asks again for a link that expires and uses fewer connections when the server asks for it.
-- **RAR5 with a password**, also with its file list encrypted (`rar -hp`) and in parts: written when adding the download, or when pressing Try again if it is missing. The ones that opened another download (`/data/ps4mount/passwords.txt`) and the site in brackets at the start of the name (`[SITE]-game`) are tried by themselves; a wrong one shows at once, without downloading the rest. ZIPs with a classic password too.
+- **RAR5 with a password**, also with its file list encrypted (`rar -hp`) and in parts: written when adding the download, or when pressing Try again if it is missing. The ones that opened another download (`/data/ps4mount/passwords.txt`) and the site in brackets at the start of the name (`[SITE]-game`) are tried by themselves; a wrong one shows at once, without downloading the rest. ZIPs with a password too, classic or AES.
 - The parts of a RAR join up even when the host puts a different code before each name (`abc-game.part1.rar`, `xyz-game.part2.rar`).
-- It does not open older RARs (4) or AES ZIPs with a password, 7z, nor links that need a sign-in.
+- It does not open older RARs (4) with a password, 7z, nor links that need a sign-in.
 
 ## 0.2.0-beta
 

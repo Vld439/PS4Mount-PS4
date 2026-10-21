@@ -217,6 +217,41 @@ __hmac_sha1_cleanup(archive_hmac_sha1_ctx *ctx)
 	memset(ctx, 0, sizeof(*ctx));
 }
 
+#elif defined(ARCHIVE_CRYPTO_BEARSSL)
+
+/* PS4Mount: HMAC-SHA1 with BearSSL. */
+static int
+__hmac_sha1_init(archive_hmac_sha1_ctx *ctx, const uint8_t *key, size_t key_len)
+{
+	br_hmac_key_init(&ctx->kc, &br_sha1_vtable, key, key_len);
+	br_hmac_init(&ctx->hc, &ctx->kc, 0);
+	return 0;
+}
+
+static void
+__hmac_sha1_update(archive_hmac_sha1_ctx *ctx, const uint8_t *data,
+    size_t data_len)
+{
+	br_hmac_update(&ctx->hc, data, data_len);
+}
+
+static void
+__hmac_sha1_final(archive_hmac_sha1_ctx *ctx, uint8_t *out, size_t *out_len)
+{
+	uint8_t mac[20];
+	size_t n = *out_len < sizeof(mac) ? *out_len : sizeof(mac);
+
+	br_hmac_out(&ctx->hc, mac);
+	memcpy(out, mac, n);
+	*out_len = n;
+}
+
+static void
+__hmac_sha1_cleanup(archive_hmac_sha1_ctx *ctx)
+{
+	memset(ctx, 0, sizeof(*ctx));
+}
+
 #elif defined(HAVE_LIBCRYPTO)
 
 static int

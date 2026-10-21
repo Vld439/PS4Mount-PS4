@@ -902,7 +902,7 @@ int main(int argc, char **argv) {
     CHECK(strstr(res, "was downloaded: 1 pkg(s)") != NULL);
     unlink(p);
     CHECK(work_gone());
-    /* a ZIP with the classic password opens; one with AES is said to be of a kind it cannot */
+    /* ZIPs with a password: the classic one, and AES (BearSSL under libarchive) */
     reset_scan();
     url(u, sizeof(u), "f", "zipcrypto.zip");
     CHECK(!links_add(u, "usb0", "ps4mount", msg, sizeof(msg)));
@@ -912,15 +912,21 @@ int main(int argc, char **argv) {
     CHECK(work_gone());
     reset_scan();
     url(u, sizeof(u), "f", "zipaes.zip");
-    CHECK(!links_add(u, "usb0", "ps4mount", msg, sizeof(msg)));
+    CHECK(!add(u, msg, sizeof(msg)));
     CHECK(!wait_idle(60));
     job_field(0, "error", err, sizeof(err));
-    printf("  zipaes: %s\n", err);
-    CHECK(strstr(err, "cannot open") != NULL);
+    printf("  zipaes without its password: %s\n", err);
+    CHECK(strstr(err, "has a password") != NULL && strstr(g_status, "\"locked\":true") != NULL);
     jv_get(jv_of(g_status, strlen(g_status)), "jobs", &jobs);
     jv_index(jobs, 0, &j0);
-    CHECK(!links_cancel((int)jv_get_int(j0, "id", 0), msg, sizeof(msg)));
-    status();
+    CHECK(!links_retry((int)jv_get_int(j0, "id", 0), "ps4mount", msg, sizeof(msg)));
+    CHECK(!wait_idle(60));
+    result(res, sizeof(res));
+    CHECK(strstr(res, "zipaes was downloaded: 1 pkg(s)") != NULL);
+    snprintf(p, sizeof(p), "%s/zipaes/update.pkg", g_scan);
+    CHECK(exists(p));
+    snprintf(p, sizeof(p), "%s/passwords.txt", g_state);
+    unlink(p);
     CHECK(work_gone());
     /* a service header whose password check is stray bytes (seen in the wild): not a check */
     reset_scan();

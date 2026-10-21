@@ -50,7 +50,7 @@ LA="build/libarchive-$( (echo "$LA_FLAGS"; cat src/la_alloc.h third_party/libarc
 if [ ! -f "$LA/libarchive.a" ]; then
     mkdir -p "$LA"
     for f in third_party/libarchive/*.c third_party/zlib/*.c; do
-        echo "$B/orbis-clang $LA_FLAGS -Ithird_party/libarchive -Ithird_party/zlib -c $f -o $LA/$(basename "$f" .c).o"
+        echo "$B/orbis-clang $LA_FLAGS -Ithird_party/libarchive -Ithird_party/zlib -Ithird_party/bearssl/inc -c $f -o $LA/$(basename "$f" .c).o"
     done | xargs -P "$(nproc)" -I{} sh -c '{}'
     $B/orbis-ar rcs "$LA/libarchive.a" "$LA"/*.o
 fi

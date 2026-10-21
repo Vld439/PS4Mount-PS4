@@ -63,6 +63,15 @@ typedef mbedtls_md_context_t archive_hmac_sha1_ctx;
 
 typedef	struct hmac_sha1_ctx archive_hmac_sha1_ctx;
 
+#elif defined(ARCHIVE_CRYPTO_BEARSSL)
+/* PS4Mount: BearSSL (third_party/bearssl), for ZIPs with AES. */
+#include "bearssl.h"
+
+typedef struct {
+	br_hmac_key_context kc;
+	br_hmac_context hc;
+} archive_hmac_sha1_ctx;
+
 #elif defined(HAVE_LIBCRYPTO)
 #include <openssl/opensslv.h>
 #include <openssl/hmac.h>

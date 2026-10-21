@@ -45,7 +45,7 @@ LA="$B/libarchive-$( (echo "$CC $FLAGS"; cat src/la_alloc.h third_party/libarchi
 if [ ! -f "$LA/libarchive.a" ]; then
     mkdir -p "$LA"
     for f in third_party/libarchive/*.c third_party/zlib/*.c; do
-        echo "$CC $FLAGS -w -include src/la_alloc.h -DHAVE_CONFIG_H -Ithird_party/libarchive -Ithird_party/zlib -c $f -o $LA/$(basename "$f" .c).o"
+        echo "$CC $FLAGS -w -include src/la_alloc.h -DHAVE_CONFIG_H -Ithird_party/libarchive -Ithird_party/zlib -Ithird_party/bearssl/inc -c $f -o $LA/$(basename "$f" .c).o"
     done | xargs -P "$(nproc)" -I{} sh -c '{}'
     ar rcs "$LA/libarchive.a" "$LA"/*.o
 fi

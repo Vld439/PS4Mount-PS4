@@ -120,6 +120,21 @@ typedef struct {
 	unsigned	encr_pos;
 } archive_crypto_ctx;
 
+#elif defined(ARCHIVE_CRYPTO_BEARSSL)
+/* PS4Mount: BearSSL (third_party/bearssl), for ZIPs with AES. */
+#include "bearssl.h"
+#define	ARCHIVE_CRYPTOR_USE_BEARSSL 1
+#define AES_BLOCK_SIZE	16
+#define AES_MAX_KEY_SIZE 32
+
+typedef struct {
+	br_aes_gen_cbcenc_keys	keys;
+	const br_block_cbcenc_class *vt;
+	uint8_t		nonce[AES_BLOCK_SIZE];
+	uint8_t		encr_buf[AES_BLOCK_SIZE];
+	unsigned	encr_pos;
+} archive_crypto_ctx;
+
 #elif defined(HAVE_LIBCRYPTO)
 #include "archive_openssl_evp_private.h"
 #define	ARCHIVE_CRYPTOR_USE_OPENSSL 1

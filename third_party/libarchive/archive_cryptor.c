@@ -112,6 +112,47 @@ pbkdf2_sha1(const char *pw, size_t pw_len, const uint8_t *salt,
 	return 0;
 }
 
+#elif defined(ARCHIVE_CRYPTOR_USE_BEARSSL)
+
+/* PS4Mount: PBKDF2-HMAC-SHA1 with BearSSL's HMAC. */
+static int
+pbkdf2_sha1(const char *pw, size_t pw_len, const uint8_t *salt,
+    size_t salt_len, unsigned rounds, uint8_t *derived_key,
+    size_t derived_key_len) {
+	br_hmac_key_context kc;
+	br_hmac_context hc;
+	uint32_t blk;
+
+	br_hmac_key_init(&kc, &br_sha1_vtable, pw, pw_len);
+	for (blk = 1; derived_key_len > 0; blk++) {
+		uint8_t u[20], t[20], c[4];
+		unsigned r;
+		size_t i, n;
+
+		c[0] = (uint8_t)(blk >> 24);
+		c[1] = (uint8_t)(blk >> 16);
+		c[2] = (uint8_t)(blk >> 8);
+		c[3] = (uint8_t)blk;
+		br_hmac_init(&hc, &kc, 0);
+		br_hmac_update(&hc, salt, salt_len);
+		br_hmac_update(&hc, c, 4);
+		br_hmac_out(&hc, u);
+		memcpy(t, u, sizeof(t));
+		for (r = 1; r < rounds; r++) {
+			br_hmac_init(&hc, &kc, 0);
+			br_hmac_update(&hc, u, sizeof(u));
+			br_hmac_out(&hc, u);
+			for (i = 0; i < sizeof(t); i++)
+				t[i] ^= u[i];
+		}
+		n = derived_key_len < sizeof(t) ? derived_key_len : sizeof(t);
+		memcpy(derived_key, t, n);
+		derived_key += n;
+		derived_key_len -= n;
+	}
+	return 0;
+}
+
 #elif defined(HAVE_LIBCRYPTO) && defined(HAVE_PKCS5_PBKDF2_HMAC_SHA1)
 
 static int
@@ -359,6 +400,42 @@ aes_ctr_encrypt_counter(archive_crypto_ctx *ctx)
 		break;
 	}
 #endif
+	return 0;
+}
+
+static int
+aes_ctr_release(archive_crypto_ctx *ctx)
+{
+	memset(ctx, 0, sizeof(*ctx));
+	return 0;
+}
+
+#elif defined(ARCHIVE_CRYPTOR_USE_BEARSSL)
+
+/* PS4Mount: a counter block is encrypted alone, as CBC with a zero IV (AES-NI when the
+ * CPU has it). */
+static int
+aes_ctr_init(archive_crypto_ctx *ctx, const uint8_t *key, size_t key_len)
+{
+	if (key_len != 16 && key_len != 24 && key_len != 32)
+		return -1;
+	ctx->vt = br_aes_x86ni_cbcenc_get_vtable();
+	if (ctx->vt == NULL)
+		ctx->vt = &br_aes_ct64_cbcenc_vtable;
+	ctx->vt->init(&ctx->keys.vtable, key, key_len);
+	memset(ctx->nonce, 0, sizeof(ctx->nonce));
+	ctx->encr_pos = AES_BLOCK_SIZE;
+	return 0;
+}
+
+static int
+aes_ctr_encrypt_counter(archive_crypto_ctx *ctx)
+{
+	uint8_t iv[AES_BLOCK_SIZE];
+
+	memset(iv, 0, sizeof(iv));
+	memcpy(ctx->encr_buf, ctx->nonce, AES_BLOCK_SIZE);
+	ctx->vt->run(&ctx->keys.vtable, iv, ctx->encr_buf, AES_BLOCK_SIZE);
 	return 0;
 }
 
