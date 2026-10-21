@@ -79,13 +79,17 @@ int pkg_check(const char *path, uint32_t fw, pkg_check_t *out) {
     else if (!out->fake)
         snprintf(out->problem, sizeof(out->problem), "%s",
                  TR("not a fake pkg: only fake pkgs can be used", "no es un pkg fake: solo se pueden usar pkgs fake"));
-    else if (fw && out->system_ver && !fw_runs(out->system_ver, fw)) {
+    out->ok = !out->problem[0];
+    /* not refused: a backport (an update or a patched eboot) makes it run, and the usual
+     * installers do not look at SYSTEM_VER either */
+    out->warning[0] = 0;
+    if (fw && out->system_ver && !fw_runs(out->system_ver, fw)) {
         ver_text(out->system_ver, need, sizeof(need));
         ver_text(fw, have, sizeof(have));
-        snprintf(out->problem, sizeof(out->problem),
-                 TR("needs firmware %s or newer; this console has %s", "necesita el firmware %s o superior; esta consola tiene %s"),
+        snprintf(out->warning, sizeof(out->warning),
+                 TR("built for firmware %s (this console has %s): it only runs with a backport",
+                    "hecho para el firmware %s (esta consola tiene %s): solo funciona con un backport"),
                  need, have);
     }
-    out->ok = !out->problem[0];
     return 0;
 }

@@ -352,10 +352,10 @@ static void test_check(void) {
 
     /* built for a newer firmware than the console's */
     make_pkg(p, cid, "gd", 0x13500000, 1, 0x4000, 0x4000);
-    CHECK(pkg_check(p, 0x12520001, &c) == 0 && !c.ok && strstr(c.problem, "needs firmware 13.50") &&
-          strstr(c.problem, "12.52"));
-    CHECK(pkg_check(p, 0x13500001, &c) == 0 && c.ok); /* same firmware */
-    CHECK(pkg_check(p, 0, &c) == 0 && c.ok);          /* no firmware check */
+    CHECK(pkg_check(p, 0x12520001, &c) == 0 && c.ok && strstr(c.warning, "firmware 13.50") &&
+          strstr(c.warning, "12.52") && strstr(c.warning, "backport"));
+    CHECK(pkg_check(p, 0x13500001, &c) == 0 && c.ok && !c.warning[0]); /* same firmware */
+    CHECK(pkg_check(p, 0, &c) == 0 && c.ok && !c.warning[0]);          /* no firmware check */
 
     make_pkg(p, cid, "gd", 0x09008000, 0, 0x4000, 0x4000);
     CHECK(pkg_check(p, 0x13520001, &c) == 0 && !c.ok && !c.fake && strstr(c.problem, "fake"));

@@ -204,7 +204,7 @@ function tKeys(file) {
     if (url.indexOf('/api/check') === 0) {
       checks.push({ url, headers: (o && o.headers) || {} });
       const size = +url.split('size=')[1];
-      const j = size === 1100 ? { ok: false, problem: 'needs firmware 14.00 or newer; this console has 13.52', kind: 'game', title_id: 'CUSA00002', dests: DESTS }
+      const j = size === 1100 ? { ok: false, problem: 'not a fake pkg: only fake pkgs can be used', kind: 'game', title_id: 'CUSA00002', dests: DESTS }
         : { ok: true, problem: '', kind: size === 2000 || size === 2100 ? 'update' : 'game', title: 'Game ' + size, title_id: 'CUSA00001', app_ver: '01.00', notes: [], dests: DESTS };
       return Promise.resolve({ ok: true, json: () => Promise.resolve(j) });
     }
@@ -234,7 +234,7 @@ function tKeys(file) {
   let items = d.querySelectorAll('#queue .item');
   ok(items.length === 3, 'three pkgs in the list');
   ok(items[0].textContent.includes('Ready to send') && items[0].textContent.includes('Game 1000'), 'a good pkg is ready, with its title');
-  ok(items[1].textContent.includes('Cannot be used') && items[1].textContent.includes('needs firmware 14.00'), 'a pkg for a newer firmware is refused with the reason');
+  ok(items[1].textContent.includes('Cannot be used') && items[1].textContent.includes('not a fake pkg'), 'an unusable pkg is refused with the reason');
   ok(items[2].textContent.includes('not enough space in usb0'), 'a pkg that does not fit the chosen drive is refused');
   ok(d.getElementById('dest').options.length === 2 && d.getElementById('dest').value === 'usb0', 'the places come from the check, first one chosen');
   d.getElementById('dest').value = 'internal'; d.getElementById('dest').onchange(); await tick();

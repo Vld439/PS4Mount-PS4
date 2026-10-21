@@ -2,6 +2,16 @@
 
 PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount) by gasb07 (PS5); its versions start again at 0.1.0. The history of the original is in its project and in this repository's git history.
 
+## Unreleased
+
+**Español**
+
+- Un pkg hecho para un firmware más nuevo que el de la consola ya no se rechaza (con un backport funciona): se añade, se envía o se descarga igual, con un aviso.
+
+**English**
+
+- A pkg built for a newer firmware than the console's is no longer refused (a backport makes it run): it is added, sent or downloaded as usual, with a warning.
+
 ## 0.4.15-beta
 
 Downloads from links, and a browser extension that sends downloads to the console. Tested on a PS4 on firmware 13.52 with GoldHEN: a pkg and a RAR in 5 parts from a computer on the network, pkgs over HTTPS from file hosts, a 24.6 GB game in a RAR5 with its file list encrypted, in 3 parts with a code before each name, its password tried by itself (the game plays), a ZIP with AES; the extension in Brave. (The version number jumps from 0.2.0: no 0.3.)

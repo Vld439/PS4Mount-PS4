@@ -166,11 +166,11 @@ int main(void) {
     CHECK(!exists_in("Retail.pkg") && !exists_in(".ps4mount-upload.part") && status_has("\"failed\""));
     free(data);
 
-    printf("needs a newer firmware\n");
+    printf("built for a newer firmware: accepted (backports)\n");
     make_pkg(src, cid, "gd", 0x14000000, 1, 0x4000, 0x4000);
     data = load(src, &len);
     r = transfer("New.pkg", data, len, len, 0);
-    CHECK(strstr(r, "400") && strstr(r, "needs firmware 14.00") && !exists_in("New.pkg"));
+    CHECK(!strstr(r, "400") && exists_in("New.pkg"));
     free(data);
 
     printf("the header says another size\n");

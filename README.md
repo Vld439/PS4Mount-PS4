@@ -115,7 +115,7 @@ En la ficha del juego también está **Restaurar archivos originales**: deshace 
 
 En el panel, **Enviar juegos**: arrastra los pkgs y elige el destino (el USB o la memoria interna).
 
-- Cada pkg se **comprueba antes de enviarse**, en un segundo, con sus primeros 4 MB: si es un pkg de PS4 fake, si es juego, actualización o DLC, si tu firmware basta, si está completo y si cabe. Solo se envían los que la consola puede usar.
+- Cada pkg se **comprueba antes de enviarse**, en un segundo, con sus primeros 4 MB: si es un pkg de PS4 fake, si es juego, actualización o DLC, si está completo y si cabe. Solo se envían los que la consola puede usar. Un pkg hecho para un firmware más nuevo que el tuyo sí se envía, con un aviso: solo funcionará con un backport.
 - Se envían primero los juegos, luego las actualizaciones y al final los DLC.
 - Si cortas o falla un envío, no queda ningún archivo a medias, y puedes pulsar **Enviar de nuevo**.
 - Al llegar, el juego se añade solo.
@@ -129,7 +129,7 @@ En el panel, **Descargar enlaces**: pega los enlaces, uno por línea, elige dón
 - Sirve un **pkg**, un **ZIP** o un **RAR**, también en partes (`nombre.part1.rar`, `nombre.part2.rar`… o `nombre.rar`, `nombre.r00`, `nombre.r01`…). Pega todas las partes, en cualquier orden: PS4Mount las junta en una sola descarga y avisa si falta alguna.
 - Los enlaces tienen que ser **directos**: los que al abrirlos empiezan la descarga. Una página con un botón de descarga (Mega, MediaFire y parecidas) no sirve, y PS4Mount lo dice. Si el enlace no lleva el nombre del archivo, añade `|` y el nombre: `https://…/descargar?id=123 | juego.pkg`.
 - Un RAR o un ZIP **se descomprime mientras baja**, y solo se sacan sus pkgs (el resto, como un .txt o un .nfo, se deja). Las partes se guardan hasta el final, para poder seguir si se corta; si no hay espacio para las partes y los pkgs, cada parte se borra en cuanto se descomprime (y si se corta, empieza de nuevo).
-- Con los primeros 4 MB de cada pkg se hace la **misma comprobación** que al enviar desde el PC (si es fake, si tu firmware basta, si está completo…): si no sirve, la descarga se para ahí, sin bajar el resto.
+- Con los primeros 4 MB de cada pkg se hace la **misma comprobación** que al enviar desde el PC (si es fake, si está completo…): si no sirve, la descarga se para ahí, sin bajar el resto.
 - Baja con varias conexiones a la vez, como Drive, y la consola no entra en reposo mientras descarga. Si se corta la conexión, sigue sola; si cierras PS4Mount, sigue al cargarlo.
 - Al terminar, los pkgs quedan en una carpeta con el nombre de la descarga dentro de la carpeta `PS4Mount` del disco, y el juego se añade solo.
 - Un RAR (5) con **contraseña**, también en partes y con la lista de archivos cifrada: escríbela en **Contraseña** al añadirlo, o pulsa **Reintentar** y escríbela si la descarga se paró por eso. No hace falta si ya abrió otra descarga (se guardan en `/data/ps4mount/passwords.txt`) ni si es el sitio entre corchetes al principio del nombre (`[SITIO.COM]-juego.part1.rar`: se prueba `[SITIO.COM]`, `SITIO.COM` y `sitio.com`): esas se prueban solas. Una contraseña equivocada se nota con el primer bloque, sin bajar el resto.
@@ -445,7 +445,7 @@ A game's page also has **Restore original files**: it undoes what PS4Mount did t
 
 In the panel, **Send games**: drop the pkgs and pick where they go (the USB drive or the console's storage).
 
-- Every pkg is **checked before it is sent**, in a second, from its first 4 MB: whether it is a fake PS4 pkg, a game, an update or an add-on, whether your firmware is enough, whether it is complete and whether it fits. Only the pkgs the console can use are sent.
+- Every pkg is **checked before it is sent**, in a second, from its first 4 MB: whether it is a fake PS4 pkg, a game, an update or an add-on, whether it is complete and whether it fits. Only the pkgs the console can use are sent. A pkg built for a newer firmware than yours is sent too, with a warning: it only runs with a backport.
 - Games go first, then updates, then add-ons.
 - A cancelled or failed send leaves no half file behind, and **Send again** retries it.
 - When it arrives, the game is added by itself.
@@ -459,7 +459,7 @@ In the panel, **Download links**: paste the links, one per line, pick where to s
 - A **pkg**, a **ZIP** or a **RAR** will do, also in parts (`name.part1.rar`, `name.part2.rar`… or `name.rar`, `name.r00`, `name.r01`…). Paste all the parts, in any order: PS4Mount makes them one download and says when one is missing.
 - The links must be **direct**: the ones that start the download when opened. A page with a download button (Mega, MediaFire and the like) will not do, and PS4Mount says so. When the link has no file name in it, add `|` and the name: `https://…/download?id=123 | game.pkg`.
 - A RAR or a ZIP **is extracted while it downloads**, and only its pkgs come out (the rest, like a .txt or an .nfo, is left). The parts are kept until the end, so a cut download can go on; without room for the parts and the pkgs, each part is deleted once extracted (and a cut download starts again).
-- The first 4 MB of each pkg get the **same check** as when sending from a computer (fake, enough firmware, complete…): a pkg that will not do stops the download there, without fetching the rest.
+- The first 4 MB of each pkg get the **same check** as when sending from a computer (fake, complete…): a pkg that will not do stops the download there, without fetching the rest.
 - It downloads over several connections at once, like Drive, and the console stays out of rest mode meanwhile. A lost connection goes on by itself; stopping PS4Mount, at its next load.
 - At the end, the pkgs are in a folder named after the download in the drive's `PS4Mount` folder, and the game is added by itself.
 - A RAR (5) with a **password**, also in parts and with its file list encrypted: write it in **Password** when adding it, or press **Try again** and write it when the download stopped for it. Not needed when it opened another download (they are kept in `/data/ps4mount/passwords.txt`) or when it is the site in brackets at the start of the name (`[SITE.COM]-game.part1.rar`: `[SITE.COM]`, `SITE.COM` and `site.com` are tried): those are tried by themselves. A wrong password shows from the first block, without downloading the rest.

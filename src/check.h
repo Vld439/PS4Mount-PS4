@@ -17,6 +17,7 @@ typedef struct {
     uint32_t system_ver;  /* SYSTEM_VER of param.sfo (0: absent) */
     uint64_t pkg_size;    /* the size the header declares */
     char problem[192];    /* why it cannot be used (empty when ok) */
+    char warning[192];    /* usable, but built for a newer firmware: runs only with a backport */
 } pkg_check_t;
 
 /* Reads path, which may hold only the start of a pkg (the header, its entry table and

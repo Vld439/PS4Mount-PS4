@@ -1883,16 +1883,14 @@ static int adopt_dir_pass(const char *root, const char *dir, int pass) {
         if (!read_sfo(&pkg, &sfo))
             cat = sfo_get(&sfo, "CATEGORY");
         const sfo_item_t *sysver = cat ? sfo_get(&sfo, "SYSTEM_VER") : NULL;
-        if (sysver && sysver->is_int && g_fw && !fw_runs(sysver->ival, g_fw)) {
+        if (pass == 0 && sysver && sysver->is_int && g_fw && !fw_runs(sysver->ival, g_fw) && first_time(path)) {
+            /* added anyway: a backport makes it run */
             char need[16], have[16];
             ver_text(sysver->ival, need, sizeof(need));
             ver_text(g_fw, have, sizeof(have));
-            if (first_time(path))
-                notify(TR("%s needs firmware %s or newer (this console has %s): left where it is",
-                          "%s necesita el firmware %s o superior (esta consola tiene %s): se deja donde está"),
-                       e->d_name, need, have);
-            pkg_close(&pkg);
-            continue;
+            notify(TR("%s is built for firmware %s (this console has %s): it only runs with a backport",
+                      "%s está hecho para el firmware %s (esta consola tiene %s): solo funciona con un backport"),
+                   e->d_name, need, have);
         }
         int is_app = cat && !strcmp(cat->sval, "gd"), is_patch = cat && !strcmp(cat->sval, "gp");
         int is_dlc = cat && !strcmp(cat->sval, "ac");
@@ -3722,6 +3720,8 @@ void app_check(const void *data, size_t len, uint64_t size, buf_t *out) {
     char problem[256], notes[3][200], sv[16], fw[16], where[32];
     int nnotes = 0;
     check_problem(&c, size, problem, sizeof(problem));
+    if (c.warning[0])
+        snprintf(notes[nnotes++], sizeof(notes[0]), "%s", c.warning);
     if (c.kind == PKG_KIND_ADDON && !g_cfg.dlc)
         snprintf(notes[nnotes++], sizeof(notes[0]), "%s",
                  TR("add-ons are turned off in the settings: it will wait in the folder",
