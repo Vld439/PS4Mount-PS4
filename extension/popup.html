@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --bg: #fff; --fg: #1f2328; --muted: #656d76; --line: #d0d7de; --accent: #2563eb; --bad: #cf222e; --good: #1a7f37; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1e2127; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --accent: #4493f8; --bad: #f85149; --good: #3fb950; } }
+  body { margin: 0; width: 340px; padding: 12px 14px; font: 13px system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  h1 { font-size: 15px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+  h1 img { width: 20px; height: 20px; }
+  label { display: block; margin: 8px 0 3px; color: var(--muted); }
+  input[type=text], input[type=password], select { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
+  .row { display: flex; gap: 6px; align-items: center; }
+  .row input { flex: 1; }
+  button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .status { margin-top: 6px; min-height: 16px; color: var(--muted); }
+  .status.bad { color: var(--bad); } .status.good { color: var(--good); }
+  .on { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+  ul { list-style: none; padding: 0; margin: 6px 0; max-height: 140px; overflow: auto; }
+  li { display: flex; justify-content: space-between; gap: 6px; padding: 3px 0; word-break: break-all; }
+  li button { padding: 0 6px; }
+  .hint { color: var(--muted); font-size: 12px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<h1><img src="icons/icon32.png" alt=""><span data-msg="name"></span></h1>
+<label for="host" data-msg="consoleLabel"></label>
+<div class="row"><input id="host" type="text" placeholder="192.168.0.9" spellcheck="false"><button id="test" data-msg="connect"></button></div>
+<div class="status" id="hstatus"></div>
+<label for="dest" data-msg="destLabel"></label>
+<select id="dest"></select>
+<div class="on"><input id="on" type="checkbox"><label for="on" style="margin:0;color:inherit" data-msg="onLabel"></label></div>
+<hr>
+<div id="basketbox">
+  <strong data-msg="basketTitle"></strong>
+  <div class="hint" data-msg="basketHint"></div>
+  <ul id="basket"></ul>
+  <label for="pw" data-msg="passwordLabel"></label>
+  <input id="pw" type="text" autocomplete="off" spellcheck="false">
+  <div class="row" style="margin-top:8px;justify-content:flex-end"><button id="clear" data-msg="clear"></button><button id="send" class="primary" data-msg="send"></button></div>
+  <div class="status" id="bstatus"></div>
+</div>
+<hr>
+<a id="open" href="#" data-msg="openPanel"></a>
+<script src="common.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>
