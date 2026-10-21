@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 gasb07
- * HTTPS client for Google Drive: one request per connection, TLS with BearSSL (the same
- * code on the console and in the host tests) and only Google's roots trusted. A plain
- * http:// URL is for the tests' local server. */
+ * HTTPS client for Google Drive and downloads from links: TLS with BearSSL (the same code
+ * on the console and in the host tests). Drive trusts only Google's roots; a link, the
+ * public ones (Mozilla's list). Plain http:// is for links that use it and the tests. */
 #pragma once
 
 #include <stddef.h>
@@ -29,6 +29,7 @@ typedef struct {
     volatile int *cancel;     /* set from another thread: the request stops (may be NULL) */
     int stall;                /* seconds without a byte before the request gives up (0: 60) */
     http_keep_t *keep;        /* NULL: a connection of its own, closed after the answer */
+    int any_server;           /* a certificate from the public roots will do (links), not only Google's */
 } http_req_t;
 
 #define HTTP_BODY_MAX (1u << 20)
@@ -38,6 +39,10 @@ typedef struct {
     buf_t body;
     char location[2048];      /* Location: */
     char range[64];           /* Range: (a resumable upload's 308) */
+    char content_range[96];   /* Content-Range: (bytes 0-0/12345) */
+    char disposition[512];    /* Content-Disposition: (the file's name) */
+    char type[128];           /* Content-Type: */
+    char etag[128];           /* ETag: (a file that changed on the server) */
     uint64_t length;          /* Content-Length:, UINT64_MAX when not given */
 } http_resp_t;
 

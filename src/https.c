@@ -23,6 +23,7 @@
 #include "bearssl.h"
 #include "google_ca.h"
 #include "mem.h"
+#include "public_roots.h"
 
 #define IO_SECONDS 60     /* most a read or a write waits */
 #define CONNECT_SECONDS 15
@@ -83,7 +84,7 @@ static void entropy(uint8_t *p, size_t n) {
 typedef struct {
     int fd, stall;
     volatile int *cancel;
-    int tls;
+    int tls, any;
     br_ssl_client_context cc;
     br_x509_minimal_context xc;
     br_sslio_context io;
@@ -125,12 +126,12 @@ static int sock_write(void *ctx, const unsigned char *buf, size_t len) {
     return w > 0 ? (int)w : -1;
 }
 
-static const char *tls_error(int e) {
+static const char *tls_error(int e, int any) {
     switch (e) {
     case BR_ERR_X509_EXPIRED:
         return "the server's certificate is not valid now: is the console's date right?";
     case BR_ERR_X509_NOT_TRUSTED:
-        return "the server's certificate is not from Google";
+        return any ? "the server's certificate is not from a known authority" : "the server's certificate is not from Google";
     case BR_ERR_X509_BAD_SERVER_NAME:
         return "the server's certificate is for another name";
     case BR_ERR_NO_RANDOM:
@@ -144,7 +145,7 @@ static const char *tls_error(int e) {
 
 static void conn_err(conn_t *c, const char *what, char *err, size_t n) {
     int e = c->tls ? br_ssl_engine_last_error(&c->cc.eng) : 0;
-    const char *t = tls_error(e);
+    const char *t = tls_error(e, c->any);
     if (c->cancel && *c->cancel)
         snprintf(err, n, "cancelled");
     else if (t)
@@ -155,7 +156,7 @@ static void conn_err(conn_t *c, const char *what, char *err, size_t n) {
         snprintf(err, n, "%s: the connection was lost", what);
 }
 
-static conn_t *conn_open(const http_url_t *u, volatile int *cancel, int stall, char *err, size_t n) {
+static conn_t *conn_open(const http_url_t *u, int any, volatile int *cancel, int stall, char *err, size_t n) {
     struct in_addr addr;
     if (resolve(u->host, &addr)) {
         snprintf(err, n, "%s could not be found: is the console online?", u->host);
@@ -214,8 +215,12 @@ static conn_t *conn_open(const http_url_t *u, volatile int *cancel, int stall, c
     c->stall = stall;
     c->cancel = cancel;
     c->tls = u->tls;
+    c->any = any;
     if (c->tls) {
-        br_ssl_client_init_full(&c->cc, &c->xc, TAs, TAs_NUM);
+        if (any)
+            br_ssl_client_init_full(&c->cc, &c->xc, PUB_TAs, PUB_TAs_NUM);
+        else
+            br_ssl_client_init_full(&c->cc, &c->xc, TAs, TAs_NUM);
         br_ssl_engine_set_buffer(&c->cc.eng, c->iobuf, sizeof(c->iobuf), 1);
         uint8_t seed[32];
         entropy(seed, sizeof(seed));
@@ -437,7 +442,7 @@ static int read_body(reader_t *rd, body_t *b, int chunked, uint64_t length, char
 struct http_keep {
     conn_t *c;
     char host[256];
-    int port, tls;
+    int port, tls, any;
 };
 
 http_keep_t *http_keep_new(void) {
@@ -526,6 +531,10 @@ static int request_on(conn_t *c, const http_req_t *q, const http_url_t *u, int k
         r->length = strtoull(v, NULL, 10);
     header(head, "Location", r->location, sizeof(r->location));
     header(head, "Range", r->range, sizeof(r->range));
+    header(head, "Content-Range", r->content_range, sizeof(r->content_range));
+    header(head, "Content-Disposition", r->disposition, sizeof(r->disposition));
+    header(head, "Content-Type", r->type, sizeof(r->type));
+    header(head, "ETag", r->etag, sizeof(r->etag));
     int chunked = 0;
     if (!header(head, "Transfer-Encoding", v, sizeof(v))) {
         for (char *p = v; *p; p++)
@@ -559,7 +568,7 @@ int http_request(const http_req_t *q, http_resp_t *r, char *err, size_t n) {
     for (int attempt = 0; attempt < 2; attempt++) {
         conn_t *c = NULL;
         int reused = 0;
-        if (k && k->c && k->port == u.port && k->tls == u.tls && !strcmp(k->host, u.host)) {
+        if (k && k->c && k->port == u.port && k->tls == u.tls && k->any == q->any_server && !strcmp(k->host, u.host)) {
             c = k->c;
             c->cancel = q->cancel;
             c->stall = q->stall;
@@ -569,7 +578,7 @@ int http_request(const http_req_t *q, http_resp_t *r, char *err, size_t n) {
                 conn_close(k->c);
                 k->c = NULL;
             }
-            if (!(c = conn_open(&u, q->cancel, q->stall, err, n)))
+            if (!(c = conn_open(&u, q->any_server, q->cancel, q->stall, err, n)))
                 return -1;
         }
         if (k)
@@ -581,6 +590,7 @@ int http_request(const http_req_t *q, http_resp_t *r, char *err, size_t n) {
             snprintf(k->host, sizeof(k->host), "%s", u.host);
             k->port = u.port;
             k->tls = u.tls;
+            k->any = q->any_server;
         } else
             conn_close(c);
         /* a kept connection the server had closed fails before any answer: once more on a
