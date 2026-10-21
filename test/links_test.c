@@ -758,6 +758,15 @@ int main(int argc, char **argv) {
     CHECK(strstr(res, "was downloaded: 1 pkg(s)") != NULL);
     unlink(p);
     CHECK(work_gone());
+    /* a service header whose password check is stray bytes (seen in the wild): not a check */
+    reset_scan();
+    url(u, sizeof(u), "f", "stray.rar");
+    CHECK(!links_add(u, "usb0", "guess.site", msg, sizeof(msg)));
+    CHECK(!wait_idle(60));
+    result(res, sizeof(res));
+    CHECK(strstr(res, "stray was downloaded: 1 pkg(s)") != NULL);
+    unlink(p);
+    CHECK(work_gone());
 
     printf("== a cut, a server that limits connections, an address that expires\n");
     reset_scan();

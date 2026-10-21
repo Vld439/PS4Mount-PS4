@@ -287,7 +287,7 @@ static int crypt_fields(const uint8_t *p, const uint8_t *end, int with_iv, uint6
     if (*flags & CRYPT_CHECK) {
         if (end - p < 12)
             return -1;
-        /* 8 bytes and the start of their SHA-256; a service header's are zeros (no check) */
+        /* 8 bytes and the start of their SHA-256; zeros: no check */
         br_sha256_context sc;
         uint8_t sum[32];
         static const uint8_t zero[8];
@@ -430,7 +430,9 @@ static int header(rar5dec_t *d, const uint8_t *h, size_t n) {
             uint8_t key[32];
             if (crypt_fields(q, rend, 1, &cf, &lg, &salt, &iv, &check))
                 return fail(d, "the archive's encryption is of a kind PS4Mount does not know");
-            if (find_key(d->k, salt, lg, check, key))
+            /* a service header's check is not one: rar may leave it zeros or stray bytes,
+               and unrar checks only files' */
+            if (find_key(d->k, salt, lg, type == HEAD_SERVICE ? NULL : check, key))
                 return fail(d, "password");
             d->vt->init(&d->dk.vtable, key, 32);
             /* a part after the first goes on from the last block of the one before */

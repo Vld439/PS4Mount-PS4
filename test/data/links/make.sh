@@ -9,6 +9,8 @@
 #   secret.partN.rar game.pkg and update.pkg in volumes of an odd size (a block cut across
 #                   two), headers and all encrypted (rar -hp)
 #   guess.rar       update.pkg, headers encrypted, with the password guess.site
+#   stray.rar       guess.rar with stray bytes as its service header's password check
+#                   (stray.c; a rar seen in the wild wrote it so)
 #   rar4.partN.rar  an older RAR (format 4) in volumes with no pkg inside: libarchive's
 #                   test_rar_multivolume_single_file (BSD-2-Clause, libarchive/test)
 set -e
@@ -27,6 +29,8 @@ with zipfile.ZipFile(d + "/bundle.zip", "w", zipfile.ZIP_DEFLATED) as z:
     for n in ("game.pkg", "update.pkg", "readme.txt"):
         z.write(d + "/" + n, n)
 PY
+${CC:-cc} -O1 -Ithird_party/bearssl/inc -o "$T/stray" "$D/stray.c" third_party/bearssl/src/{hash/*.c,mac/hmac.c,symcipher/aes_ct*.c,codec/*.c,settings.c}
+"$T/stray" "$T/guess.rar" "$T/stray.rar" guess.site
 rm -f "$D"/game.part*.rar "$D"/secret.part*.rar
-cp "$T"/game.part*.rar "$T"/secret.part*.rar "$T"/locked.rar "$T"/guess.rar "$T"/bundle.zip "$D"/
+cp "$T"/game.part*.rar "$T"/secret.part*.rar "$T"/locked.rar "$T"/guess.rar "$T"/stray.rar "$T"/bundle.zip "$D"/
 ls -la "$D"
