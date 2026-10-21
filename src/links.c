@@ -1375,8 +1375,11 @@ static int run_job(ljob_t *j) {
         g_file_i = i + 1;
         pthread_mutex_unlock(&g_mu);
         part_path(i, part, sizeof(part));
-        printf("[links] %s: downloading %s (%llu bytes) into %s\n", j->name, j->vol[i].url,
-               (unsigned long long)g_rt.v[i].size, part);
+        if (g_rt.v[i].size == UINT64_MAX)
+            printf("[links] %s: downloading %s (size unknown) into %s\n", j->name, j->vol[i].url, part);
+        else
+            printf("[links] %s: downloading %s (%llu bytes) into %s\n", j->name, j->vol[i].url,
+                   (unsigned long long)g_rt.v[i].size, part);
         if (download_file(i, part, err, sizeof(err))) {
             if ((!halted() || g_rt.failed) && j->nvol > 1)
                 fail_job("%s: %s", j->vol[i].name, err);

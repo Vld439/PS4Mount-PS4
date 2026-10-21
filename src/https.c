@@ -22,6 +22,7 @@
 
 #include "bearssl.h"
 #include "google_ca.h"
+#include "lang.h"
 #include "mem.h"
 #include "public_roots.h"
 
@@ -159,7 +160,8 @@ static void conn_err(conn_t *c, const char *what, char *err, size_t n) {
 static conn_t *conn_open(const http_url_t *u, int any, volatile int *cancel, int stall, char *err, size_t n) {
     struct in_addr addr;
     if (resolve(u->host, &addr)) {
-        snprintf(err, n, "%s could not be found: is the console online?", u->host);
+        snprintf(err, n, TR("%s could not be found: is the console online?", "%s no se encontró: ¿está la consola conectada?"),
+                 u->host);
         return NULL;
     }
     int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -199,7 +201,9 @@ static conn_t *conn_open(const http_url_t *u, int any, volatile int *cancel, int
     fcntl(fd, F_SETFL, fl);
     if (rc) {
         close(fd);
-        snprintf(err, n, "%s did not answer: is the console online?", u->host);
+        snprintf(err, n, TR("%s did not answer: is the server up and the console online?",
+                            "%s no respondió: ¿está el servidor en marcha y la consola conectada?"),
+                 u->host);
         return NULL;
     }
     int one = 1;
