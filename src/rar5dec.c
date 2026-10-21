@@ -4,11 +4,13 @@
  * then blocks: a header (CRC32, its size, type, flags, maybe extra area and data sizes)
  * and maybe a data area. With rar -hp an encryption header (type 4) comes first and each
  * header after it is a 16-byte IV and the header in AES-256-CBC, padded to 16 bytes. The
- * data of a file with an encryption record (extra record 1) is AES-256-CBC too, its size a
- * multiple of 16; a file split over volumes has a record in each, with the IV that goes on
- * from the last one. Out: the same blocks with plain headers, without those records, and
- * without the checksums rar turned into MACs (rar -p keeps none that a reader could check
- * without the key); the data areas keep their sizes, padding included. */
+ * data of a file with an encryption record (extra record 1) is AES-256-CBC too, padded to
+ * 16 bytes; a file split over volumes is one CBC stream cut anywhere, a block maybe across
+ * two volumes. Out: the same blocks with plain headers, without those records and without
+ * the checksums rar turned into MACs (rar -p keeps none a reader could check without the
+ * key). A data area keeps its size, padding included, but for a split file's: a block cut
+ * at the end of a volume comes out whole at the start of the next, their sizes moved to
+ * match. */
 #include "rar5dec.h"
 
 #include <stdio.h>
@@ -49,7 +51,8 @@ struct rar5keys {
     int npw, found, refused, tick;
     kslot_t cache[NCACHE];
     uint8_t next_iv[16]; /* where the CBC of a file split over volumes goes on */
-    int has_next_iv;
+    uint8_t carry[16];   /* and the start of its block cut at the volume's end */
+    size_t ncarry;
 };
 
 struct rar5dec {
@@ -301,7 +304,7 @@ static int crypt_fields(const uint8_t *p, const uint8_t *end, int with_iv, uint6
    plain archive cannot keep. mac: a file whose CRC32 and hash no reader could check (left
    out with its encryption record); locator: the main header's offsets, wrong once headers
    got smaller. */
-static int put_header(rar5dec_t *d, const uint8_t *h, size_t n, int crypt, int mac, int locator) {
+static int put_header(rar5dec_t *d, const uint8_t *h, size_t n, int crypt, int mac, int locator, uint64_t data_out) {
     static const char *damaged = "a header of the archive is damaged";
     if (!crypt && !mac && !locator)
         return emit(d, h, n);
@@ -363,7 +366,7 @@ static int put_header(rar5dec_t *d, const uint8_t *h, size_t n, int crypt, int m
     if (nf & HFL_EXTRA)
         mn += put_vint(mid + mn, xn);
     if (flags & HFL_DATA)
-        mn += put_vint(mid + mn, data);
+        mn += put_vint(mid + mn, crypt ? data_out : data);
     uint8_t *w = out + 4;
     w += put_vint(w, mn + bn + rest + xn);
     memcpy(w, mid, mn), w += mn;
@@ -431,8 +434,10 @@ static int header(rar5dec_t *d, const uint8_t *h, size_t n) {
                 return fail(d, "password");
             d->vt->init(&d->dk.vtable, key, 32);
             /* a part after the first goes on from the last block of the one before */
-            memcpy(d->iv, (flags & HFL_FROM_PREV) && d->k->has_next_iv ? d->k->next_iv : iv, 16);
-            d->ntail = 0;
+            int from_prev = (flags & HFL_FROM_PREV) != 0;
+            memcpy(d->iv, from_prev ? d->k->next_iv : iv, 16);
+            d->ntail = from_prev ? d->k->ncarry : 0;
+            memcpy(d->tail, d->k->carry, d->ntail);
             d->data_enc = 1;
             /* checksums that only the key could check: a MAC, or a split part's, which is of
                the encrypted data in its volume */
@@ -440,16 +445,20 @@ static int header(rar5dec_t *d, const uint8_t *h, size_t n) {
         }
         r = rend;
     }
-    if (d->data_enc && data % 16)
+    /* what comes out: the block cut before, this data, less a block cut at its end */
+    uint64_t data_out = d->ntail + data;
+    if (d->data_enc && d->to_next)
+        data_out -= data_out % 16;
+    else if (d->data_enc && data_out % 16)
         return fail(d, "an encrypted file of the archive is damaged");
     if (d->held) {
-        int rc = put_header(d, d->held, d->nheld, 0, 0, d->hdr_enc || d->data_enc);
+        int rc = put_header(d, d->held, d->nheld, 0, 0, d->hdr_enc || d->data_enc, 0);
         mem_free(d->held);
         d->held = NULL;
         if (rc)
             return -1;
     }
-    if (put_header(d, h, n, d->data_enc, mac, 0))
+    if (put_header(d, h, n, d->data_enc, mac, 0, data_out))
         return -1;
     if (type == HEAD_END)
         d->state = S_PASS;
@@ -570,7 +579,8 @@ ssize_t rar5dec_feed(rar5dec_t *d, const uint8_t *in, size_t n, const uint8_t **
             d->state = S_HEAD;
             if (d->data_enc && d->to_next) {
                 memcpy(d->k->next_iv, d->iv, 16);
-                d->k->has_next_iv = 1;
+                memcpy(d->k->carry, d->tail, d->ntail);
+                d->k->ncarry = d->ntail;
             }
         }
     }
