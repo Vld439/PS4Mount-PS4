@@ -2,7 +2,9 @@
 
 PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount) by gasb07 (PS5); its versions start again at 0.1.0. The history of the original is in its project and in this repository's git history.
 
-## Unreleased
+## 0.4.16-beta
+
+Games whose pkg asks for a newer firmware than the console's, made to run with a backport, are no longer refused. Tested on firmware 13.52 only: not yet on an older console.
 
 **Español**
 
