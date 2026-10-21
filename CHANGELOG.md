@@ -2,6 +2,26 @@
 
 PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount) by gasb07 (PS5); its versions start again at 0.1.0. The history of the original is in its project and in this repository's git history.
 
+## 0.3.0-beta (unreleased)
+
+Downloads from links. Tested on a computer against a local web server; not yet on a console.
+
+**Español**
+
+- **Descargar desde enlaces**, en el panel: pega enlaces directos a un pkg, un ZIP o un RAR (también en partes: `.part1.rar`… o `.rar`, `.r00`…) y la consola los descarga sola, con varias conexiones a la vez. Las partes de un RAR se juntan en una descarga, en cualquier orden, y se avisa si falta alguna.
+- Un RAR o ZIP se descomprime mientras baja y solo se sacan sus pkgs; con poco espacio, cada parte se borra al descomprimirse.
+- Cada pkg se comprueba con sus primeros 4 MB, como al enviar desde el PC: uno que no sirve para la descarga ahí.
+- Sigue sola tras un corte de red o al volver a cargar PS4Mount; la consola no entra en reposo mientras descarga. Sigue las redirecciones, pide de nuevo un enlace que caduca y baja el número de conexiones si el servidor lo pide.
+- No abre RAR con contraseña ni 7z, ni enlaces que piden iniciar sesión.
+
+**English**
+
+- **Downloading from links**, in the panel: paste direct links to a pkg, a ZIP or a RAR (also in parts: `.part1.rar`… or `.rar`, `.r00`…) and the console downloads them by itself, over several connections at once. The parts of a RAR become one download, in any order, and a missing part is reported.
+- A RAR or ZIP is extracted while it downloads and only its pkgs come out; with little space, each part is deleted once extracted.
+- Every pkg is checked from its first 4 MB, as when sending from a computer: one that will not do stops the download there.
+- It goes on by itself after a lost connection or when PS4Mount loads again; the console stays out of rest mode while it downloads. It follows redirects, asks again for a link that expires and uses fewer connections when the server asks for it.
+- It does not open RARs with a password or 7z, nor links that need a sign-in.
+
 ## 0.2.0-beta
 
 Google Drive backups. Tested on a PS4 on firmware 13.52 with GoldHEN, uploading a 7.2 GB game to Drive, deleting it from the console, downloading it back and playing it, and a game with its update and add-on the same way.

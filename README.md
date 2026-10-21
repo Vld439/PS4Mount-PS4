@@ -41,6 +41,7 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 | **Enviar juegos desde el PC** por la red, con comprobación previa | ✅ probado (unos 16 MB/s por cable) |
 | **Borrar** un juego desde la consola | ✅ probado: borra también sus pkgs y libera el espacio |
 | **Copias en Google Drive**: subir y volver a bajar juegos desde la consola | ✅ probado: la subida va a la velocidad de tu conexión, la bajada a unos 15 MB/s (el máximo de la PS4) |
+| **Descargar desde enlaces**: un pkg, un ZIP o un RAR (también en partes), descargado y descomprimido por la propia consola | ⚠️ nuevo: probado en el ordenador, todavía no en una consola |
 | Un juego **nuevo**, o una actualización que llega después del juego | ⚠️ necesita **reiniciar la consola una vez**; después se juega siempre |
 | Otros firmwares | ⚠️ sin probar todavía |
 | Pkgs **retail** (no fake) | ❌ |
@@ -119,6 +120,18 @@ En el panel, **Enviar juegos**: arrastra los pkgs y elige el destino (el USB o l
 - Al llegar, el juego se añade solo.
 
 ![Enviar juegos](docs/panel-send-es.png)
+
+### Descargar desde enlaces
+
+En el panel, **Descargar enlaces**: pega los enlaces, uno por línea, elige dónde guardarlo y pulsa **Descargar**. La consola descarga sola: puedes cerrar el panel o apagar el ordenador.
+
+- Sirve un **pkg**, un **ZIP** o un **RAR**, también en partes (`nombre.part1.rar`, `nombre.part2.rar`… o `nombre.rar`, `nombre.r00`, `nombre.r01`…). Pega todas las partes, en cualquier orden: PS4Mount las junta en una sola descarga y avisa si falta alguna.
+- Los enlaces tienen que ser **directos**: los que al abrirlos empiezan la descarga. Una página con un botón de descarga (Mega, MediaFire y parecidas) no sirve, y PS4Mount lo dice. Si el enlace no lleva el nombre del archivo, añade `|` y el nombre: `https://…/descargar?id=123 | juego.pkg`.
+- Un RAR o un ZIP **se descomprime mientras baja**, y solo se sacan sus pkgs (el resto, como un .txt o un .nfo, se deja). Las partes se guardan hasta el final, para poder seguir si se corta; si no hay espacio para las partes y los pkgs, cada parte se borra en cuanto se descomprime (y si se corta, empieza de nuevo).
+- Con los primeros 4 MB de cada pkg se hace la **misma comprobación** que al enviar desde el PC (si es fake, si tu firmware basta, si está completo…): si no sirve, la descarga se para ahí, sin bajar el resto.
+- Baja con varias conexiones a la vez, como Drive, y la consola no entra en reposo mientras descarga. Si se corta la conexión, sigue sola; si cierras PS4Mount, sigue al cargarlo.
+- Al terminar, los pkgs quedan en una carpeta con el nombre de la descarga dentro de la carpeta `PS4Mount` del disco, y el juego se añade solo.
+- No se puede: un RAR con **contraseña**, un **7z**, o un enlace que pide iniciar sesión.
 
 ### Copias en Google Drive
 
@@ -260,6 +273,8 @@ Mientras están abiertas las pantallas de borrado, PS4Mount desmonta las carpeta
 | Google Drive: `invalid_client` al conectar | El cliente no es del tipo **TV y dispositivos de entrada limitada**, o el ID/secreto están mal copiados: crea uno de ese tipo y pégalo de nuevo. |
 | Google Drive: "acceso bloqueado" o "access_denied" | Añade tu correo en **Público → Usuarios de prueba** del proyecto. |
 | Google Drive: la descarga dice "llegó dañado" | PS4Mount ya lo ha intentado dos veces desde cero; vuelve a pulsar Descargar más tarde. |
+| Enlaces: "el enlace abre una página web" | No es el enlace directo: en la página de descarga, copia el enlace del botón que empieza la descarga (o el que da tu navegador en Descargas). |
+| Enlaces: "el servidor rechazó el enlace (403)" | Muchos enlaces caducan o son para un solo navegador: genera uno nuevo y pulsa **Reintentar** o pégalo de nuevo. |
 | Un juego falla o pierde partidas también instalado de forma normal | Es el pkg (o su backport), no PS4Mount: prueba otro dump. |
 
 Para informar de un problema, abre un [issue](https://github.com/Vld439/PS4Mount-PS4/issues) con la versión de PS4Mount, el firmware, el juego (`CUSA…`), qué pasó y el log (panel → **Log**, o `/data/ps4mount/log.txt` por FTP). No adjuntes pkgs ni enlaces a ellos.
@@ -276,6 +291,8 @@ Para informar de un problema, abre un [issue](https://github.com/Vld439/PS4Mount
 | `/data/ps4mount/drive.txt` | La conexión con tu cuenta de Google |
 | `/data/ps4mount/drive_queue.txt`, `drive_upload.txt` | Las transferencias de Drive a medias (para seguir con ellas) |
 | `<carpeta de búsqueda>/.ps4mount-drive/` | Descargas de Drive a medias |
+| `/data/ps4mount/links_queue.txt` | Las descargas de enlaces pendientes (con sus enlaces) |
+| `<carpeta de búsqueda>/.ps4mount-links/` | Descargas de enlaces a medias |
 | `/system_data/ps4mount/` | Las carpetas internas de los juegos |
 
 ## Compilar
@@ -296,7 +313,9 @@ Necesitas el [ps4-payload-sdk](https://github.com/ps4-payload-dev/sdk) **compila
 - **[ps4-payload-sdk](https://github.com/ps4-payload-dev/sdk)** (John Törnblom, GPL-3.0-or-later): el toolchain y el runtime del payload.
 - **flatz**: la interfaz de BGFT documentada en [ps4_stub_lib_maker_v2](https://github.com/flatz/ps4_stub_lib_maker_v2), y **[ps4-ipi](https://github.com/0x199/ps4-ipi)** como referencia de su uso, para instalar los DLC.
 - **[SQLite](https://sqlite.org)** (dominio público): la lectura de la base de datos de la consola.
-- **[BearSSL](https://bearssl.org)** (Thomas Pornin, MIT): el TLS con el que la consola habla con Google Drive.
+- **[BearSSL](https://bearssl.org)** (Thomas Pornin, MIT): el TLS con el que la consola habla con Google Drive y con las webs de los enlaces.
+- **[libarchive](https://www.libarchive.org)** (BSD-2-Clause) y **[zlib](https://zlib.net)** (licencia zlib): la lectura de los RAR y ZIP mientras se descargan.
+- La **lista de autoridades de certificación de Mozilla** (MPL-2.0): las raíces en las que confía la consola para los enlaces.
 - **[ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus)** (drakmor): inspiración del original para montar juegos desde USB.
 
 ## Licencia
@@ -331,6 +350,7 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 | **Sending games from a computer** over the network, checked first | ✅ tested (about 16 MB/s over a cable) |
 | **Deleting** a game on the console | ✅ tested: its pkgs are deleted too and the space is freed |
 | **Google Drive backups**: uploading games and downloading them back from the console | ✅ tested: uploads go at your line's speed, downloads at about 15 MB/s (the PS4's most) |
+| **Downloading from links**: a pkg, a ZIP or a RAR (also in parts), downloaded and extracted by the console itself | ⚠️ new: tested on a computer, not on a console yet |
 | A **new** game, or an update that arrives after its game | ⚠️ needs **one console restart**; it plays every time after that |
 | Other firmwares | ⚠️ not tested yet |
 | **Retail** (not fake) pkgs | ❌ |
@@ -409,6 +429,18 @@ In the panel, **Send games**: drop the pkgs and pick where they go (the USB driv
 - When it arrives, the game is added by itself.
 
 ![Sending games](docs/panel-send.png)
+
+### Downloading from links
+
+In the panel, **Download links**: paste the links, one per line, pick where to save it and press **Download**. The console downloads by itself: you can close the panel or turn the computer off.
+
+- A **pkg**, a **ZIP** or a **RAR** will do, also in parts (`name.part1.rar`, `name.part2.rar`… or `name.rar`, `name.r00`, `name.r01`…). Paste all the parts, in any order: PS4Mount makes them one download and says when one is missing.
+- The links must be **direct**: the ones that start the download when opened. A page with a download button (Mega, MediaFire and the like) will not do, and PS4Mount says so. When the link has no file name in it, add `|` and the name: `https://…/download?id=123 | game.pkg`.
+- A RAR or a ZIP **is extracted while it downloads**, and only its pkgs come out (the rest, like a .txt or an .nfo, is left). The parts are kept until the end, so a cut download can go on; without room for the parts and the pkgs, each part is deleted once extracted (and a cut download starts again).
+- The first 4 MB of each pkg get the **same check** as when sending from a computer (fake, enough firmware, complete…): a pkg that will not do stops the download there, without fetching the rest.
+- It downloads over several connections at once, like Drive, and the console stays out of rest mode meanwhile. A lost connection goes on by itself; stopping PS4Mount, at its next load.
+- At the end, the pkgs are in a folder named after the download in the drive's `PS4Mount` folder, and the game is added by itself.
+- Not possible: a RAR with a **password**, a **7z**, or a link that needs a sign-in.
 
 ### Google Drive backups
 
@@ -547,6 +579,8 @@ While the delete screens are open, PS4Mount unmounts the game folders, so the sy
 | "Cannot start the application" | Check that PS4Mount is running and that the game's drive is connected (PS4Mount says so when it is not). |
 | The panel does not open | Use the **console's** IP, with `http://` in front and `:8770`, from the same network. |
 | A pkg is not added | Read the log (panel → **Log**): it says why (not fake, needs another firmware, incomplete…). |
+| Links: "the link opens a web page" | It is not the direct link: on the download page, copy the link of the button that starts the download (or the one your browser shows in Downloads). |
+| Links: "the server refused the link (403)" | Many links expire or work for one browser only: make a new one and press **Try again** or paste it again. |
 | A game crashes or loses saves when installed the normal way too | It is the pkg (or its backport), not PS4Mount: try another dump. |
 | Google Drive: `invalid_client` when connecting | The client is not of type **TVs and Limited Input devices**, or the ID/secret were copied wrong: make one of that type and paste it again. |
 | Google Drive: "access blocked" or "access_denied" | Add your email in **Audience → Test users** of the project. |
@@ -566,6 +600,8 @@ To report a problem, open an [issue](https://github.com/Vld439/PS4Mount-PS4/issu
 | `/data/ps4mount/drive.txt` | The connection with your Google account |
 | `/data/ps4mount/drive_queue.txt`, `drive_upload.txt` | Unfinished Drive transfers (to go on with them) |
 | `<scan folder>/.ps4mount-drive/` | Unfinished Drive downloads |
+| `/data/ps4mount/links_queue.txt` | Downloads from links still to do (with their links) |
+| `<scan folder>/.ps4mount-links/` | Unfinished downloads from links |
 | `/system_data/ps4mount/` | The games' internal folders |
 
 ## Building
@@ -586,7 +622,9 @@ You need the [ps4-payload-sdk](https://github.com/ps4-payload-dev/sdk) **built f
 - **[ps4-payload-sdk](https://github.com/ps4-payload-dev/sdk)** (John Törnblom, GPL-3.0-or-later): the toolchain and the payload runtime.
 - **flatz**: the BGFT interface documented in [ps4_stub_lib_maker_v2](https://github.com/flatz/ps4_stub_lib_maker_v2), and **[ps4-ipi](https://github.com/0x199/ps4-ipi)** as a reference for its use, to install add-ons.
 - **[SQLite](https://sqlite.org)** (public domain): reading the console's database.
-- **[BearSSL](https://bearssl.org)** (Thomas Pornin, MIT): the TLS the console talks to Google Drive with.
+- **[BearSSL](https://bearssl.org)** (Thomas Pornin, MIT): the TLS the console talks to Google Drive and to the links' websites with.
+- **[libarchive](https://www.libarchive.org)** (BSD-2-Clause) and **[zlib](https://zlib.net)** (zlib license): reading RARs and ZIPs while they download.
+- **Mozilla's list of certificate authorities** (MPL-2.0): the roots the console trusts for links.
 - **[ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus)** (drakmor): the original's inspiration for mounting games from USB drives.
 
 ## License

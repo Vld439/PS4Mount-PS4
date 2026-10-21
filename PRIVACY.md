@@ -14,6 +14,8 @@ PS4Mount PS4 is a payload that runs on your own PlayStation 4. It has no server,
 
 PS4Mount's use of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.
 
+**Downloads from links (optional).** The links you paste in the panel are stored on your console only (`/data/ps4mount/links_queue.txt`, until the download ends or you remove it), and your console connects directly to the websites in them. Those websites see your console's address, as with any download; PS4Mount sends them nothing else (no cookies, no account).
+
 **The web panel** runs on your console (port 8770) and is reachable from your local network only. It has no password: stop PS4Mount when you are done if others share your network.
 
 Questions: open an issue at https://github.com/Vld439/PS4Mount-PS4/issues.
@@ -31,6 +33,8 @@ PS4Mount PS4 es un payload que se ejecuta en tu propia PlayStation 4. No tiene s
 - PS4Mount lee el correo de tu cuenta y el espacio usado de tu Drive solo para mostrarlos en el panel.
 
 El uso que PS4Mount hace de la información recibida de las APIs de Google cumple la [Política de Datos de Usuario de los Servicios de API de Google](https://developers.google.com/terms/api-services-user-data-policy), incluidos los requisitos de Uso Limitado.
+
+**Descargas desde enlaces (opcional).** Los enlaces que pegas en el panel se guardan solo en tu consola (`/data/ps4mount/links_queue.txt`, hasta que termina la descarga o la quitas), y tu consola se conecta directamente a las webs de esos enlaces. Esas webs ven la dirección de tu consola, como en cualquier descarga; PS4Mount no les envía nada más (ni cookies, ni cuenta).
 
 **El panel web** se ejecuta en tu consola (puerto 8770) y solo es accesible desde tu red local. No tiene contraseña: detén PS4Mount al terminar si compartes la red con otras personas.
 
