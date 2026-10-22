@@ -2,6 +2,18 @@
 
 PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount) by gasb07 (PS5); its versions start again at 0.1.0. The history of the original is in its project and in this repository's git history.
 
+## 0.4.17-beta
+
+The `.bin` works with older GoldHEN versions too (such as 2.4b18): from Payload Guest, Vue or the BinLoader on port 9090. Tested on firmware 13.52 with GoldHEN (port 9090 and Payload Guest): not yet with an older GoldHEN.
+
+**Español**
+
+- El `.bin` ahora es compatible con versiones viejas de GoldHEN (como la 2.4b18): desde Payload Guest, Vue o el BinLoader del puerto 9090.
+
+**English**
+
+- The `.bin` now works with older GoldHEN versions (such as 2.4b18): from Payload Guest, Vue or the BinLoader on port 9090.
+
 ## 0.4.16-beta
 
 Games whose pkg asks for a newer firmware than the console's, made to run with a backport, are no longer refused. Tested on firmware 13.52 only: not yet on an older console.
