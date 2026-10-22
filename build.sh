@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds build/ps4mount-ps4.elf (and the same file as .bin) with the PS4 Payload SDK
+# Builds build/ps4mount-ps4.elf and build/ps4mount-ps4.bin (a raw loader + that ELF) with the PS4 Payload SDK
 # (https://github.com/ps4-payload-dev/sdk): a build with the 13.52 offsets (the v0.9 release
 # stops before main on 13.52; see SDK_COMMIT in .github/workflows/build.yml).
 # Set PS4_PAYLOAD_SDK when the SDK is not in /opt/ps4-payload-sdk.
@@ -58,7 +58,11 @@ $B/orbis-clang -O2 -Wall -Wextra -Ibuild -Ithird_party/sqlite -Ithird_party/bear
     src/main.c src/fw.c src/logts.c src/web.c src/pkg.c src/build.c src/check.c src/upload.c src/install.c src/lang.c src/mem.c src/db.c src/origin.c src/crypto.c \
     src/drive.c src/https.c src/json.c src/links.c src/rar5dec.c src/la_alloc.c "$SQ" "$BR/libbearssl.a" "$LA/libarchive.a" \
     -lSceUserService -lSceAppInstUtil -lSceSystemService -lkernel_sys
-# Payload Guest only lists .bin payloads (and hands them to GoldHEN's BinLoader,
-# which takes the ELF as it is).
-cp build/ps4mount-ps4.elf build/ps4mount-ps4.bin
+# The .bin (what Payload Guest lists) is raw code that loads the ELF appended to it:
+# older BinLoaders (GoldHEN 2.4b18) jump to the first byte and crash on an ELF header.
+$B/orbis-clang -c -Os -fPIC -ffreestanding -fno-builtin -fno-jump-tables -fno-stack-protector \
+    -fno-asynchronous-unwind-tables -mstackrealign -Wall -Wextra -o build/binboot.o tools/binboot/binboot.c
+$B/orbis-ld --static -T tools/binboot/binboot.ld -o build/binboot.elf build/binboot.o
+$B/llvm-objcopy -O binary --only-section=.text build/binboot.elf build/binboot.bin
+cat build/binboot.bin build/ps4mount-ps4.elf > build/ps4mount-ps4.bin
 ls -la build/ps4mount-ps4.elf
