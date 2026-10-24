@@ -56,7 +56,7 @@ if [ ! -f "$LA/libarchive.a" ]; then
 fi
 $B/orbis-clang -O2 -Wall -Wextra -Ibuild -Ithird_party/sqlite -Ithird_party/bearssl/inc -Ithird_party/libarchive -o build/ps4mount-ps4.elf \
     src/main.c src/fw.c src/logts.c src/web.c src/pkg.c src/build.c src/check.c src/upload.c src/install.c src/lang.c src/mem.c src/db.c src/origin.c src/crypto.c \
-    src/drive.c src/https.c src/json.c src/links.c src/rar5dec.c src/la_alloc.c "$SQ" "$BR/libbearssl.a" "$LA/libarchive.a" \
+    src/catalog.c src/drive.c src/https.c src/json.c src/links.c src/rar5dec.c src/la_alloc.c "$SQ" "$BR/libbearssl.a" "$LA/libarchive.a" \
     -lSceUserService -lSceAppInstUtil -lSceSystemService -lkernel_sys
 # The .bin (what Payload Guest lists) is raw code that loads the ELF appended to it:
 # older BinLoaders (GoldHEN 2.4b18) jump to the first byte and crash on an ELF header.

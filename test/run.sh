@@ -59,6 +59,10 @@ echo "== unit"
 $CC $FLAGS -o "$B/unit" test/unit.c src/build.c src/mem.c src/lang.c src/check.c src/crypto.c src/pkg.c src/origin.c
 "$B/unit"
 
+echo "== pkg catalog"
+$CC $FLAGS -o "$B/catalog_test" test/catalog_test.c src/catalog.c src/pkg.c src/mem.c src/crypto.c
+"$B/catalog_test"
+
 echo "== firmware simulation"
 $CC $FLAGS -o "$B/fw_sim" test/fw_sim.c src/fw.c
 "$B/fw_sim"

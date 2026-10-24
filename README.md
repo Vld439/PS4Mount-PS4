@@ -36,6 +36,7 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 | Juegos desde un **USB exFAT** (también pkgs de más de 4 GB) | ✅ probado |
 | Juegos desde la **memoria interna** (`/data/PS4Mount`) | ✅ probado |
 | **Actualizaciones** | ✅ probado |
+| Juegos **donde están**, sin mover ni renombrar los pkgs (cualquier carpeta de la unidad) | ⚠️ nuevo: sin probar todavía en la consola |
 | **DLC** de hasta 256 MB (casi todos: trajes, packs, licencias) | ✅ probado: PS4Mount los instala con el instalador del sistema en segundos, y aparecen en la información del juego |
 | DLC de más de 256 MB | ⚠️ se montan sin instalar, pero el sistema puede no mostrarlos |
 | **Enviar juegos desde el PC** por la red, con comprobación previa | ✅ probado (unos 16 MB/s por cable) |
@@ -75,6 +76,8 @@ ps4/CUSAxxxxx/addcont/CUSAyyyyy/<LABEL>/ac.pkg  DLC
 ```
 
 Mantén esa estructura. Para añadir más juegos, vuelve a ponerlos en la carpeta de búsqueda.
+
+Si apagas **Organizar los pkgs en la carpeta ps4** en Ajustes, PS4Mount no mueve ni renombra nada: usa los `.pkg` **donde estén**, en cualquier carpeta de la unidad (también los que ya estén en `ps4/`), y los agrupa por el título que llevan dentro (juego, actualización y DLC). Los pkgs **base+actualización fusionados** funcionan: una actualización suelta más vieja que el juego no se usa.
 
 ### En la consola
 
@@ -258,9 +261,10 @@ Ya está: el panel muestra tu correo y tu espacio. La conexión se guarda en la 
 
 | Ajuste | Por defecto | Significa |
 | --- | --- | --- |
-| Carpetas donde buscar pkgs | `/PS4Mount` | Carpetas de cada disco donde se buscan pkgs nuevos, una por línea (`/` es la raíz: todos los pkgs de juegos de la raíz se moverían a `ps4/`). Se miran hasta dos niveles de subcarpetas. `ps4` no se puede usar. |
+| Carpetas donde buscar pkgs | `/PS4Mount` | Carpetas de cada disco donde se buscan pkgs nuevos, una por línea (`/` es la raíz: todos los pkgs de juegos de la raíz se moverían a `ps4/`). Se miran hasta dos niveles de subcarpetas. `ps4` no se puede usar. Con "Organizar" apagado se busca en toda la unidad, sin renombrar ni mover nada. |
 | Añadir los juegos nuevos por grupos / Juegos por grupo | Sí / 5 | Añade muchos juegos por grupos, para no saturar la consola. |
 | Instalar DLC | Sí | Instala los DLC (ver arriba). |
+| Organizar los pkgs en la carpeta ps4 | Sí | Mueve los pkgs a `ps4/<TITLE_ID>/` para tenerlos ordenados. Al apagarlo, los pkgs se usan donde están, con su nombre, sin mover ni renombrar nada (en la memoria interna se buscan solo `/data/PS4Mount` y `ps4`). |
 | Usar también los pkgs de /data/PS4Mount | Sí | Usa también los pkgs de la memoria interna. |
 | Idioma | El de la consola | El idioma del panel y de las notificaciones: el de la consola, inglés o español. |
 
@@ -272,6 +276,8 @@ Se guardan en `/data/ps4mount/config.txt`. Los ajustes también tienen **Restaur
 - **Quitar de la biblioteca** en el panel: quita el juego de la consola y **conserva sus pkgs**, para volver a añadirlo con **Añadir a la biblioteca**.
 
 Mientras están abiertas las pantallas de borrado, PS4Mount desmonta las carpetas de los juegos, así que el borrado del sistema nunca llega a los pkgs: los borra PS4Mount, y solo la carpeta de ese juego.
+
+Con "Organizar" apagado, **borrar desde la consola no borra tus pkgs**: el juego sale de la biblioteca y queda marcado como quitado, y los `.pkg` siguen donde estaban (son tuyos). **Restaurar los archivos originales** no aplica en ese modo.
 
 ### Bueno saber
 
@@ -366,6 +372,7 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 | Games from an **exFAT USB drive** (pkgs over 4 GB too) | ✅ tested |
 | Games from the **console's storage** (`/data/PS4Mount`) | ✅ tested |
 | **Updates** | ✅ tested |
+| Games **where they are**, without moving or renaming their pkgs (any folder of the drive) | ⚠️ new: not yet tested on a console |
 | **Add-ons (DLC)** up to 256 MB (almost all: costumes, packs, licenses) | ✅ tested: PS4Mount installs them with the system's installer in seconds, and they show in the game's information |
 | Add-ons over 256 MB | ⚠️ mounted without installing, but the system may not show them |
 | **Sending games from a computer** over the network, checked first | ✅ tested (about 16 MB/s over a cable) |
@@ -405,6 +412,8 @@ ps4/CUSAxxxxx/addcont/CUSAyyyyy/<LABEL>/ac.pkg  add-on
 ```
 
 Keep this layout. To add more games, put them in the scan folder again.
+
+With **Organize pkgs into the ps4 folder** off (in the settings), PS4Mount moves and renames nothing: it uses the `.pkg` files **where they are**, in any folder of the drive (the ones already in `ps4/` too), grouping them by the title they carry inside (game, update and add-ons). **Merged base+update pkgs** work: a separate update older than the game is not used.
 
 ### On the console
 
@@ -588,9 +597,10 @@ That is all: the panel shows your email and your space. The connection is kept o
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| Folders to search for pkgs | `/PS4Mount` | Folders of each drive where new pkgs are picked up, one per line (`/` is the root: every game pkg in the root would be moved into `ps4/`). Two levels of subfolders are looked into. `ps4` cannot be used. |
+| Folders to search for pkgs | `/PS4Mount` | Folders of each drive where new pkgs are picked up, one per line (`/` is the root: every game pkg in the root would be moved into `ps4/`). Two levels of subfolders are looked into. `ps4` cannot be used. With "Organize" off the whole drive is searched, without renaming or moving anything. |
 | Add new games in groups / Games per group | On / 5 | Adds many games in groups, which keeps the console stable. |
 | Install add-ons (DLC) | On | Installs add-ons (see above). |
+| Organize pkgs into the ps4 folder | On | Moves the pkgs to `ps4/<TITLE_ID>/` to keep them in order. Turned off, the pkgs are used where they are, with their own names, without moving or renaming anything (on the console's storage, only `/data/PS4Mount` and `ps4` are searched). |
 | Also use pkgs in the console's /data/PS4Mount | On | Uses the pkgs in the console's storage too. |
 | Language | The console's | The language of the panel and the notifications: the console's, English or Spanish. |
 
@@ -602,6 +612,8 @@ They are saved in `/data/ps4mount/config.txt`. The settings also have **Restore 
 - **Remove from library** in the panel: takes the game off the console and **keeps its pkgs**, to add it again with **Add to library**.
 
 While the delete screens are open, PS4Mount unmounts the game folders, so the system's delete never reaches the pkgs: PS4Mount deletes them, and only that game's folder.
+
+With "Organize" off, **deleting on the console does not delete your pkgs**: the game leaves the library and is marked as removed, and the `.pkg` files stay where they were (they are yours). **Restore original files** does not apply in that mode.
 
 ### Good to know
 

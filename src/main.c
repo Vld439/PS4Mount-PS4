@@ -11,7 +11,11 @@
  *      to the pkg, that folder is mounted over /user/app/<TITLE_ID> (nullfs) and
  *      the title is added to app.db/appinfo.db.
  *   3. Mounts whose storage disappeared are released.
- * Titles installed the normal way are never touched. */
+ * Titles installed the normal way are never touched.
+ *
+ * With organize off (the panel's setting), step 1 is skipped: the pkgs are used where
+ * they are, in any folder of the drive, and the catalog (catalog.c) groups them per game
+ * from what they carry inside. Nothing is renamed or moved. */
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -36,6 +40,7 @@
 #include <ps4/kernel.h>
 
 #include "build.h"
+#include "catalog.h"
 #include "check.h"
 #include "upload.h"
 #include "crypto.h"
@@ -55,6 +60,9 @@
 #define VERSION "PS4Mount 0.4.17-beta"
 #define LOCK_PORT 9032
 #define SCAN_SECONDS 10
+/* A full walk of the drive is slower on drives with many files: the catalog is brought
+ * up to date every so often, while the games already found are checked every scan. */
+#define CATALOG_SECONDS 60
 #define STATE_DIR "/data/ps4mount"
 /* Internal folders mounted over /user/app/<TID> and /user/patch/<TID>: the files an
  * install leaves there plus app.pkg/patch.pkg as symlinks to the pkgs on the drive.
@@ -83,6 +91,7 @@ typedef struct {
     int npaths;
     int restore_batch; /* games removed from the library per group when moving pkgs back */
     int internal;      /* pkgs in the console's /data/PS4Mount are used too */
+    int organize;      /* pkgs are moved into <root>/ps4/<TID>/; off: used where they are */
     int lang;          /* LANG_* of notifications and the panel, -1: the console's */
 } config_t;
 
@@ -92,7 +101,7 @@ typedef struct {
  * moved until the user puts it there (the drive root, "", is still a choice). */
 #define DEFAULT_SCAN_PATH "PS4Mount"
 
-static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, -1};
+static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, 1, -1};
 
 int sceSystemServiceParamGetInt(int param_id, int *value);
 int sceSystemServicePowerTick(void);
@@ -240,6 +249,30 @@ static const char *root_label(const char *root) {
     return is_internal(root) ? TR("internal storage", "memoria interna") : root + 5;
 }
 
+/* The pkgs found on each drive when they are used where they are (organize off). The
+ * catalog is read by the main loop and by the Drive thread, so it is changed under a
+ * lock; the scan holds it while it walks, which only delays a transfer. */
+static catalog_t g_cat[NROOTS];
+static int g_cat_loaded[NROOTS]; /* the saved catalog was read since the drive appeared */
+static time_t g_cat_walked[NROOTS]; /* when the drive was last searched for pkgs */
+static pthread_mutex_t g_cat_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static catalog_t *drive_catalog(const char *root) {
+    char r[32];
+    for (int i = 0; i < NROOTS; i++) {
+        root_path(i, r, sizeof(r));
+        if (!strcmp(r, root))
+            return &g_cat[i];
+    }
+    return NULL;
+}
+
+/* 1 when the catalog of the drive at root has games to serve. */
+static int catalog_has_games(const char *root) {
+    const catalog_t *c = drive_catalog(root);
+    return c && c->ngames > 0;
+}
+
 /* --- appmeta entries copied verbatim from the pkg --- */
 
 typedef struct {
@@ -384,21 +417,83 @@ static void dlc_open(title_src_t *t) {
 
 static int first_time(const char *path);
 
-static int src_open(title_src_t *t, const char *root, const char *tid) {
-    memset(t, 0, sizeof(*t));
-    snprintf(t->dir, sizeof(t->dir), "%s/ps4/%s", root, tid);
-    snprintf(t->app_path, sizeof(t->app_path), "%s/app.pkg", t->dir);
-    snprintf(t->patch_path, sizeof(t->patch_path), "%s/patch.pkg", t->dir);
+/* Where the game is. Older versions moved the app pkg to <root>/ps4/<TID>/app.pkg and kept
+ * its update and add-ons next to it; an in-place game has no folder of its own, and is the
+ * pkg file itself (see the catalog for its update and add-ons). */
+static void game_location(const char *root, const char *tid, const char *app_path, char *out, size_t n) {
+    char lib[PATH_MAX];
+    snprintf(lib, sizeof(lib), "%s/ps4/%s/app.pkg", root, tid);
+    if (!strcmp(app_path, lib))
+        snprintf(out, n, "%s/ps4/%s", root, tid);
+    else
+        snprintf(out, n, "%s", app_path);
+}
+
+/* The add-ons the catalog grouped with the game, wherever they are. A second copy of an
+ * add-on and the ones deleted on the console are left out. */
+static void dlc_open_catalog(title_src_t *t, const catalog_t *c, const cat_game_t *g) {
+    const cat_pkg_t *list[CAT_MAX_DLC];
+    int nlist = catalog_dlc_of(g_cat, c, g, list, CAT_MAX_DLC);
+    for (int k = 0; k < nlist && t->ndlc < MAX_DLC; k++) {
+        const cat_pkg_t *p = list[k];
+        int dup = 0;
+        for (int i = 0; i < t->ndlc; i++)
+            dup |= !strcmp(t->dlc[i].pkg.content_id, p->content_id);
+        char rm[96];
+        snprintf(rm, sizeof(rm), STATE_DIR "/%s.removed", p->content_id);
+        if (dup || exists(rm)) /* removed: deleted on the console */
+            continue;
+        /* 6 MB: from mapped pages (zeroed), never the host's few MB of heap. A list that
+         * could not be had would read as "no add-ons" and register the game again */
+        if (!t->dlc && !(t->dlc = mem_alloc(MAX_DLC * sizeof(*t->dlc)))) {
+            printf("[scan] %s: no memory for its add-ons\n", t->dir);
+            break;
+        }
+        dlc_src_t *a = &t->dlc[t->ndlc];
+        snprintf(a->path, sizeof(a->path), "%s", p->path);
+        /* the catalog checked the category and the fake key when it first read the pkg;
+         * checking the key again on every scan would cost an RSA operation per add-on */
+        if (pkg_open(&a->pkg, a->path) || read_sfo(&a->pkg, &a->sfo)) {
+            if (a->pkg.fd >= 0)
+                pkg_close(&a->pkg);
+            continue;
+        }
+        a->data = a->pkg.header[0x77] == 0x1b; /* content type: 0x1b with data, 0x1c license only */
+        a->install = a->pkg.pkg_size <= DLC_INSTALL_MAX;
+        t->ndlc++;
+        if (a->install)
+            continue; /* not mounted: no /user/addcont folder of PS4Mount's */
+        int known = 0;
+        for (int i = 0; i < t->ndlc_tids; i++)
+            known |= !strcmp(t->dlc_tids[i], a->pkg.title_id);
+        if (!known && t->ndlc_tids < MAX_DLC_TIDS)
+            snprintf(t->dlc_tids[t->ndlc_tids++], 10, "%s", a->pkg.title_id);
+    }
+    if (t->ndlc)
+        qsort(t->dlc, (size_t)t->ndlc, sizeof(*t->dlc), dlc_cmp);
+}
+
+/* Opens the pkgs of tid with the paths already chosen (dir, app_path and patch_path).
+ * cat is NULL for the folders of older versions. */
+static int src_open_paths(title_src_t *t, const char *tid, const catalog_t *cat, const cat_game_t *g) {
     if (pkg_open(&t->app, t->app_path) || read_sfo(&t->app, &t->app_sfo)) {
         if (first_time(t->app_path))
             printf("[scan] %s: unreadable app pkg\n", t->app_path);
+        if (t->app.fd >= 0)
+            pkg_close(&t->app);
         return -1;
     }
-    if (exists(t->patch_path)) {
+    if (strcmp(t->app.title_id, tid)) {
+        printf("[scan] %s: the game pkg is for %s\n", t->app_path, t->app.title_id);
+        pkg_close(&t->app);
+        return -1;
+    }
+    if (t->patch_path[0] && exists(t->patch_path)) {
         const sfo_item_t *gv = sfo_get(&t->app_sfo, "VERSION");
         if (pkg_open(&t->patch, t->patch_path) || read_sfo(&t->patch, &t->patch_sfo)) {
             snprintf(t->update_issue, sizeof(t->update_issue), "%s",
-                     TR("Update ignored: patch.pkg could not be read", "Actualización ignorada: no se pudo leer patch.pkg"));
+                     TR("Update ignored: the update pkg could not be read",
+                        "Actualización ignorada: no se pudo leer el pkg de la actualización"));
             if (t->patch.fd > 0)
                 pkg_close(&t->patch);
         } else {
@@ -431,8 +526,12 @@ static int src_open(title_src_t *t, const char *root, const char *tid) {
         for (int i = 0; i < 32; i++)
             snprintf(digest + i * 2, 3, "%02x", t->patch.digest[i]);
     snprintf(t->marker, sizeof(t->marker), "%s\n%s\n", t->dir, t->has_patch ? digest : "nopatch");
-    if (g_cfg.dlc)
-        dlc_open(t);
+    if (g_cfg.dlc) {
+        if (cat)
+            dlc_open_catalog(t, cat, g);
+        else
+            dlc_open(t);
+    }
     if (t->ndlc) {
         /* one line for all add-ons, so markers of titles without add-ons stay as before */
         uint8_t h[32];
@@ -451,6 +550,28 @@ static int src_open(title_src_t *t, const char *root, const char *tid) {
         snprintf(t->marker + n, sizeof(t->marker) - n, "\n");
     }
     return 0;
+}
+
+/* Opens the pkgs PS4Mount serves for tid from root: its ps4/<TID> folder (organized) or,
+ * with organize off, where the catalog of the drive found them. */
+static int src_open(title_src_t *t, const char *root, const char *tid) {
+    memset(t, 0, sizeof(*t));
+    if (!g_cfg.organize) {
+        const catalog_t *cat = drive_catalog(root);
+        const cat_game_t *g = cat ? catalog_game(cat, tid) : NULL;
+        if (!g)
+            return -1;
+        snprintf(t->app_path, sizeof(t->app_path), "%s", cat->pkgs[g->app].path);
+        const cat_pkg_t *patch = catalog_patch(g_cat, cat, g);
+        if (patch)
+            snprintf(t->patch_path, sizeof(t->patch_path), "%s", patch->path);
+        game_location(root, tid, t->app_path, t->dir, sizeof(t->dir));
+        return src_open_paths(t, tid, cat, g);
+    }
+    snprintf(t->dir, sizeof(t->dir), "%s/ps4/%s", root, tid);
+    snprintf(t->app_path, sizeof(t->app_path), "%s/app.pkg", t->dir);
+    snprintf(t->patch_path, sizeof(t->patch_path), "%s/patch.pkg", t->dir);
+    return src_open_paths(t, tid, NULL, NULL);
 }
 
 static void write_meta(pkg_t *pkg, const char *meta_dir, int *rc) {
@@ -1307,6 +1428,9 @@ static int served_elsewhere(const title_src_t *t) {
     buf[strcspn(buf, "\n")] = 0;
     if (!strcmp(buf, t->dir))
         return 0;
+    size_t l = strlen(buf);
+    if (l > 4 && !strcasecmp(buf + l - 4, ".pkg")) /* a pkg used where it is */
+        return exists(buf);
     snprintf(pkg, sizeof(pkg), "%s/app.pkg", buf);
     return exists(pkg);
 }
@@ -2153,6 +2277,113 @@ static int adopt_root_pkgs(const char *root) {
     return moved;
 }
 
+/* The title IDs PS4Mount serves from root: its ps4/<TID> folders when pkgs are moved
+ * there, or the games the catalog of the drive found anywhere. */
+static int titles_on_root(const char *root, char (*tids)[10], int max) {
+    int n = 0;
+    if (!g_cfg.organize) {
+        const catalog_t *c = drive_catalog(root);
+        for (int i = 0; c && i < c->ngames && n < max; i++)
+            snprintf(tids[n++], 10, "%s", c->games[i].title_id);
+        return n;
+    }
+    char lib[PATH_MAX];
+    snprintf(lib, sizeof(lib), "%s/ps4", root);
+    DIR *d = opendir(lib);
+    struct dirent *e;
+    while (d && (e = readdir(d)) && n < max) {
+        if (strlen(e->d_name) != 9 || strncmp(e->d_name, "CUSA", 4))
+            continue;
+        char pkg[PATH_MAX];
+        snprintf(pkg, sizeof(pkg), "%s/%s/app.pkg", lib, e->d_name);
+        if (exists(pkg))
+            snprintf(tids[n++], 10, "%s", e->d_name);
+    }
+    if (d)
+        closedir(d);
+    return n;
+}
+
+/* The game and update pkg paths of tid on root (empty patch without an update). */
+static int title_pkgs(const char *root, const char *tid, char *patch, size_t pn, char *app, size_t an) {
+    patch[0] = app[0] = 0;
+    if (!g_cfg.organize) {
+        const catalog_t *c = drive_catalog(root);
+        const cat_game_t *g = c ? catalog_game(c, tid) : NULL;
+        if (!g)
+            return -1;
+        snprintf(app, an, "%s", c->pkgs[g->app].path);
+        const cat_pkg_t *p = catalog_patch(g_cat, c, g);
+        if (p)
+            snprintf(patch, pn, "%s", p->path);
+        return 0;
+    }
+    char dir[PATH_MAX];
+    snprintf(dir, sizeof(dir), "%s/ps4/%s", root, tid);
+    snprintf(app, an, "%s/app.pkg", dir);
+    snprintf(patch, pn, "%s/patch.pkg", dir);
+    return exists(app) ? 0 : -1;
+}
+
+/* Pkgs moved back (RESTORED_LIST) are left out of the catalog of the drive being walked. */
+static const char *g_walk_root;
+static int g_walk_restored;
+
+static int walk_skip(const char *path, uint64_t size) {
+    return g_walk_restored && restored_has(RESTORED_LIST, drive_rel(g_walk_root, path), size);
+}
+
+/* The console's own storage holds far more than games: only the two folders PS4Mount puts
+ * pkgs in are searched there, so a scan does not walk every save and screenshot. */
+static int internal_dir_skip(const char *path, const char *rel) {
+    (void)path;
+    size_t n = strlen(DEFAULT_SCAN_PATH);
+    if (!strncmp(rel, DEFAULT_SCAN_PATH, n) && (!rel[n] || rel[n] == '/'))
+        return 0;
+    return strncmp(rel, "ps4", 3) || (rel[3] && rel[3] != '/');
+}
+
+/* Brings the catalog of the drive at root up to date: only new or changed pkgs are read,
+ * also across restarts (STATE_DIR/catalog-<drive>.txt). 1 when it has games. */
+static int catalog_update(catalog_t *cat, const char *root, int fresh) {
+    char file[64];
+    snprintf(file, sizeof(file), STATE_DIR "/catalog-%s.txt", is_internal(root) ? "internal" : root + 5);
+    int idx = (int)(cat - g_cat);
+    if (!g_cat_loaded[idx]) {
+        g_cat_loaded[idx] = 1;
+        int n = catalog_load(cat, file);
+        if (n > 0)
+            printf("[scan] %s: %d pkg(s) known from the last run\n", root, n);
+    }
+    /* A drive with no sign of games (a music stick, the boot partition) is searched all
+     * the same, but without saying so: only a ps4 folder or a pkg announces the scan. */
+    int announce = fresh && (has_candidates(root) || has_pkg(root));
+    if (announce)
+        notify(TR("Scanning %s for PS4 games...", "Buscando juegos de PS4 en %s..."), root_label(root));
+    int before = cat->npkgs;
+    g_walk_root = root;
+    g_walk_restored = exists(RESTORED_LIST);
+    int unread = catalog_walk(cat, root, walk_skip, is_internal(root) ? internal_dir_skip : NULL, NULL, 0);
+    if (unread) {
+        int read = catalog_read(cat);
+        printf("[scan] %s: %d pkg(s), %d new or changed read\n", root, cat->npkgs, read);
+    }
+    if ((unread || cat->npkgs != before) && catalog_save(cat, file))
+        printf("[scan] %s: could not save %s: %s\n", root, file, strerror(errno));
+    for (int i = 0; i < cat->npkgs; i++) {
+        const cat_pkg_t *p = &cat->pkgs[i];
+        if (p->state == CAT_BAD && first_time(p->path))
+            printf("[scan] skip %s (not a fake PS4 game, update or add-on pkg)\n", p->path);
+        else if (p->state == CAT_SHORT && first_time(p->path))
+            printf("[scan] wait %s: incomplete, %llu of %llu bytes (still copying or cut off)\n", p->path,
+                   (unsigned long long)p->size, (unsigned long long)p->full_size);
+    }
+    catalog_group(cat, NULL);
+    if (announce && !cat->ngames) /* say so, as the ps4 folder scan does */
+        notify(TR("%s: no PS4 games found", "%s: no se encontraron juegos de PS4"), root_label(root));
+    return cat->ngames > 0;
+}
+
 /* Add-ons deleted on the console come back with their game: drive reconnected or
  * "Add to library" in the panel. */
 static void clear_removed_dlc(void) {
@@ -2173,46 +2404,35 @@ static int readd_queue(const char *tid, const char *why);
 
 static void scan_root(const char *root, int fresh, int reconnected) {
     const char *label = root_label(root);
-    if (!has_candidates(root)) {
+    int have = g_cfg.organize ? has_candidates(root) : catalog_has_games(root);
+    if (!have) {
         if (fresh)
             printf("[scan] %s: no ps4 folder or pkg, skipped\n", root);
         return;
     }
-    if (fresh)
+    if (fresh && g_cfg.organize)
         notify(TR("Scanning %s for PS4 games...", "Buscando juegos de PS4 en %s..."), label);
     if (reconnected)
         clear_removed_dlc();
-    int moved = adopt_root_pkgs(root);
+    int moved = g_cfg.organize ? adopt_root_pkgs(root) : 0;
     if (moved && !fresh)
         notify(TR("%s: %d new package(s) found", "%s: %d pkg(s) nuevo(s) encontrado(s)"), label, moved);
-    char lib[PATH_MAX];
-    snprintf(lib, sizeof(lib), "%s/ps4", root);
-    DIR *d = opendir(lib);
-    if (!d) {
-        if (fresh)
-            notify(TR("%s: no PS4 games found", "%s: no se encontraron juegos de PS4"), label);
-        return;
-    }
     static title_t titles[MAX_TITLES];
+    static char tids[MAX_TITLES][10];
     int count = 0, pending = 0;
-    struct dirent *e;
-    while ((e = readdir(d)) && count < MAX_TITLES) {
-        if (strlen(e->d_name) != 9 || strncmp(e->d_name, "CUSA", 4))
-            continue;
-        char pkg_path[PATH_MAX];
-        snprintf(pkg_path, sizeof(pkg_path), "%s/%s/app.pkg", lib, e->d_name);
-        if (!exists(pkg_path))
-            continue;
+    int nt = titles_on_root(root, tids, MAX_TITLES);
+    for (int k = 0; k < nt && count < MAX_TITLES; k++) {
+        const char *tid = tids[k];
         title_src_t src;
-        if (src_open(&src, root, e->d_name))
+        if (src_open(&src, root, tid))
             continue;
         if (reconnected) {
             char rm[64];
-            snprintf(rm, sizeof(rm), STATE_DIR "/%s.removed", e->d_name);
+            snprintf(rm, sizeof(rm), STATE_DIR "/%s.removed", tid);
             unlink(rm); /* reconnecting the USB drive brings removed games back */
         }
         title_t *t = &titles[count++];
-        snprintf(t->tid, sizeof(t->tid), "%s", e->d_name);
+        snprintf(t->tid, sizeof(t->tid), "%s", tid);
         snprintf(t->name, sizeof(t->name), "%s", src.name);
         t->ndlc = src.ndlc;
         t->has_patch = src.has_patch;
@@ -2222,7 +2442,6 @@ static void scan_root(const char *root, int fresh, int reconnected) {
         pending += t->state == 1;
         src_close(&src);
     }
-    closedir(d);
     if (fresh && !count)
         notify(TR("%s: no PS4 games found", "%s: no se encontraron juegos de PS4"), label);
     else if (fresh)
@@ -2391,14 +2610,63 @@ static void release_stale(void) {
 
 static void scan_all(void) {
     static int seen[NROOTS], first = 1;
-    release_stale();
     char root[32];
-    for (int i = 0; i < NROOTS; i++) {
-        root_path(i, root, sizeof(root));
-        int present = root_present(root);
-        if (present)
-            scan_root(root, !seen[i] || g_manual_scan, !seen[i] && !first);
-        seen[i] = present;
+    release_stale();
+    if (!g_cfg.organize) {
+        /* Pkgs are used where they are: bring every catalog up to date first, then group
+         * the pkgs of each drive into games (catalog_link). */
+        int ready[NROOTS] = {0};
+        time_t now = time(NULL);
+        pthread_mutex_lock(&g_cat_lock);
+        catalog_unlink(g_cat, NROOTS); /* pkgs move when a drive is walked: drop cross refs */
+        for (int i = 0; i < NROOTS; i++) {
+            root_path(i, root, sizeof(root));
+            if (root_present(root)) {
+                int due = g_manual_scan || !g_cat_loaded[i] || now - g_cat_walked[i] >= CATALOG_SECONDS;
+                if (due) {
+                    ready[i] = catalog_update(&g_cat[i], root, !seen[i] || g_manual_scan);
+                    g_cat_walked[i] = now;
+                } else {
+                    ready[i] = catalog_has_games(root);
+                }
+            } else if (g_cat_loaded[i]) {
+                catalog_free(&g_cat[i]); /* checked again when the drive is back: it may have changed */
+                g_cat_loaded[i] = 0;
+                g_cat_walked[i] = 0;
+            }
+        }
+        /* Games are grouped per drive: an update or add-on of another drive is not used,
+         * so unplugging one drive never breaks a game of another. */
+        catalog_link(g_cat, NROOTS, NULL, 0);
+        pthread_mutex_unlock(&g_cat_lock);
+        for (int i = 0; i < NROOTS; i++) {
+            root_path(i, root, sizeof(root));
+            int present = root_present(root);
+            if (ready[i])
+                scan_root(root, !seen[i] || g_manual_scan, !seen[i] && !first);
+            seen[i] = present;
+        }
+    } else {
+        /* Back to moving pkgs: the catalogs are not used any more. */
+        int any = 0;
+        for (int i = 0; i < NROOTS; i++)
+            any |= g_cat_loaded[i];
+        if (any) {
+            pthread_mutex_lock(&g_cat_lock);
+            for (int i = 0; i < NROOTS; i++) {
+                catalog_free(&g_cat[i]);
+                g_cat_loaded[i] = 0;
+                g_cat_walked[i] = 0;
+            }
+            pthread_mutex_unlock(&g_cat_lock);
+        }
+        for (int i = 0; i < NROOTS; i++) {
+            root_path(i, root, sizeof(root));
+            int present = root_present(root);
+            if (present)
+                scan_root(root, !seen[i] || g_manual_scan, !seen[i] && !first);
+            seen[i] = present;
+        }
     }
     first = 0;
     g_manual_scan = 0;
@@ -2540,10 +2808,15 @@ static int offline_game(const char *tid, char *dir, size_t dn, char *drive, size
         return 0;
     snprintf(dir, dn, "%.*s", (int)strcspn((char *)m, "\n"), (char *)m);
     mem_free(m);
-    /* only drives: /mnt/usb0/ps4/<TID> */
+    /* only drives: /mnt/usb0/ps4/<TID>, or the pkg itself when it is used where it is */
     if (strncmp(dir, "/mnt/", 5) || !db_is_registered(tid))
         return 0;
-    snprintf(p, sizeof(p), "%s/app.pkg", dir);
+    size_t l = strlen(dir);
+    int file = l > 4 && !strcasecmp(dir + l - 4, ".pkg");
+    if (file)
+        snprintf(p, sizeof(p), "%s", dir);
+    else
+        snprintf(p, sizeof(p), "%s/app.pkg", dir);
     if (exists(p))
         return 0;
     snprintf(drive, vn, "%.*s", (int)strcspn(dir + 5, "/"), dir + 5);
@@ -2617,8 +2890,8 @@ static unsigned long long tree_size(const char *path) {
 
 /* Deletes the library folder of tid, <root>/ps4/<tid> (its game, update and add-ons) and
  * nothing else: any other path is refused. The system only reaches the pkgs read-only;
- * deleting them is PS4Mount's own job. */
-static void delete_game_files(const char *dir, const char *tid, const char *name) {
+ * deleting them is PS4Mount's own job. 1 deleted, 0 refused. */
+static int delete_game_files(const char *dir, const char *tid, const char *name) {
     for (int i = 0; i < NROOTS; i++) {
         char root[32], want[64];
         root_path(i, root, sizeof(root));
@@ -2631,14 +2904,20 @@ static void delete_game_files(const char *dir, const char *tid, const char *name
         /* GB of 1024 MB, as the panel and the console's own screens count */
         notify(TR("%s deleted: %.1f GB freed on %s", "%s borrado: %.1f GB liberados en %s"), name,
                (double)n / 1073741824.0, root_label(root));
-        return;
+        return 1;
     }
     printf("[delete] %s: %s is not its library folder, nothing deleted\n", tid, dir);
+    return 0;
 }
+
+/* The console delete kept the pkgs (they are used where they are): the game must not be
+ * added again by the scan that finishes the uninstall. */
+static int g_delete_kept;
 
 /* A game of ours deleted on the console's delete screens: deleted for real, as an
  * installed game would be, files included (Remove from library on the panel is the way
- * to take a game off the console and keep its pkgs). */
+ * to take a game off the console and keep its pkgs). In-place pkgs are the user's files:
+ * the game leaves the library and they stay. */
 static void title_deleted(managed_t *m) {
     char path[64];
     snprintf(path, sizeof(path), STATE_DIR "/%s.src", m->tid);
@@ -2647,7 +2926,11 @@ static void title_deleted(managed_t *m) {
     unlink(path);
     clean_holds(m->tid, m->dlc_tids, m->ndlc_tids);
     bgft_remove(m->tid);
-    delete_game_files(m->dir, m->tid, m->name);
+    g_delete_kept = !delete_game_files(m->dir, m->tid, m->name);
+    if (g_delete_kept) {
+        write_file(path, m->tid, strlen(m->tid), 0666); /* not added again until asked */
+        printf("[delete] %s: its pkg stays where it is: %s\n", m->tid, m->dir);
+    }
     m->used = 0;
 }
 
@@ -2701,6 +2984,8 @@ static void handle_klog_line(const char *line) {
         printf("[delete] %s: the system's delete returned 0x%08lx\n", g_will_delete, rc);
         if (rc) /* out of the library already: finish the uninstall */
             snprintf(g_delete_tid, sizeof(g_delete_tid), "%s", g_will_delete);
+        else
+            g_delete_kept = 0; /* the delete finished: a removal on the panel next time */
         g_will_delete[0] = 0;
         if (g_deleting)
             g_deleting_close_at = time(NULL) + 3;
@@ -2774,13 +3059,24 @@ static void json_str(buf_t *b, const char *s) {
     buf_put(b, "\"", 1);
 }
 
-/* Finds the library folder of tid on any connected storage. */
+/* Finds the drive tid is served from: the ps4/<TID> folder of older versions, or the
+ * game the catalog found where it is. */
 static int find_root(const char *tid, char *root, size_t n) {
     for (int i = 0; i < NROOTS; i++) {
         char r[32], p[PATH_MAX];
         root_path(i, r, sizeof(r));
+        if (!root_present(r))
+            continue;
+        if (!g_cfg.organize) {
+            const catalog_t *c = drive_catalog(r);
+            if (c && catalog_game(c, tid)) {
+                snprintf(root, n, "%s", r);
+                return 0;
+            }
+            continue;
+        }
         snprintf(p, sizeof(p), "%s/ps4/%s/app.pkg", r, tid);
-        if (root_present(r) && exists(p)) {
+        if (exists(p)) {
             snprintf(root, n, "%s", r);
             return 0;
         }
@@ -2795,24 +3091,18 @@ void app_games_json(buf_t *out) {
     int first = 1, nlisted = 0;
     static char listed[MAX_TITLES][10];
     for (int i = 0; i < NROOTS; i++) {
-        char root[32], lib[PATH_MAX];
+        char root[32];
         root_path(i, root, sizeof(root));
         if (!root_present(root))
             continue;
-        snprintf(lib, sizeof(lib), "%s/ps4", root);
-        DIR *d = opendir(lib);
-        if (!d)
-            continue;
-        struct dirent *e;
-        while ((e = readdir(d))) {
-            if (strlen(e->d_name) != 9 || strncmp(e->d_name, "CUSA", 4))
-                continue;
+        static char tids[MAX_TITLES][10];
+        int nt = titles_on_root(root, tids, MAX_TITLES);
+        for (int k = 0; k < nt; k++) {
+            const char *tid = tids[k];
             title_src_t t;
-            char pkg_path[PATH_MAX];
-            snprintf(pkg_path, sizeof(pkg_path), "%s/%s/app.pkg", lib, e->d_name);
-            if (!exists(pkg_path) || src_open(&t, root, e->d_name))
+            if (src_open(&t, root, tid))
                 continue;
-            const char *tid = e->d_name, *state, *mount = "";
+            const char *state, *mount = "";
             char target[64], from[PATH_MAX];
             snprintf(target, sizeof(target), "/user/app/%s", tid);
             int mounted = mounted_from(target, from, sizeof(from));
@@ -2846,6 +3136,10 @@ void app_games_json(buf_t *out) {
             json_str(out, t.dir);
             buf_printf(out, ",\"dlc\":%d,\"update_issue\":", t.ndlc);
             json_str(out, t.update_issue);
+            /* used where it is: there are no original files to move back */
+            size_t dl = strlen(t.dir);
+            int in_place = !g_cfg.organize && dl > 4 && !strcasecmp(t.dir + dl - 4, ".pkg");
+            buf_printf(out, ",\"in_place\":%s", in_place ? "true" : "false");
             const sfo_item_t *av = sfo_get(&t.app_sfo, "APP_VER"), *sv = sfo_get(t.has_patch ? &t.patch_sfo : &t.app_sfo,
                                                                                     "SYSTEM_VER");
             char svt[16] = "";
@@ -2863,7 +3157,6 @@ void app_games_json(buf_t *out) {
             first = 0;
             src_close(&t);
         }
-        closedir(d);
     }
     /* games of drives that are not connected: still on the home screen, not playable */
     DIR *sd = opendir(STATE_DIR);
@@ -2884,7 +3177,7 @@ void app_games_json(buf_t *out) {
         buf_printf(out, ",\"version\":\"\",\"has_patch\":false,\"size\":0,\"state\":\"offline\",\"mount\":\"\","
                         "\"source\":");
         json_str(out, dir);
-        buf_printf(out, ",\"dlc\":0,\"update_issue\":\"\",\"content_id\":\"\",\"game_version\":\"\","
+        buf_printf(out, ",\"dlc\":0,\"update_issue\":\"\",\"in_place\":false,\"content_id\":\"\",\"game_version\":\"\","
                         "\"system_ver\":\"\",\"storage\":");
         json_str(out, drive);
         buf_printf(out, "}");
@@ -2917,11 +3210,15 @@ static int app_art(const char *tid, const char *name, uint32_t id, buf_t *out) {
     }
     if (find_root(tid, root, sizeof(root)))
         return -1;
-    static const char *files[] = {"patch.pkg", "app.pkg"};
+    char patch[PATH_MAX], app[PATH_MAX];
+    if (title_pkgs(root, tid, patch, sizeof(patch), app, sizeof(app)))
+        return -1;
+    const char *files[] = {patch, app}; /* the update's artwork wins, as with a real install */
     for (int i = 0; i < 2; i++) {
-        snprintf(p, sizeof(p), "%s/ps4/%s/%s", root, tid, files[i]);
+        if (!files[i][0])
+            continue;
         pkg_t *pkg = mem_alloc(sizeof(*pkg));
-        if (!pkg || pkg_open(pkg, p)) {
+        if (!pkg || pkg_open(pkg, files[i])) {
             mem_free(pkg);
             continue;
         }
@@ -3394,6 +3691,13 @@ static void run_restore(char (*only)[10], int nonly) {
 }
 
 int app_restore(const char *tids, char *msg, size_t cap) {
+    if (!g_cfg.organize) {
+        /* Nothing was moved or renamed: the pkgs are the user's, where they are. */
+        snprintf(msg, cap, "%s",
+                 TR("Pkgs are used where they are, with their own names: there are no original files to restore",
+                    "Los pkg se usan donde están, con sus propios nombres: no hay archivos originales que restaurar"));
+        return -1;
+    }
     if (g_restore_all || g_restore_n) {
         snprintf(msg, cap, "%s", TR("Already restoring files, wait for it to finish", "Ya se están restaurando archivos, espera a que termine"));
         return -1;
@@ -3487,8 +3791,8 @@ static int clean_scan_path(const char *in, char *out, size_t n, char *why, size_
 
 static void config_save(void) {
     buf_t b = {0};
-    buf_printf(&b, "batch=%d\nbatch_size=%d\ndlc=%d\nrestore_batch=%d\ninternal=%d\nlang=%s\n", g_cfg.batch,
-               g_cfg.batch_size, g_cfg.dlc, g_cfg.restore_batch, g_cfg.internal,
+    buf_printf(&b, "batch=%d\nbatch_size=%d\ndlc=%d\nrestore_batch=%d\ninternal=%d\norganize=%d\nlang=%s\n", g_cfg.batch,
+               g_cfg.batch_size, g_cfg.dlc, g_cfg.restore_batch, g_cfg.internal, g_cfg.organize,
                g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto");
     for (int i = 0; i < g_cfg.npaths; i++)
         buf_printf(&b, "path=%s\n", g_cfg.paths[i]);
@@ -3515,6 +3819,8 @@ static void config_load(void) {
             c.restore_batch = atoi(line + 14);
         else if (!strncmp(line, "internal=", 9))
             c.internal = atoi(line + 9) != 0;
+        else if (!strncmp(line, "organize=", 9))
+            c.organize = atoi(line + 9) != 0;
         else if (!strncmp(line, "lang=", 5))
             c.lang = lang_from_tag(line + 5);
         else if (!strncmp(line, "path=", 5) && c.npaths < MAX_SCAN_PATHS &&
@@ -3531,16 +3837,16 @@ static void config_load(void) {
         c.npaths = 1;
     }
     g_cfg = c;
-    printf("[config] batch=%d batch_size=%d dlc=%d restore_batch=%d folders=%d\n", g_cfg.batch, g_cfg.batch_size,
-           g_cfg.dlc, g_cfg.restore_batch, g_cfg.npaths);
+    printf("[config] batch=%d batch_size=%d dlc=%d restore_batch=%d organize=%d folders=%d\n", g_cfg.batch, g_cfg.batch_size,
+           g_cfg.dlc, g_cfg.restore_batch, g_cfg.organize, g_cfg.npaths);
 }
 
 void app_config_json(buf_t *out) {
     buf_printf(out,
-               "{\"batch\":%s,\"batch_size\":%d,\"dlc\":%s,\"internal\":%s,\"restore_batch\":%d,\"max_restore_batch\":%d,"
+               "{\"batch\":%s,\"batch_size\":%d,\"dlc\":%s,\"internal\":%s,\"organize\":%s,\"restore_batch\":%d,\"max_restore_batch\":%d,"
                "\"lang\":\"%s\",\"ui_lang\":\"%s\",\"paths\":[",
                g_cfg.batch ? "true" : "false", g_cfg.batch_size, g_cfg.dlc ? "true" : "false",
-               g_cfg.internal ? "true" : "false", g_cfg.restore_batch, MAX_RESTORE_BATCH,
+               g_cfg.internal ? "true" : "false", g_cfg.organize ? "true" : "false", g_cfg.restore_batch, MAX_RESTORE_BATCH,
                g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto", lang_tag(g_lang));
     for (int i = 0; i < g_cfg.npaths; i++) {
         char shown[130];
@@ -3585,6 +3891,8 @@ int app_config_set(const char *body, char *msg, size_t cap) {
                 c.dlc = atoi(value) != 0;
             else if (k == 8 && !strncmp(p, "internal", 8))
                 c.internal = atoi(value) != 0;
+            else if (k == 8 && !strncmp(p, "organize", 8))
+                c.organize = atoi(value) != 0;
             else if (k == 4 && !strncmp(p, "lang", 4))
                 c.lang = lang_from_tag(value); /* "auto" and anything else: the console's */
             else if (k == 13 && !strncmp(p, "restore_batch", 13)) {
@@ -3632,8 +3940,8 @@ int app_config_set(const char *body, char *msg, size_t cap) {
     g_cfg = c;
     apply_lang();
     config_save();
-    printf("[config] saved: batch=%d batch_size=%d dlc=%d restore_batch=%d folders=%d\n", c.batch, c.batch_size, c.dlc,
-           c.restore_batch, c.npaths);
+    printf("[config] saved: batch=%d batch_size=%d dlc=%d restore_batch=%d organize=%d folders=%d\n", c.batch,
+           c.batch_size, c.dlc, c.restore_batch, c.organize, c.npaths);
     g_next_scan = 0;
     snprintf(msg, cap, "%s", TR("Settings saved", "Ajustes guardados"));
     return 0;
@@ -3844,13 +4152,50 @@ static void drive_add_file(drive_file_t *files, int *nf, int max, const char *pa
     f->size = (uint64_t)st.st_size;
 }
 
-/* The pkgs of a library game: <root>/ps4/<TID>/app.pkg, patch.pkg and
- * addcont/<ADD-ON TID>/<LABEL>/ac.pkg. Runs in the Drive thread: it only reads. */
+/* The pkgs of a library game: its app.pkg, update and add-ons, in <root>/ps4/<TID> or
+ * wherever the catalog found them when pkgs are used where they are. Runs in the Drive
+ * thread: it only reads (the catalog under its lock). */
 static int drive_game_files(const char *tid, drive_file_t *files, int max, char *name, size_t nn) {
-    char root[32], dir[PATH_MAX], p[PATH_MAX], fname[96];
+    char root[32], p[PATH_MAX];
+    int nf = 0;
+    if (!g_cfg.organize) {
+        char app[PATH_MAX] = "", patch[PATH_MAX] = "";
+        pthread_mutex_lock(&g_cat_lock);
+        for (int i = 0; i < NROOTS && !app[0]; i++) {
+            root_path(i, root, sizeof(root));
+            if (!root_present(root))
+                continue;
+            const catalog_t *c = drive_catalog(root);
+            const cat_game_t *g = c ? catalog_game(c, tid) : NULL;
+            if (!g)
+                continue;
+            snprintf(app, sizeof(app), "%s", c->pkgs[g->app].path);
+            const cat_pkg_t *up = catalog_patch(g_cat, c, g);
+            if (up)
+                snprintf(patch, sizeof(patch), "%s", up->path);
+            drive_add_file(files, &nf, max, app, "game.pkg", "game");
+            if (patch[0])
+                drive_add_file(files, &nf, max, patch, "update.pkg", "update");
+            const cat_pkg_t *list[CAT_MAX_DLC];
+            int nd = catalog_dlc_of(g_cat, c, g, list, CAT_MAX_DLC);
+            for (int k = 0; k < nd && nf < max; k++) {
+                char fname[96];
+                snprintf(fname, sizeof(fname), "addon-%.9s-%.40s.pkg", list[k]->title_id, list[k]->content_id + 20);
+                drive_add_file(files, &nf, max, list[k]->path, fname, "addon");
+            }
+        }
+        pthread_mutex_unlock(&g_cat_lock);
+        if (!nf)
+            return 0;
+        if (pkg_title(app, name, nn))
+            snprintf(name, nn, "%s", tid);
+        if (patch[0])
+            pkg_title(patch, name, nn);
+        return nf;
+    }
     if (find_root(tid, root, sizeof(root)))
         return 0;
-    int nf = 0;
+    char dir[PATH_MAX], fname[96];
     snprintf(dir, sizeof(dir), "%s/ps4/%s", root, tid);
     snprintf(p, sizeof(p), "%s/app.pkg", dir);
     drive_add_file(files, &nf, max, p, "game.pkg", "game");
@@ -3889,27 +4234,23 @@ static int drive_game_files(const char *tid, drive_file_t *files, int max, char 
 
 static int drive_library(char (*tids)[10], int max) {
     int n = 0;
+    static char found[MAX_TITLES][10];
+    pthread_mutex_lock(&g_cat_lock);
     for (int i = 0; i < NROOTS; i++) {
-        char root[32], lib[PATH_MAX], p[PATH_MAX];
+        char root[32];
         root_path(i, root, sizeof(root));
         if (!root_present(root))
             continue;
-        snprintf(lib, sizeof(lib), "%s/ps4", root);
-        DIR *d = opendir(lib);
-        struct dirent *e;
-        while (d && (e = readdir(d)) && n < max) {
-            snprintf(p, sizeof(p), "%s/%s/app.pkg", lib, e->d_name);
-            if (strlen(e->d_name) != 9 || strncmp(e->d_name, "CUSA", 4) || !exists(p))
-                continue;
+        int nf = titles_on_root(root, found, MAX_TITLES);
+        for (int k = 0; k < nf && n < max; k++) {
             int seen = 0;
-            for (int k = 0; k < n && !seen; k++)
-                seen = !strcmp(tids[k], e->d_name);
+            for (int j = 0; j < n; j++)
+                seen |= !strcmp(tids[j], found[k]);
             if (!seen)
-                snprintf(tids[n++], 10, "%s", e->d_name);
+                snprintf(tids[n++], 10, "%s", found[k]);
         }
-        if (d)
-            closedir(d);
     }
+    pthread_mutex_unlock(&g_cat_lock);
     return n;
 }
 
@@ -4216,15 +4557,19 @@ int main(void) {
         }
         if (g_delete_tid[0] && !g_deleting) {
             char tid[10], msg[256];
+            int kept = g_delete_kept;
             snprintf(tid, sizeof(tid), "%s", g_delete_tid);
             g_delete_tid[0] = 0;
+            g_delete_kept = 0;
             pump_events(2000); /* let the system close its error dialog */
             /* the files went when the delete started: finish taking it off the console */
             if (app_remove(tid, msg, sizeof(msg)))
                 notify("%s", msg);
-            char rm[64];
-            snprintf(rm, sizeof(rm), STATE_DIR "/%s.removed", tid);
-            unlink(rm);
+            if (!kept) { /* a pkg used where it is stayed: keep the game out of the library */
+                char rm[64];
+                snprintf(rm, sizeof(rm), STATE_DIR "/%s.removed", tid);
+                unlink(rm);
+            }
             continue;
         }
         if (g_readd_tid[0] && !g_deleting) {

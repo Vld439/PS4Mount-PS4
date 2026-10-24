@@ -23,13 +23,16 @@ var LANGS = {
     'Adding games': 'Añadir juegos',
     'Folders to search for pkgs (one per line, relative to each drive)':
       'Carpetas donde buscar pkgs (una por línea, dentro de cada unidad)',
-    '/ is the root of the drive. Games are moved into the ps4 folder, so it cannot be used here.':
-      '/ es la raíz de la unidad. Los juegos se mueven a la carpeta ps4, así que no se puede usar aquí.',
+    '/ is the root of the drive. The ps4 folder holds organized games, so it cannot be used here.':
+      '/ es la raíz de la unidad. La carpeta ps4 guarda los juegos organizados, así que no se puede usar aquí.',
     'Add new games in groups': 'Añadir los juegos nuevos por grupos',
     'Games per group': 'Juegos por grupo',
     'Smaller groups are gentler on the system when many games are added at once.':
       'Los grupos pequeños cargan menos el sistema cuando se añaden muchos juegos a la vez.',
     'Install add-ons (DLC)': 'Instalar DLC',
+    'Organize pkgs into the ps4 folder': 'Organizar los pkgs en la carpeta ps4',
+    'Off: the .pkg files are used where they are, anywhere on the drive, grouped by their title ID. They are not renamed or moved.':
+      'Apagado: los .pkg se usan donde están, en cualquier parte de la unidad, agrupados por su título. No se renombran ni se mueven.',
     "Also use pkgs in the console's /data/PS4Mount": 'Usar también los pkgs de /data/PS4Mount de la consola',
     "Pkgs sent to the console's storage are added from there, with no install to wait for. They still take internal space.":
       'Los pkgs enviados a la memoria de la consola se añaden desde ahí, sin esperar una instalación. Ocupan espacio interno.',
