@@ -13,9 +13,10 @@
  *   3. Mounts whose storage disappeared are released.
  * Titles installed the normal way are never touched.
  *
- * With organize off (the panel's setting), step 1 is skipped: the pkgs are used where
- * they are, in any folder of the drive, and the catalog (catalog.c) groups them per game
- * from what they carry inside. Nothing is renamed or moved. */
+ * With organize off (the default), step 1 is skipped: the pkgs are used where they are,
+ * in any folder of the drive (the ps4/<TITLE_ID>/ folders of older versions included),
+ * and the catalog (catalog.c) groups them per game from what they carry inside.
+ * Nothing is renamed or moved. */
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -57,7 +58,7 @@
 #include "web.h"
 #include "icon_data.h"
 
-#define VERSION "PS4Mount 0.4.17-beta"
+#define VERSION "PS4Mount 0.4.18-beta"
 #define LOCK_PORT 9032
 #define SCAN_SECONDS 10
 /* A full walk of the drive is slower on drives with many files: the catalog is brought
@@ -91,7 +92,7 @@ typedef struct {
     int npaths;
     int restore_batch; /* games removed from the library per group when moving pkgs back */
     int internal;      /* pkgs in the console's /data/PS4Mount are used too */
-    int organize;      /* pkgs are moved into <root>/ps4/<TID>/; off: used where they are */
+    int organize;      /* pkgs are moved into <root>/ps4/<TID>/; off (default): used where they are */
     int lang;          /* LANG_* of notifications and the panel, -1: the console's */
 } config_t;
 
@@ -101,7 +102,7 @@ typedef struct {
  * moved until the user puts it there (the drive root, "", is still a choice). */
 #define DEFAULT_SCAN_PATH "PS4Mount"
 
-static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, 1, -1};
+static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, 0, -1};
 
 int sceSystemServiceParamGetInt(int param_id, int *value);
 int sceSystemServicePowerTick(void);
@@ -3136,9 +3137,9 @@ void app_games_json(buf_t *out) {
             json_str(out, t.dir);
             buf_printf(out, ",\"dlc\":%d,\"update_issue\":", t.ndlc);
             json_str(out, t.update_issue);
-            /* used where it is: there are no original files to move back */
-            size_t dl = strlen(t.dir);
-            int in_place = !g_cfg.organize && dl > 4 && !strcasecmp(t.dir + dl - 4, ".pkg");
+            /* used where they are: nothing was moved or renamed, so there are no original
+             * files to move back (also for games found in the old ps4/<TID> folders) */
+            int in_place = !g_cfg.organize;
             buf_printf(out, ",\"in_place\":%s", in_place ? "true" : "false");
             const sfo_item_t *av = sfo_get(&t.app_sfo, "APP_VER"), *sv = sfo_get(t.has_patch ? &t.patch_sfo : &t.app_sfo,
                                                                                     "SYSTEM_VER");

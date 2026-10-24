@@ -2,6 +2,28 @@
 
 PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount) by gasb07 (PS5); its versions start again at 0.1.0. The history of the original is in its project and in this repository's git history.
 
+## 0.4.18-beta
+
+Games are now used **where they are** by default: PS4Mount no longer moves or renames their pkgs unless you turn on `Organize pkgs into the ps4 folder`. Games already organized in `ps4/<TITLE_ID>/` are used in place too, so an existing library keeps working untouched. The catalog code comes from [EzioRamesha's fork](https://github.com/EzioRamesha/ps4mount), adapted to keep the old `ps4/<TITLE_ID>` layout working. Tested on a PS4 on firmware 13.52 with GoldHEN: 31 pkgs on a USB drive (base games, updates, add-ons, merged pkgs and a duplicate copy) plus the games already organized in `/data/ps4/<TITLE_ID>/`, nothing moved or renamed.
+
+**Español**
+
+- **Nuevo ajuste "Organizar los pkgs en la carpeta ps4"**, **apagado por defecto**: los `.pkg` se usan **donde están, en cualquier carpeta de la unidad y con su nombre** (en la memoria interna se buscan solo `/data/PS4Mount` y `ps4`), y PS4Mount los agrupa por el título que llevan dentro (juego, actualización y DLC), sin renombrar ni mover nada. Al activarlo se mueven a `ps4/<TITLE_ID>/`, como antes.
+- Los juegos **ya organizados** en `ps4/<TITLE_ID>/` se usan **en su sitio**, sin moverlos: la biblioteca antigua se sigue usando igual, y las configuraciones sin el ajuste pasan a este modo al actualizar.
+- Los pkgs **base+actualización fusionados** funcionan: una actualización suelta más vieja que el juego no se usa, así que no lo hace retroceder de versión.
+- Cada unidad se agrupa por separado: una actualización o un DLC que esté en **otra** unidad no se usa, para que desenchufar una no rompa los juegos de las demás.
+- Borrar desde la consola un juego usado donde está **no borra tus pkgs**: lo quita de la biblioteca y lo marca como quitado (los pkgs son tuyos). **Restaurar los archivos originales** no aplica en ese modo: no hay nada que devolver.
+- La búsqueda completa de la unidad (para encontrar pkgs nuevos) se hace cada minuto o al pulsar **Buscar juegos**; entre medias se comprueban los juegos ya conocidos. El catálogo se guarda en `/data/ps4mount/catalog-<unidad>.txt`, así que un reinicio no vuelve a leer todos los pkgs.
+
+**English**
+
+- **New "Organize pkgs into the ps4 folder" setting**, **off by default**: the `.pkg` files are used **where they are, in any folder of the drive and with their own names** (on the console's storage, only `/data/PS4Mount` and `ps4` are searched), and PS4Mount groups them by the title they carry inside (game, update and add-ons), without renaming or moving anything. Turned on, they are moved to `ps4/<TITLE_ID>/` as before.
+- Games **already organized** in `ps4/<TITLE_ID>/` are used **in place**, without moving them: the old library layout keeps working as usual, and configs without the setting switch to this mode on upgrade.
+- **Merged base+update pkgs** work: a separate update older than the game is not used, so it does not take the game back to an older version.
+- Each drive is grouped on its own: an update or add-on on **another** drive is not used, so unplugging one drive never breaks the games of the others.
+- Deleting an in-place game from the console **does not delete your pkgs**: the game leaves the library and is marked as removed (the pkgs are yours). **Restore original files** does not apply in that mode: there is nothing to move back.
+- The full walk of a drive (to find new pkgs) runs every minute or when **Scan for games** is pressed; in between, the games already known are checked. The catalog is saved in `/data/ps4mount/catalog-<drive>.txt`, so a restart does not read every pkg again.
+
 ## 0.4.17-beta
 
 The `.bin` works with older GoldHEN versions too (such as 2.4b18): from Payload Guest, Vue or the BinLoader on port 9090. Tested on firmware 13.52 with GoldHEN (port 9090 and Payload Guest): not yet with an older GoldHEN.

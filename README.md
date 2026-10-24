@@ -36,7 +36,7 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 | Juegos desde un **USB exFAT** (también pkgs de más de 4 GB) | ✅ probado |
 | Juegos desde la **memoria interna** (`/data/PS4Mount`) | ✅ probado |
 | **Actualizaciones** | ✅ probado |
-| Juegos **donde están**, sin mover ni renombrar los pkgs (cualquier carpeta de la unidad) | ⚠️ nuevo: sin probar todavía en la consola |
+| Juegos **donde están**, sin mover ni renombrar los pkgs (cualquier carpeta de la unidad) | ✅ probado |
 | **DLC** de hasta 256 MB (casi todos: trajes, packs, licencias) | ✅ probado: PS4Mount los instala con el instalador del sistema en segundos, y aparecen en la información del juego |
 | DLC de más de 256 MB | ⚠️ se montan sin instalar, pero el sistema puede no mostrarlos |
 | **Enviar juegos desde el PC** por la red, con comprobación previa | ✅ probado (unos 16 MB/s por cable) |
@@ -61,13 +61,13 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 1. **Descarga** `ps4mount-ps4.bin` de [Releases](https://github.com/Vld439/PS4Mount-PS4/releases) y cópialo en **`/data/payloads/`** de la consola (por FTP, o como copies tus otros payloads).
 2. **Después de cada arranque**, abre **Payload Guest** y elige PS4Mount. Aparece la notificación `PS4Mount 0.2.0-beta en marcha. Panel en http://<IP de la PS4>:8770`.
 3. **Pon los juegos**, de una de estas formas:
-   - **En un USB:** copia los pkgs en la carpeta **`PS4Mount`** del disco y conéctalo a la PS4. PS4Mount la crea la primera vez que ve el disco, o puedes crearla tú; solo usa lo que pongas ahí, el resto del disco no lo toca. Dentro puedes organizarlos en carpetas, hasta dos niveles: `PS4Mount/Overcooked/Game/`, `…/Update/`, `…/DLC/`.
+   - **En un USB:** copia los pkgs **donde quieras** del disco (por ejemplo en la carpeta `PS4Mount`, o en una carpeta por juego) y conéctalo a la PS4. PS4Mount los busca en todo el disco y los agrupa por el título que llevan dentro (juego, actualización y DLC), sin moverlos ni renombrarlos; las carpetas ocultas y las del sistema no se miran.
    - **Desde el PC:** con **Enviar juegos** en el panel (ver más abajo).
    - **En la memoria interna:** pkgs en `/data/PS4Mount` (por FTP o con Enviar juegos). `/data/pkg` sigue siendo del instalador normal: PS4Mount no lo toca.
 4. Espera las notificaciones: `usb0: 1 juego(s) de PS4 encontrado(s), 1 nuevo(s) o actualizado(s)` → `Añadiendo 1/1: <juego>` → `<juego> añadido. Reinicia la consola una vez para jugarlo`.
 5. **Reinicia la consola una vez**, vuelve a cargar PS4Mount y juega desde la pantalla de inicio.
 
-PS4Mount ordena los pkgs que usa en una carpeta por juego, en el mismo disco (es un cambio de nombre, sin copiar nada):
+Con **Organizar los pkgs en la carpeta ps4** activado (viene apagado), PS4Mount ordena los pkgs que usa en una carpeta por juego, en el mismo disco (es un cambio de nombre, sin copiar nada):
 
 ```
 ps4/CUSAxxxxx/app.pkg                           juego
@@ -75,9 +75,9 @@ ps4/CUSAxxxxx/patch.pkg                         actualización
 ps4/CUSAxxxxx/addcont/CUSAyyyyy/<LABEL>/ac.pkg  DLC
 ```
 
-Mantén esa estructura. Para añadir más juegos, vuelve a ponerlos en la carpeta de búsqueda.
+Si lo activas, mantén esa estructura. Para añadir más juegos, vuelve a ponerlos donde se buscan.
 
-Si apagas **Organizar los pkgs en la carpeta ps4** en Ajustes, PS4Mount no mueve ni renombra nada: usa los `.pkg` **donde estén**, en cualquier carpeta de la unidad (también los que ya estén en `ps4/`), y los agrupa por el título que llevan dentro (juego, actualización y DLC). Los pkgs **base+actualización fusionados** funcionan: una actualización suelta más vieja que el juego no se usa.
+Si apagas **Organizar los pkgs en la carpeta ps4** en Ajustes (es lo que viene por defecto), PS4Mount no mueve ni renombra nada: usa los `.pkg` **donde estén**, en cualquier carpeta de la unidad (también los que ya estén en `ps4/`), y los agrupa por el título que llevan dentro (juego, actualización y DLC). Los pkgs **base+actualización fusionados** funcionan: una actualización suelta más vieja que el juego no se usa.
 
 ### En la consola
 
@@ -261,10 +261,10 @@ Ya está: el panel muestra tu correo y tu espacio. La conexión se guarda en la 
 
 | Ajuste | Por defecto | Significa |
 | --- | --- | --- |
-| Carpetas donde buscar pkgs | `/PS4Mount` | Carpetas de cada disco donde se buscan pkgs nuevos, una por línea (`/` es la raíz: todos los pkgs de juegos de la raíz se moverían a `ps4/`). Se miran hasta dos niveles de subcarpetas. `ps4` no se puede usar. Con "Organizar" apagado se busca en toda la unidad, sin renombrar ni mover nada. |
+| Carpetas donde buscar pkgs | `/PS4Mount` | Solo se usa con **Organizar** activado: carpetas de cada disco donde se buscan pkgs nuevos, una por línea (`/` es la raíz: todos los pkgs de juegos de la raíz se moverían a `ps4/`). Se miran hasta dos niveles de subcarpetas. `ps4` no se puede usar. Apagado (por defecto), se busca en toda la unidad, sin renombrar ni mover nada. |
 | Añadir los juegos nuevos por grupos / Juegos por grupo | Sí / 5 | Añade muchos juegos por grupos, para no saturar la consola. |
 | Instalar DLC | Sí | Instala los DLC (ver arriba). |
-| Organizar los pkgs en la carpeta ps4 | Sí | Mueve los pkgs a `ps4/<TITLE_ID>/` para tenerlos ordenados. Al apagarlo, los pkgs se usan donde están, con su nombre, sin mover ni renombrar nada (en la memoria interna se buscan solo `/data/PS4Mount` y `ps4`). |
+| Organizar los pkgs en la carpeta ps4 | No | Mueve los pkgs a `ps4/<TITLE_ID>/` para tenerlos ordenados. Apagado (por defecto), los pkgs se usan donde están, con su nombre, sin mover ni renombrar nada; también los que ya están en `ps4/<TITLE_ID>/` de versiones anteriores (en la memoria interna se buscan solo `/data/PS4Mount` y `ps4`). |
 | Usar también los pkgs de /data/PS4Mount | Sí | Usa también los pkgs de la memoria interna. |
 | Idioma | El de la consola | El idioma del panel y de las notificaciones: el de la consola, inglés o español. |
 
@@ -372,7 +372,7 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 | Games from an **exFAT USB drive** (pkgs over 4 GB too) | ✅ tested |
 | Games from the **console's storage** (`/data/PS4Mount`) | ✅ tested |
 | **Updates** | ✅ tested |
-| Games **where they are**, without moving or renaming their pkgs (any folder of the drive) | ⚠️ new: not yet tested on a console |
+| Games **where they are**, without moving or renaming their pkgs (any folder of the drive) | ✅ tested |
 | **Add-ons (DLC)** up to 256 MB (almost all: costumes, packs, licenses) | ✅ tested: PS4Mount installs them with the system's installer in seconds, and they show in the game's information |
 | Add-ons over 256 MB | ⚠️ mounted without installing, but the system may not show them |
 | **Sending games from a computer** over the network, checked first | ✅ tested (about 16 MB/s over a cable) |
@@ -397,13 +397,13 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 1. **Download** `ps4mount-ps4.bin` from [Releases](https://github.com/Vld439/PS4Mount-PS4/releases) and copy it to **`/data/payloads/`** on the console (over FTP, or however you copy your other payloads).
 2. **After every boot**, open **Payload Guest** and pick PS4Mount. The notification `PS4Mount 0.2.0-beta running. Panel at http://<PS4 IP>:8770` shows up.
 3. **Add games**, one of these ways:
-   - **On a USB drive:** copy the pkgs to the **`PS4Mount`** folder of the drive and plug it into the PS4. PS4Mount creates the folder the first time it sees the drive, or you create it; only what you put there is used, the rest of the drive is left alone. Inside, they can be in folders, two levels down: `PS4Mount/Overcooked/Game/`, `…/Update/`, `…/DLC/`.
+   - **On a USB drive:** copy the pkgs **anywhere on the drive** (for example the `PS4Mount` folder, or one folder per game) and plug it into the PS4. PS4Mount searches the whole drive and groups them by the title they carry inside (game, update and add-ons), without moving or renaming them; hidden and system folders are skipped.
    - **From a computer:** with **Send games** in the panel (see below).
    - **In the console's storage:** pkgs in `/data/PS4Mount` (over FTP or with Send games). `/data/pkg` stays the usual installer's: PS4Mount leaves it alone.
 4. Wait for the notifications: `usb0: 1 PS4 game(s) found, 1 new or updated` → `Adding 1/1: <game>` → `<game> added. Restart the console once to play it`.
 5. **Restart the console once**, load PS4Mount again and play from the home screen.
 
-PS4Mount keeps the pkgs it uses in a folder per game on the same drive (a rename, nothing is copied):
+With **Organize pkgs into the ps4 folder** on (it is off by default), PS4Mount keeps the pkgs it uses in a folder per game on the same drive (a rename, nothing is copied):
 
 ```
 ps4/CUSAxxxxx/app.pkg                           game
@@ -411,9 +411,9 @@ ps4/CUSAxxxxx/patch.pkg                         update
 ps4/CUSAxxxxx/addcont/CUSAyyyyy/<LABEL>/ac.pkg  add-on
 ```
 
-Keep this layout. To add more games, put them in the scan folder again.
+If you turn it on, keep this layout. To add more games, put them where they are searched.
 
-With **Organize pkgs into the ps4 folder** off (in the settings), PS4Mount moves and renames nothing: it uses the `.pkg` files **where they are**, in any folder of the drive (the ones already in `ps4/` too), grouping them by the title they carry inside (game, update and add-ons). **Merged base+update pkgs** work: a separate update older than the game is not used.
+With **Organize pkgs into the ps4 folder** off (in the settings, and the default), PS4Mount moves and renames nothing: it uses the `.pkg` files **where they are**, in any folder of the drive (the ones already in `ps4/` too), grouping them by the title they carry inside (game, update and add-ons). **Merged base+update pkgs** work: a separate update older than the game is not used.
 
 ### On the console
 
@@ -597,10 +597,10 @@ That is all: the panel shows your email and your space. The connection is kept o
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| Folders to search for pkgs | `/PS4Mount` | Folders of each drive where new pkgs are picked up, one per line (`/` is the root: every game pkg in the root would be moved into `ps4/`). Two levels of subfolders are looked into. `ps4` cannot be used. With "Organize" off the whole drive is searched, without renaming or moving anything. |
+| Folders to search for pkgs | `/PS4Mount` | Only used with **Organize** on: folders of each drive where new pkgs are picked up, one per line (`/` is the root: every game pkg in the root would be moved into `ps4/`). Two levels of subfolders are looked into. `ps4` cannot be used. Off (the default), the whole drive is searched, without renaming or moving anything. |
 | Add new games in groups / Games per group | On / 5 | Adds many games in groups, which keeps the console stable. |
 | Install add-ons (DLC) | On | Installs add-ons (see above). |
-| Organize pkgs into the ps4 folder | On | Moves the pkgs to `ps4/<TITLE_ID>/` to keep them in order. Turned off, the pkgs are used where they are, with their own names, without moving or renaming anything (on the console's storage, only `/data/PS4Mount` and `ps4` are searched). |
+| Organize pkgs into the ps4 folder | Off | Moves the pkgs to `ps4/<TITLE_ID>/` to keep them in order. Off (the default), the pkgs are used where they are, with their own names, without moving or renaming anything; the ones already in `ps4/<TITLE_ID>/` from older versions work too (on the console's storage, only `/data/PS4Mount` and `ps4` are searched). |
 | Also use pkgs in the console's /data/PS4Mount | On | Uses the pkgs in the console's storage too. |
 | Language | The console's | The language of the panel and the notifications: the console's, English or Spanish. |
 

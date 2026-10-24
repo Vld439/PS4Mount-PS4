@@ -93,6 +93,22 @@ static void test_merged(const catalog_t *c) {
     CHECK(c->included == 1);
 }
 
+/* A game already organized in ps4/<TITLE_ID>/ is taken from there and left in place:
+ * its path does not change, its old replaced update is not used, and the pkg is still
+ * where it was after grouping. */
+static void test_organized(const catalog_t *c, const char *root) {
+    const cat_game_t *g = catalog_game(c, "CUSA00005");
+    CHECK(g != NULL);
+    if (!g)
+        return;
+    const char *app = c->pkgs[g->app].path;
+    char want[PATH_MAX];
+    snprintf(want, sizeof(want), "%s/ps4/CUSA00005/app.pkg", root);
+    CHECK(strcmp(app, want) == 0);
+    CHECK(catalog_patch(c, c, g) == NULL);
+    CHECK(access(app, F_OK) == 0);
+}
+
 static void test_scan(void) {
     printf("catalog: walk, read, group\n");
     char root[] = "/tmp/ps4mount-cat-XXXXXX";
@@ -148,6 +164,7 @@ static void test_scan(void) {
     CHECK(c.orphans == 1);
     test_update_used(&c);
     test_merged(&c);
+    test_organized(&c, root);
 
     /* a walk sees new and changed pkgs only: nothing changed, nothing to read */
     CHECK(catalog_walk(&c, root, NULL, NULL, NULL, 0) == 0);
@@ -167,6 +184,7 @@ static void test_scan(void) {
     CHECK(d.ngames == 3 && d.dupes == 1 && d.orphans == 1);
     test_update_used(&d);
     test_merged(&d);
+    test_organized(&d, root);
     catalog_free(&d);
 
     /* a pkg that changes size or time is read again */
