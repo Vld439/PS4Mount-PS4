@@ -4,12 +4,13 @@ PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount
 
 ## 0.4.18-beta
 
-Games are now used **where they are** by default: PS4Mount no longer moves or renames their pkgs unless you turn on `Organize pkgs into the ps4 folder`. Games already organized in `ps4/<TITLE_ID>/` are used in place too, so an existing library keeps working untouched. The catalog code comes from [EzioRamesha's fork](https://github.com/EzioRamesha/ps4mount), adapted to keep the old `ps4/<TITLE_ID>` layout working. Tested on a PS4 on firmware 13.52 with GoldHEN: 31 pkgs on a USB drive (base games, updates, add-ons, merged pkgs and a duplicate copy) plus the games already organized in `/data/ps4/<TITLE_ID>/`, nothing moved or renamed.
+Games are now used **where they are** by default: PS4Mount no longer moves or renames their pkgs unless you turn on `Organize pkgs into the ps4 folder`. The games PS4Mount had organized are moved back to where they were and used from there; games organized by hand stay in place. The catalog code comes from [EzioRamesha's fork](https://github.com/EzioRamesha/ps4mount), adapted to keep the old `ps4/<TITLE_ID>` layout working. Tested on a PS4 on firmware 13.52 with GoldHEN: 31 pkgs on a USB drive (base games, updates, add-ons, merged pkgs and a duplicate copy), and three games PS4Mount had organized in `/data/ps4/<TITLE_ID>/` went back to their original names in `/data/PS4Mount` and were added again from there.
 
 **Español**
 
 - **Nuevo ajuste "Organizar los pkgs en la carpeta ps4"**, **apagado por defecto**: los `.pkg` se usan **donde están, en cualquier carpeta de la unidad y con su nombre** (en la memoria interna se buscan solo `/data/PS4Mount` y `ps4`), y PS4Mount los agrupa por el título que llevan dentro (juego, actualización y DLC), sin renombrar ni mover nada. Al activarlo se mueven a `ps4/<TITLE_ID>/`, como antes.
-- Los juegos **ya organizados** en `ps4/<TITLE_ID>/` se usan **en su sitio**, sin moverlos: la biblioteca antigua se sigue usando igual, y las configuraciones sin el ajuste pasan a este modo al actualizar.
+- Al **apagar Organizar**, los juegos que PS4Mount ya había organizado **vuelven solos a su sitio y con su nombre originales** (lo recuerda en `origin.txt` de cada juego) y se usan desde ahí; los que organizaste tú a mano se quedan donde están. La primera vez hay que reiniciar la consola una vez, como al añadir un juego.
+- Los juegos **ya organizados** en `ps4/<TITLE_ID>/` sin origen conocido se usan **en su sitio**, sin moverlos: la biblioteca antigua se sigue usando igual, y las configuraciones sin el ajuste pasan a este modo al actualizar.
 - Los pkgs **base+actualización fusionados** funcionan: una actualización suelta más vieja que el juego no se usa, así que no lo hace retroceder de versión.
 - Cada unidad se agrupa por separado: una actualización o un DLC que esté en **otra** unidad no se usa, para que desenchufar una no rompa los juegos de las demás.
 - Borrar desde la consola un juego usado donde está **no borra tus pkgs**: lo quita de la biblioteca y lo marca como quitado (los pkgs son tuyos). **Restaurar los archivos originales** no aplica en ese modo: no hay nada que devolver.
@@ -18,7 +19,8 @@ Games are now used **where they are** by default: PS4Mount no longer moves or re
 **English**
 
 - **New "Organize pkgs into the ps4 folder" setting**, **off by default**: the `.pkg` files are used **where they are, in any folder of the drive and with their own names** (on the console's storage, only `/data/PS4Mount` and `ps4` are searched), and PS4Mount groups them by the title they carry inside (game, update and add-ons), without renaming or moving anything. Turned on, they are moved to `ps4/<TITLE_ID>/` as before.
-- Games **already organized** in `ps4/<TITLE_ID>/` are used **in place**, without moving them: the old library layout keeps working as usual, and configs without the setting switch to this mode on upgrade.
+- **Turning Organize off** sends the games PS4Mount had organized **back to where they were, with their original names** (it remembers them in each game's `origin.txt`), and they are used from there; games you organized by hand stay where they are. The first time, restart the console once, as when adding a game.
+- Games **already organized** in `ps4/<TITLE_ID>/` with no known origin are used **in place**, without moving them: the old library layout keeps working as usual, and configs without the setting switch to this mode on upgrade.
 - **Merged base+update pkgs** work: a separate update older than the game is not used, so it does not take the game back to an older version.
 - Each drive is grouped on its own: an update or add-on on **another** drive is not used, so unplugging one drive never breaks the games of the others.
 - Deleting an in-place game from the console **does not delete your pkgs**: the game leaves the library and is marked as removed (the pkgs are yours). **Restore original files** does not apply in that mode: there is nothing to move back.

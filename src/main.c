@@ -3359,8 +3359,9 @@ static void clean_name(char *s) {
 
 /* Moves <game_dir>/<rel> to its recorded original path (or fallback, relative to the
  * drive root, for pkgs moved before origins were recorded) and adds it to the list of
- * restored pkgs. 1 moved, 0 nothing there, -1 failed. */
-static int restore_pkg(const char *root, const char *game_dir, const char *rel, const char *fallback) {
+ * restored pkgs when remember is set (moved back on request: the scan leaves them alone).
+ * 1 moved, 0 nothing there, -1 failed. */
+static int restore_pkg(const char *root, const char *game_dir, const char *rel, const char *fallback, int remember) {
     char src[PATH_MAX], orig[PATH_MAX], dst[PATH_MAX], dir[PATH_MAX];
     snprintf(src, sizeof(src), "%s/%s", game_dir, rel);
     struct stat st;
@@ -3378,7 +3379,8 @@ static int restore_pkg(const char *root, const char *game_dir, const char *rel, 
         printf("[restore] %s: %s\n", src, strerror(errno));
         return -1;
     }
-    restored_add(RESTORED_LIST, drive_rel(root, dst), (uint64_t)st.st_size);
+    if (remember)
+        restored_add(RESTORED_LIST, drive_rel(root, dst), (uint64_t)st.st_size);
     printf("[restore] %s -> %s\n", src, dst);
     return 1;
 }
@@ -3392,8 +3394,10 @@ static void unlink_in(const char *dir, const char *const *names) {
 }
 
 /* Moves every pkg of one game folder back and removes what PS4Mount created for it.
+ * remember: they were moved back on request, so the scan leaves them alone; clear for
+ * the move back that organize off does on its own, whose pkgs are used where they are.
  * Folders are only removed when empty, so nothing else is ever deleted. */
-static void restore_files(const char *root, const char *tid, const char *name, int *moved, int *failed) {
+static void restore_files(const char *root, const char *tid, const char *name, int *moved, int *failed, int remember) {
     static const char *const generated[] = {"app.json", "app.pbm", "app.pbm.backup", "app.xml", "patch.json",
                                             "patch.pbm", "patch.pbm.backup", "patch.xml", NULL};
     static const char *const ac_generated[] = {"ac.json", "ac.pbm", "ac.pbm.backup", NULL};
@@ -3402,7 +3406,7 @@ static void restore_files(const char *root, const char *tid, const char *name, i
     int rc;
 #define RESTORE(r, f)                                                                                                  \
     do {                                                                                                               \
-        rc = restore_pkg(root, game, r, f);                                                                            \
+        rc = restore_pkg(root, game, r, f, remember);                                                                  \
         *moved += rc > 0;                                                                                              \
         *failed += rc < 0;                                                                                             \
     } while (0)
@@ -3511,6 +3515,10 @@ static void restore_clear_state(const char *tid) {
 /* Requests from the panel, run by the main loop: some titles, or all of them. */
 static char g_restore_tids[MAX_TITLES][10];
 static int g_restore_n, g_restore_all;
+
+/* organize off: the games of each drive PS4Mount had moved into ps4/ are sent back to
+ * where they were once (and then used there). */
+static int g_migrated[NROOTS];
 
 /* --- closing the open game --- */
 
@@ -3639,8 +3647,9 @@ static int restore_collect(char (*only)[10], int nonly, restore_item_t *items, i
 
 /* Moves the pkgs of the requested games (only, or all when NULL) back, in groups of the
  * restore setting: the games of a group leave the library one at a time, their pkgs are
- * moved, and the next group waits until the system databases are idle. */
-static void run_restore(char (*only)[10], int nonly) {
+ * moved, and the next group waits until the system databases are idle. remember: see
+ * restore_files (0 for the move back organize off does by itself). */
+static void run_restore(char (*only)[10], int nonly, int remember) {
     static restore_item_t items[MAX_TITLES];
     int n = restore_collect(only, nonly, items, MAX_TITLES), moved = 0, failed = 0, done = 0, kept = 0;
     if (!n) {
@@ -3669,7 +3678,7 @@ static void run_restore(char (*only)[10], int nonly) {
             }
             /* one removal at a time: the next waits until the system databases are idle */
             wait_db_quiet(3, 30);
-            restore_files(items[k].root, items[k].tid, items[k].name, &moved, &failed);
+            restore_files(items[k].root, items[k].tid, items[k].name, &moved, &failed, remember);
             done++;
         }
     }
@@ -3689,6 +3698,68 @@ static void run_restore(char (*only)[10], int nonly) {
                kept ? TR(", some games could not leave the library (see the log)",
                          ", algunos juegos no pudieron salir de la biblioteca (ver el log)")
                     : "");
+}
+
+/* Games on root that PS4Mount moved into ps4/<TITLE_ID>/: their app.pkg has a recorded
+ * origin, so they go back to where they were and are used there. Games removed on the
+ * console and titles installed internally are left alone. */
+static int organized_on_root(const char *root, char (*tids)[10], int max) {
+    char lib[PATH_MAX];
+    snprintf(lib, sizeof(lib), "%s/ps4", root);
+    DIR *d = opendir(lib);
+    if (!d)
+        return 0;
+    int n = 0;
+    struct dirent *e;
+    while (n < max && (e = readdir(d))) {
+        if (strlen(e->d_name) != 9 || strncmp(e->d_name, "CUSA", 4) || removed(e->d_name) ||
+            installed_internally(e->d_name))
+            continue;
+        char game[PATH_MAX], app[PATH_MAX + 8], orig[PATH_MAX];
+        snprintf(game, sizeof(game), "%s/%s", lib, e->d_name);
+        snprintf(app, sizeof(app), "%s/app.pkg", game);
+        if (exists(app) && !origin_find(game, "app.pkg", orig, sizeof(orig)))
+            snprintf(tids[n++], 10, "%s", e->d_name);
+    }
+    closedir(d);
+    return n;
+}
+
+/* organize off: gives back the pkgs of the games PS4Mount had organized, once per drive.
+ * A game left open is not closed behind the user's back: the next scan tries again. */
+static void migrate_organized(void) {
+    if (g_cfg.organize)
+        return;
+    int pending = 0;
+    for (int i = 0; i < NROOTS && !pending; i++) {
+        char root[32];
+        root_path(i, root, sizeof(root));
+        pending = !g_migrated[i] && root_present(root);
+    }
+    if (!pending)
+        return;
+    uint32_t ids[8];
+    char opened[8][10];
+    if (open_games(ids, opened, 8))
+        return;
+    char tids[MAX_TITLES][10];
+    int n = 0;
+    for (int i = 0; i < NROOTS && n < MAX_TITLES; i++) {
+        if (g_migrated[i])
+            continue;
+        char root[32];
+        root_path(i, root, sizeof(root));
+        if (!root_present(root))
+            continue; /* plugged in later: tried then */
+        g_migrated[i] = 1;
+        n += organized_on_root(root, tids + n, MAX_TITLES - n);
+    }
+    if (!n)
+        return;
+    notify(TR("Organize is off: moving the pkgs of %d game(s) back where they were",
+              "Organizar está apagado: devolviendo los pkgs de %d juego(s) a donde estaban"),
+           n);
+    run_restore(tids, n, 0);
 }
 
 int app_restore(const char *tids, char *msg, size_t cap) {
@@ -3877,6 +3948,7 @@ static void url_decode(const char *in, size_t len, char *out, size_t n) {
  * encoded); keys left out keep their value. */
 int app_config_set(const char *body, char *msg, size_t cap) {
     config_t c = g_cfg;
+    int was_organize = c.organize;
     char value[1200], why[160] = "";
     for (const char *p = body; p && *p;) {
         const char *amp = strchr(p, '&'), *eq = strchr(p, '=');
@@ -3943,6 +4015,9 @@ int app_config_set(const char *body, char *msg, size_t cap) {
     config_save();
     printf("[config] saved: batch=%d batch_size=%d dlc=%d restore_batch=%d organize=%d folders=%d\n", c.batch,
            c.batch_size, c.dlc, c.restore_batch, c.organize, c.npaths);
+    if (was_organize && !c.organize) /* turned off: send the organized games back to where they were */
+        for (int i = 0; i < NROOTS; i++)
+            g_migrated[i] = 0;
     g_next_scan = 0;
     snprintf(msg, cap, "%s", TR("Settings saved", "Ajustes guardados"));
     return 0;
@@ -4551,7 +4626,7 @@ int main(void) {
         if (g_deleting && time(NULL) - g_deleting_since > 600)
             end_delete_window(); /* the line of the screen change was missed */
         if (g_restore_n || g_restore_all) {
-            run_restore(g_restore_all ? NULL : g_restore_tids, g_restore_n);
+            run_restore(g_restore_all ? NULL : g_restore_tids, g_restore_n, 1);
             g_restore_n = 0;
             g_restore_all = 0;
             continue;
@@ -4581,9 +4656,10 @@ int main(void) {
             continue;
         }
         if (time(NULL) >= g_next_scan && !g_deleting) {
-            if (g_reg_mode != REG_NONE)
+            if (g_reg_mode != REG_NONE) {
+                migrate_organized(); /* organize off: the games it had organized, back in place */
                 scan_all();
-            else if (g_manual_scan)
+            } else if (g_manual_scan)
                 notify(TR("Firmware %s is not supported yet: no games are added",
                           "El firmware %s aún no es compatible: no se añaden juegos"),
                        g_fw_text);

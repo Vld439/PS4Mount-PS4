@@ -79,6 +79,8 @@ Si lo activas, mantén esa estructura. Para añadir más juegos, vuelve a ponerl
 
 Si apagas **Organizar los pkgs en la carpeta ps4** en Ajustes (es lo que viene por defecto), PS4Mount no mueve ni renombra nada: usa los `.pkg` **donde estén**, en cualquier carpeta de la unidad (también los que ya estén en `ps4/`), y los agrupa por el título que llevan dentro (juego, actualización y DLC). Los pkgs **base+actualización fusionados** funcionan: una actualización suelta más vieja que el juego no se usa.
 
+Al apagarlo, los juegos que PS4Mount **ya había organizado** vuelven solos a su sitio y con su nombre originales (lo recuerda en el `origin.txt` de cada juego) y se usan desde ahí; los que organizaste tú a mano se quedan donde están. La primera vez que se devuelven hay que reiniciar la consola una vez, como al añadir un juego.
+
 ### En la consola
 
 El juego aparece en la pantalla de inicio como cualquier otro, y PS4Mount te va avisando de todo con notificaciones: al cargarse, al encontrar y añadir juegos, si falta el disco de un juego, al borrar uno y con las copias en Google Drive.
@@ -264,7 +266,7 @@ Ya está: el panel muestra tu correo y tu espacio. La conexión se guarda en la 
 | Carpetas donde buscar pkgs | `/PS4Mount` | Solo se usa con **Organizar** activado: carpetas de cada disco donde se buscan pkgs nuevos, una por línea (`/` es la raíz: todos los pkgs de juegos de la raíz se moverían a `ps4/`). Se miran hasta dos niveles de subcarpetas. `ps4` no se puede usar. Apagado (por defecto), se busca en toda la unidad, sin renombrar ni mover nada. |
 | Añadir los juegos nuevos por grupos / Juegos por grupo | Sí / 5 | Añade muchos juegos por grupos, para no saturar la consola. |
 | Instalar DLC | Sí | Instala los DLC (ver arriba). |
-| Organizar los pkgs en la carpeta ps4 | No | Mueve los pkgs a `ps4/<TITLE_ID>/` para tenerlos ordenados. Apagado (por defecto), los pkgs se usan donde están, con su nombre, sin mover ni renombrar nada; también los que ya están en `ps4/<TITLE_ID>/` de versiones anteriores (en la memoria interna se buscan solo `/data/PS4Mount` y `ps4`). |
+| Organizar los pkgs en la carpeta ps4 | No | Mueve los pkgs a `ps4/<TITLE_ID>/` para tenerlos ordenados. Apagado (por defecto), los pkgs se usan donde están, con su nombre, sin mover ni renombrar nada; los que PS4Mount ya había organizado vuelven solos a su sitio original (los organizados a mano se quedan en `ps4/`). En la memoria interna se buscan solo `/data/PS4Mount` y `ps4`. |
 | Usar también los pkgs de /data/PS4Mount | Sí | Usa también los pkgs de la memoria interna. |
 | Idioma | El de la consola | El idioma del panel y de las notificaciones: el de la consola, inglés o español. |
 
@@ -414,6 +416,8 @@ ps4/CUSAxxxxx/addcont/CUSAyyyyy/<LABEL>/ac.pkg  add-on
 If you turn it on, keep this layout. To add more games, put them where they are searched.
 
 With **Organize pkgs into the ps4 folder** off (in the settings, and the default), PS4Mount moves and renames nothing: it uses the `.pkg` files **where they are**, in any folder of the drive (the ones already in `ps4/` too), grouping them by the title they carry inside (game, update and add-ons). **Merged base+update pkgs** work: a separate update older than the game is not used.
+
+Turning it off sends the games PS4Mount **had organized** back to where they were, with their original names (it remembers them in each game's `origin.txt`), and they are used from there; games you organized by hand stay where they are. The first time, restart the console once, as when adding a game.
 
 ### On the console
 
@@ -600,7 +604,7 @@ That is all: the panel shows your email and your space. The connection is kept o
 | Folders to search for pkgs | `/PS4Mount` | Only used with **Organize** on: folders of each drive where new pkgs are picked up, one per line (`/` is the root: every game pkg in the root would be moved into `ps4/`). Two levels of subfolders are looked into. `ps4` cannot be used. Off (the default), the whole drive is searched, without renaming or moving anything. |
 | Add new games in groups / Games per group | On / 5 | Adds many games in groups, which keeps the console stable. |
 | Install add-ons (DLC) | On | Installs add-ons (see above). |
-| Organize pkgs into the ps4 folder | Off | Moves the pkgs to `ps4/<TITLE_ID>/` to keep them in order. Off (the default), the pkgs are used where they are, with their own names, without moving or renaming anything; the ones already in `ps4/<TITLE_ID>/` from older versions work too (on the console's storage, only `/data/PS4Mount` and `ps4` are searched). |
+| Organize pkgs into the ps4 folder | Off | Moves the pkgs to `ps4/<TITLE_ID>/` to keep them in order. Off (the default), the pkgs are used where they are, with their own names, without moving or renaming anything; the ones PS4Mount had organized go back on their own to where they were (the ones you organized by hand stay in `ps4/`). On the console's storage, only `/data/PS4Mount` and `ps4` are searched. |
 | Also use pkgs in the console's /data/PS4Mount | On | Uses the pkgs in the console's storage too. |
 | Language | The console's | The language of the panel and the notifications: the console's, English or Spanish. |
 

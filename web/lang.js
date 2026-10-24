@@ -33,8 +33,8 @@ var LANGS = {
       'Los grupos pequeños cargan menos el sistema cuando se añaden muchos juegos a la vez.',
     'Install add-ons (DLC)': 'Instalar DLC',
     'Organize pkgs into the ps4 folder': 'Organizar los pkgs en la carpeta ps4',
-    'Off (the default): the .pkg files are used where they are, anywhere on the drive, grouped by their title ID. They are not renamed or moved.':
-      'Apagado (por defecto): los .pkg se usan donde están, en cualquier parte de la unidad, agrupados por su título. No se renombran ni se mueven.',
+    'Off (the default): the .pkg files are used where they are, anywhere on the drive, grouped by their title ID. They are not renamed or moved; the games PS4Mount organized before go back to where they were.':
+      'Apagado (por defecto): los .pkg se usan donde están, en cualquier parte de la unidad, agrupados por su título. No se renombran ni se mueven; los juegos que PS4Mount organizó antes vuelven a su sitio.',
     "Also use pkgs in the console's /data/PS4Mount": 'Usar también los pkgs de /data/PS4Mount de la consola',
     "Pkgs sent to the console's storage are added from there, with no install to wait for. They still take internal space.":
       'Los pkgs enviados a la memoria de la consola se añaden desde ahí, sin esperar una instalación. Ocupan espacio interno.',
