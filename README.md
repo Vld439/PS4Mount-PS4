@@ -33,23 +33,23 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 
 | | Estado |
 | --- | --- |
-| Juegos desde un **USB exFAT** (también pkgs de más de 4 GB) | ✅ probado |
-| Juegos desde la **memoria interna** (`/data/PS4Mount`) | ✅ probado |
-| Juegos desde una **NAS** por **SMB o NFS**, solo lectura, con búsqueda en la red | ✅ probado (solo firmware 13.52) |
-| **Actualizaciones** | ✅ probado |
-| Juegos **donde están**, sin mover ni renombrar los pkgs (cualquier carpeta de la unidad) | ✅ probado |
-| **DLC** de hasta 256 MB (casi todos: trajes, packs, licencias) | ✅ probado: PS4Mount los instala con el instalador del sistema en segundos, y aparecen en la información del juego |
-| DLC de más de 256 MB | ✅ probado: se instalan solos con el instalador del sistema, en segundo plano (ocupan memoria interna; se puede apagar en Ajustes) |
-| **Enviar juegos desde el PC** por la red, con comprobación previa | ✅ probado (unos 16 MB/s por cable) |
-| **Borrar** un juego desde la consola | ✅ probado: borra también sus pkgs y libera el espacio |
-| **Copias en Google Drive**: subir y volver a bajar juegos desde la consola | ✅ probado: la subida va a la velocidad de tu conexión, la bajada a unos 15 MB/s (el máximo de la PS4) |
-| **Descargar desde enlaces**: un pkg, un ZIP o un RAR (también en partes y con contraseña), descargado y descomprimido por la propia consola | ✅ probado en la consola (un juego de 24,6 GB en un RAR con contraseña en 3 partes) |
-| **Extensión del navegador**: las descargas de pkg, ZIP y RAR van a la consola | ✅ probado en Brave; Firefox sin probar |
-| Un juego **nuevo**, o una actualización que llega después del juego | ⚠️ necesita **reiniciar la consola una vez**; después se juega siempre |
-| Otros firmwares | ⚠️ sin probar todavía |
-| Pkgs **retail** (no fake) | ❌ |
-| **Ports homebrew** (juegos sin CUSA, como SMW o SSBU: `SMWR00001`, `SSBU00001`) | ✅ probado: se juegan desde el pkg como un juego, si pesan **1 GB o más** |
-| Apps homebrew (tiendas, emuladores…), de menos de 1 GB | ✅ probado: no se juegan desde el pkg, pero **Enviar juegos** las envía y las instala en la consola |
+| Juegos desde un **USB exFAT** (también pkgs de más de 4 GB) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
+| Juegos desde la **memoria interna** (`/data/PS4Mount`) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
+| Juegos desde una **NAS** por **SMB o NFS**, solo lectura, con búsqueda en la red | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado (solo firmware 13.52) |
+| **Actualizaciones** | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
+| Juegos **donde están**, sin mover ni renombrar los pkgs (cualquier carpeta de la unidad) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
+| **DLC** de hasta 256 MB (casi todos: trajes, packs, licencias) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: PS4Mount los instala con el instalador del sistema en segundos, y aparecen en la información del juego |
+| DLC de más de 256 MB | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: se instalan solos con el instalador del sistema, en segundo plano (ocupan memoria interna; se puede apagar en Ajustes) |
+| **Enviar juegos desde el PC** por la red, con comprobación previa | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado (unos 16 MB/s por cable) |
+| **Borrar** un juego desde la consola | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: borra también sus pkgs y libera el espacio |
+| **Copias en Google Drive**: subir y volver a bajar juegos desde la consola | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: la subida va a la velocidad de tu conexión, la bajada a unos 15 MB/s (el máximo de la PS4) |
+| **Descargar desde enlaces**: un pkg, un ZIP o un RAR (también en partes y con contraseña), descargado y descomprimido por la propia consola | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado en la consola (un juego de 24,6 GB en un RAR con contraseña en 3 partes) |
+| **Extensión del navegador**: las descargas de pkg, ZIP y RAR van a la consola | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado en Brave; Firefox sin probar |
+| Un juego **nuevo**, o una actualización que llega después del juego | <img src="docs/icons/warn.svg" width="14" height="14" alt=""> Necesita **reiniciar la consola una vez**; después se juega siempre |
+| Otros firmwares | <img src="docs/icons/warn.svg" width="14" height="14" alt=""> Sin probar todavía |
+| Pkgs **retail** (no fake) | <img src="docs/icons/no.svg" width="14" height="14" alt=""> No |
+| **Ports homebrew** (juegos sin CUSA, como SMW o SSBU: `SMWR00001`, `SSBU00001`) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: se juegan desde el pkg como un juego, si pesan **1 GB o más** |
+| Apps homebrew (tiendas, emuladores…), de menos de 1 GB | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: no se juegan desde el pkg, pero **Enviar juegos** las envía y las instala en la consola |
 
 ## Requisitos
 
@@ -205,7 +205,7 @@ PS4Mount no trae credenciales de Google: cada usuario usa **las suyas**, que se 
    ![La Google Drive API habilitada](docs/gcloud-3-api-es.png)
 
    </details>
-3. Menú ☰ → **APIs y servicios** → **Pantalla de consentimiento de OAuth** (Google Auth Platform) → **Comenzar**: nombre de la app **PS4Mount**, tu correo, público **Externo**, tu correo de contacto, acepta la política → **Crear**. No subas logo (con logo, Google pide verificar la app).
+3. Menú <img src="docs/icons/menu.svg" width="14" height="14" alt="(menú)"> → **APIs y servicios** → **Pantalla de consentimiento de OAuth** (Google Auth Platform) → **Comenzar**: nombre de la app **PS4Mount**, tu correo, público **Externo**, tu correo de contacto, acepta la política → **Crear**. No subas logo (con logo, Google pide verificar la app).
 
    <details><summary>Ver capturas</summary>
 
@@ -422,23 +422,23 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 
 | | State |
 | --- | --- |
-| Games from an **exFAT USB drive** (pkgs over 4 GB too) | ✅ tested |
-| Games from the **console's storage** (`/data/PS4Mount`) | ✅ tested |
-| Games from a **NAS** over **SMB or NFS**, read only, found on the network | ✅ tested (firmware 13.52 only) |
-| **Updates** | ✅ tested |
-| Games **where they are**, without moving or renaming their pkgs (any folder of the drive) | ✅ tested |
-| **Add-ons (DLC)** up to 256 MB (almost all: costumes, packs, licenses) | ✅ tested: PS4Mount installs them with the system's installer in seconds, and they show in the game's information |
-| Add-ons over 256 MB | ✅ tested: installed on their own with the system's installer, in the background (they take internal space; can be turned off in Settings) |
-| **Sending games from a computer** over the network, checked first | ✅ tested (about 16 MB/s over a cable) |
-| **Deleting** a game on the console | ✅ tested: its pkgs are deleted too and the space is freed |
-| **Google Drive backups**: uploading games and downloading them back from the console | ✅ tested: uploads go at your line's speed, downloads at about 15 MB/s (the PS4's most) |
-| **Downloading from links**: a pkg, a ZIP or a RAR (also in parts and with a password), downloaded and extracted by the console itself | ✅ tested on the console (a 24.6 GB game in a RAR with a password, in 3 parts) |
-| **Browser extension**: pkg, ZIP and RAR downloads go to the console | ✅ tested in Brave; Firefox not tested |
-| A **new** game, or an update that arrives after its game | ⚠️ needs **one console restart**; it plays every time after that |
-| Other firmwares | ⚠️ not tested yet |
-| **Retail** (not fake) pkgs | ❌ |
-| **Homebrew ports** (games without a CUSA ID, such as SMW or SSBU: `SMWR00001`, `SSBU00001`) | ✅ tested: played from the pkg like a game, when they weigh **1 GB or more** |
-| Homebrew apps (stores, emulators…) under 1 GB | ✅ tested: not played from the pkg, but **Send games** sends them and installs them on the console |
+| Games from an **exFAT USB drive** (pkgs over 4 GB too) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
+| Games from the **console's storage** (`/data/PS4Mount`) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
+| Games from a **NAS** over **SMB or NFS**, read only, found on the network | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested (firmware 13.52 only) |
+| **Updates** | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
+| Games **where they are**, without moving or renaming their pkgs (any folder of the drive) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
+| **Add-ons (DLC)** up to 256 MB (almost all: costumes, packs, licenses) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: PS4Mount installs them with the system's installer in seconds, and they show in the game's information |
+| Add-ons over 256 MB | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: installed on their own with the system's installer, in the background (they take internal space; can be turned off in Settings) |
+| **Sending games from a computer** over the network, checked first | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested (about 16 MB/s over a cable) |
+| **Deleting** a game on the console | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: its pkgs are deleted too and the space is freed |
+| **Google Drive backups**: uploading games and downloading them back from the console | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: uploads go at your line's speed, downloads at about 15 MB/s (the PS4's most) |
+| **Downloading from links**: a pkg, a ZIP or a RAR (also in parts and with a password), downloaded and extracted by the console itself | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested on the console (a 24.6 GB game in a RAR with a password, in 3 parts) |
+| **Browser extension**: pkg, ZIP and RAR downloads go to the console | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested in Brave; Firefox not tested |
+| A **new** game, or an update that arrives after its game | <img src="docs/icons/warn.svg" width="14" height="14" alt=""> Needs **one console restart**; it plays every time after that |
+| Other firmwares | <img src="docs/icons/warn.svg" width="14" height="14" alt=""> Not tested yet |
+| **Retail** (not fake) pkgs | <img src="docs/icons/no.svg" width="14" height="14" alt=""> No |
+| **Homebrew ports** (games without a CUSA ID, such as SMW or SSBU: `SMWR00001`, `SSBU00001`) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: played from the pkg like a game, when they weigh **1 GB or more** |
+| Homebrew apps (stores, emulators…) under 1 GB | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: not played from the pkg, but **Send games** sends them and installs them on the console |
 
 ## Requirements
 
@@ -594,7 +594,7 @@ PS4Mount ships no Google credentials: each user uses **their own**, which stay o
    ![The Google Drive API enabled](docs/gcloud-3-api-es.png)
 
    </details>
-3. Menu ☰ → **APIs & Services** → **OAuth consent screen** (Google Auth Platform) → **Get started**: app name **PS4Mount**, your email, audience **External**, your contact email, agree to the policy → **Create**. Do not upload a logo (with one, Google asks to verify the app).
+3. Menu <img src="docs/icons/menu.svg" width="14" height="14" alt="(menu)"> → **APIs & Services** → **OAuth consent screen** (Google Auth Platform) → **Get started**: app name **PS4Mount**, your email, audience **External**, your contact email, agree to the policy → **Create**. Do not upload a logo (with one, Google asks to verify the app).
 
    <details><summary>See the screenshots</summary>
 
