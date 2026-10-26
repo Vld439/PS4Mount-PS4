@@ -236,6 +236,14 @@ var LANGS = {
     'other': 'otro',
     /* messages */
     'Error: {0}': 'Error: {0}',
+    "Also install big add-ons (over 256 MB)":
+      "Instalar también los DLC grandes (más de 256 MB)",
+    "A game only sees an add-on the system has installed: big ones are copied to the console's storage, in the background (a few minutes). Off, they are not used.":
+      "Un juego solo ve un DLC que el sistema ha instalado: los grandes se copian a la memoria de la consola, en segundo plano (unos minutos). Apagado, no se usan.",
+    "Ready to install":
+      "Lista para instalar",
+    "A homebrew app: it is sent to the console and installed with the system's installer, as by hand. The copy is deleted once it is installed.":
+      "Una app homebrew: se envía a la consola y se instala con el instalador del sistema, como a mano. La copia se borra cuando queda instalada.",
     'Could not read the list: {0}': 'No se pudo leer la lista: {0}',
     'Could not read the settings: {0}': 'No se pudieron leer los ajustes: {0}',
     'Could not read the log: {0}': 'No se pudo leer el log: {0}',

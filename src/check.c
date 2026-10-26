@@ -71,10 +71,13 @@ int pkg_check(const char *path, uint32_t fw, pkg_check_t *out) {
                  TR("not a game, an update or an add-on (category \"%s\")",
                     "no es un juego, una actualización ni un DLC (categoría \"%s\")"),
                  cat);
-    else if (strncmp(out->title_id, "CUSA", 4))
+    else if (!is_game_id(out->title_id))
         snprintf(out->problem, sizeof(out->problem),
-                 TR("%s is an app (homebrew), not a game: PS4Mount plays CUSA games; install it the usual way",
-                    "%s es una app (homebrew), no un juego: PS4Mount juega juegos CUSA; instálala de la forma normal"),
+                 TR("%s is a system app, not a game", "%s es una app del sistema, no un juego"), out->title_id);
+    else if (out->kind == PKG_KIND_GAME && homebrew_small(out->title_id, out->pkg_size) && (out->installable = out->fake))
+        snprintf(out->problem, sizeof(out->problem),
+                 TR("%s is a homebrew app (under 1 GB): install it the usual way; homebrew ports, which are bigger, are played from the pkg",
+                    "%s es una app homebrew (menos de 1 GB): instálala de la forma normal; los ports homebrew, más grandes, se juegan desde el pkg"),
                  out->title_id);
     else if (!out->fake)
         snprintf(out->problem, sizeof(out->problem), "%s",

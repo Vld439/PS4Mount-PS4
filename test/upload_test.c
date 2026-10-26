@@ -74,7 +74,7 @@ static const char *transfer(const char *name, const uint8_t *data, size_t len, u
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv))
         return resp;
     g_done = 0;
-    if (upload_start(sv[1], g_dir, name, length, data, pre, FW, on_done)) {
+    if (upload_start(sv[1], g_dir, name, length, data, pre, FW, 0, on_done)) {
         close(sv[0]);
         close(sv[1]);
         return "busy";

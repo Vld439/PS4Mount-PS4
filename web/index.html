@@ -139,6 +139,9 @@ button.small{padding:5px 10px;font-size:13px}
     <span class="hint">Smaller groups are gentler on the system when many games are added at once.</span>
   </label>
   <label class="check"><input type="checkbox" id="s-dlc"> Install add-ons (DLC)</label>
+  <label class="check"><input type="checkbox" id="s-dlcbig"> Also install big add-ons (over 256 MB)</label>
+  <span class="hint" style="margin-top:-8px">A game only sees an add-on the system has installed: big ones are copied to the console's
+    storage, in the background (a few minutes). Off, they are not used.</span>
   <label class="check"><input type="checkbox" id="s-organize"> Organize pkgs into the ps4 folder</label>
   <span class="hint" style="margin-top:-8px">Off (the default): the .pkg files are used where they are, anywhere on the drive, grouped by
     their title ID. They are not renamed or moved; the games PS4Mount organized before go back to where they were.</span>
@@ -420,6 +423,7 @@ $('settingsbtn').onclick = function () {
     $('s-batch').checked = c.batch;
     $('s-size').value = c.batch_size;
     $('s-dlc').checked = c.dlc;
+    $('s-dlcbig').checked = c.dlc_big;
     $('s-organize').checked = c.organize;
     $('s-internal').checked = c.internal;
     var nasOk = !!c.nas_supported;
@@ -612,7 +616,7 @@ $('setform').onsubmit = function (e) {
   var size = $('s-size').value;
   if (!/^[0-9]+$/.test(size) || +size < 1 || +size > 50) { toast(t('Games per group must be a number from 1 to {0}', 50)); return; }
   var body = 'batch=' + ($('s-batch').checked ? 1 : 0) + '&batch_size=' + encodeURIComponent($('s-size').value) +
-    '&dlc=' + ($('s-dlc').checked ? 1 : 0) + '&organize=' + ($('s-organize').checked ? 1 : 0) + '&internal=' + ($('s-internal').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value) +
+    '&dlc=' + ($('s-dlc').checked ? 1 : 0) + '&dlc_big=' + ($('s-dlcbig').checked ? 1 : 0) + '&organize=' + ($('s-organize').checked ? 1 : 0) + '&internal=' + ($('s-internal').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value) +
     '&nas=' + ($('s-nas').checked ? 1 : 0) + '&nas_proto=' + $('s-nas-proto').value +
     '&nas_port=' + encodeURIComponent($('s-nas-port').value) +
     '&nas_server=' + encodeURIComponent($('s-nas-server').value.trim()) +
@@ -640,6 +644,12 @@ function fillDests(list) {
 /* Why it cannot be sent to the chosen place, or '' when it can. */
 function blocker(it) {
   if (!it.check) return '';
+  if (it.check.install) {
+    /* a small homebrew app: received on the console's storage, then installed there */
+    var inside = destById('internal');
+    if (inside && inside.free < 2 * it.file.size + 67108864) return t('not enough space in {0}: {1} free, {2} needed', inside.label, mb(inside.free), mb(2 * it.file.size));
+    return '';
+  }
   if (!it.check.ok) return it.check.problem;
   var d = destById($('dest').value);
   if (!d) return t('no place to send it to');
@@ -654,12 +664,14 @@ function renderQueue() {
     else if (it.state === 'sent') { st = t('Sent'); cls = 'ok'; }
     else if (it.state === 'failed') { st = t('Failed'); cls = 'bad'; }
     else if (why) { st = t('Cannot be used'); cls = 'bad'; }
+    else if (c && c.install) { st = t('Ready to install'); cls = 'ok'; }
     else { st = t('Ready to send'); cls = 'ok'; }
     if (c && c.title_id)
       info = '<div class="meta">' + esc(c.title || c.title_id) + ' · ' + esc(t(c.kind)) + ' · ' + esc(c.title_id) +
         (c.app_ver ? ' · v' + esc(c.app_ver) : '') + (c.system_ver ? ' · ' + esc(t('needs firmware {0}', c.system_ver)) : '') +
         ' · ' + mb(it.file.size) + '</div>';
     var notes = c && c.notes ? c.notes.map(function (n) { return '<div class="warn">' + esc(n) + '</div>'; }).join('') : '';
+    if (c && c.install) notes += '<div class="warn">' + esc(t('A homebrew app: it is sent to the console and installed with the system\'s installer, as by hand. The copy is deleted once it is installed.')) + '</div>';
     var bad = it.state === 'failed' ? it.error : it.state === 'sent' ? '' : why;
     return '<div class="item"><div class="top"><span class="file">' + esc(it.file.name) + '</span>' +
       '<span class="st st-' + cls + '">' + st + '</span></div>' + info + notes +
@@ -705,7 +717,8 @@ function sendNext() {
   sending = x;
   it.state = 'sending';
   it.sent = 0;
-  x.open('POST', '/api/upload?dest=' + encodeURIComponent($('dest').value) + '&name=' + encodeURIComponent(it.file.name));
+  x.open('POST', '/api/upload?dest=' + encodeURIComponent($('dest').value) + '&name=' + encodeURIComponent(it.file.name) +
+    (it.check.install ? '&install=1' : ''));
   x.setRequestHeader('X-PS4Mount', '1');
   x.setRequestHeader('Content-Type', 'application/octet-stream');
   x.upload.onprogress = function (e) { it.sent = e.loaded; renderQueue(); };

@@ -20,6 +20,7 @@
 #include "page_data.h"
 #include "lang.h"
 #include "mem.h"
+#include "pkg.h"
 
 #define LOG_PATH "/data/ps4mount/log.txt"
 #define CHECK_MAX (16u << 20) /* most a pkg check is given */
@@ -83,7 +84,7 @@ static int title_at(const char *p, char *tid) {
         tid[i] = c;
     }
     tid[9] = 0;
-    return strncmp(tid, "CUSA", 4) ? -1 : 0;
+    return is_game_id(tid) ? 0 : -1;
 }
 
 static int title_param(const char *path, char *tid) {

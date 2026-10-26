@@ -187,6 +187,23 @@ static void test_scan(void) {
     test_organized(&d, root);
     catalog_free(&d);
 
+    /* a pkg found unusable is read again when the catalog was saved with other rules */
+    {
+        char old[PATH_MAX];
+        snprintf(old, sizeof(old), "%s-old.txt", root);
+        FILE *f = fopen(old, "w");
+        fprintf(f, "%d\t100\t1\t-\t-\t-\t-\t0\t-\t/x/port.pkg\n", CAT_BAD);
+        fclose(f);
+        catalog_t o = {0};
+        CHECK(catalog_load(&o, old) == 1 && o.pkgs[0].state == CAT_UNREAD);
+        o.pkgs[0].state = CAT_BAD;
+        CHECK(catalog_save(&o, old) == 0);
+        catalog_free(&o);
+        CHECK(catalog_load(&o, old) == 1 && o.pkgs[0].state == CAT_BAD); /* the same rules: kept */
+        catalog_free(&o);
+        unlink(old);
+    }
+
     /* a pkg that changes size or time is read again */
     catalog_t e = {0};
     catalog_walk(&e, root, NULL, NULL, NULL, 0);

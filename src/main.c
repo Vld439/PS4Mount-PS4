@@ -60,7 +60,7 @@
 #include "web.h"
 #include "icon_data.h"
 
-#define VERSION "PS4Mount 0.6.1-beta"
+#define VERSION "PS4Mount 0.6.2-beta"
 #define LOCK_PORT 9032
 #define SCAN_SECONDS 10
 /* A full walk of the drive is slower on drives with many files: the catalog is brought
@@ -104,6 +104,7 @@ typedef struct {
     char nas_sub[256];   /* folder inside it */
     char nas_user[64];   /* SMB; "" is the guest account */
     char nas_pass[64];
+    int dlc_big;       /* add-ons over DLC_INSTALL_MAX are installed too (they take space on the console) */
 } config_t;
 
 #define MAX_RESTORE_BATCH 10
@@ -112,7 +113,7 @@ typedef struct {
  * moved until the user puts it there (the drive root, "", is still a choice). */
 #define DEFAULT_SCAN_PATH "PS4Mount"
 
-static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, 0, -1, 0, NAS_NFS, 0, "", "", "", "", ""};
+static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, 0, -1, 0, NAS_NFS, 0, "", "", "", "", "", 1};
 
 int sceSystemServiceParamGetInt(int param_id, int *value);
 int sceSystemServicePowerTick(void);
@@ -378,7 +379,7 @@ typedef struct {
     pkg_t pkg;
     sfo_t sfo;
     int data;    /* 1: has data (mounted by the game), 0: only unlocks content */
-    int install; /* 1: installed with BGFT (small), 0: mounted */
+    int install; /* 1: installed with BGFT (small, or big with dlc_big), 0: mounted */
 } dlc_src_t;
 
 /* One library folder: <root>/ps4/<TID>/app.pkg plus an optional patch.pkg and add-ons. */
@@ -427,7 +428,7 @@ static void dlc_open(title_src_t *t) {
         return;
     struct dirent *e;
     while ((e = readdir(d))) {
-        if (strlen(e->d_name) != 9 || strncmp(e->d_name, "CUSA", 4))
+        if (!is_game_id(e->d_name))
             continue;
         char sub[PATH_MAX];
         snprintf(sub, sizeof(sub), "%s/%s", base, e->d_name);
@@ -470,7 +471,7 @@ static void dlc_open(title_src_t *t) {
                 continue;
             }
             a->data = a->pkg.header[0x77] == 0x1b; /* content type: 0x1b with data, 0x1c license only */
-            a->install = a->pkg.pkg_size <= DLC_INSTALL_MAX;
+            a->install = a->pkg.pkg_size <= DLC_INSTALL_MAX || g_cfg.dlc_big;
             t->ndlc++;
             if (a->install)
                 continue; /* not mounted: no /user/addcont folder of PS4Mount's */
@@ -531,7 +532,7 @@ static void dlc_open_catalog(title_src_t *t, const catalog_t *c, const cat_game_
             continue;
         }
         a->data = a->pkg.header[0x77] == 0x1b; /* content type: 0x1b with data, 0x1c license only */
-        a->install = a->pkg.pkg_size <= DLC_INSTALL_MAX;
+        a->install = a->pkg.pkg_size <= DLC_INSTALL_MAX || g_cfg.dlc_big;
         t->ndlc++;
         if (a->install)
             continue; /* not mounted: no /user/addcont folder of PS4Mount's */
@@ -853,10 +854,44 @@ static int dlc_failed(const char *content_id) {
     return 0;
 }
 
+/* Big add-ons being installed: the system copies them in the background, minutes for a
+ * few GB, while PS4Mount goes on. Each one is said when it is there. */
+#define MAX_DLC_PENDING 64
+#define DLC_SPACE_MARGIN (2ull << 30) /* left free on the console after an install */
+#define DLC_PENDING_SECONDS (2 * 3600) /* an install not done by then is given up for this run */
+
+typedef struct {
+    char content_id[40], name[128];
+    uint64_t size;
+    time_t since;
+} dlc_pending_t;
+
+static dlc_pending_t g_dlc_pending[MAX_DLC_PENDING];
+static int g_ndlc_pending;
+
+static int dlc_pending(const char *content_id) {
+    for (int i = 0; i < g_ndlc_pending; i++)
+        if (!strcmp(g_dlc_pending[i].content_id, content_id))
+            return 1;
+    return 0;
+}
+
+/* /user/addcont/<TID>/<LABEL>/ac.pkg is there, whole, and is the system's own (not mounted). */
+static int dlc_copy_done(const char *content_id, uint64_t size) {
+    char tid[10], dir[64], p[96];
+    struct stat st;
+    snprintf(tid, sizeof(tid), "%.9s", content_id + 7);
+    snprintf(dir, sizeof(dir), "/user/addcont/%s", tid);
+    if (mounted_from(dir, NULL, 0))
+        return 0;
+    snprintf(p, sizeof(p), "%s/%s/ac.pkg", dir, content_id + 20);
+    return !lstat(p, &st) && S_ISREG(st.st_mode) && (uint64_t)st.st_size == size;
+}
+
 static int dlc_ready(const title_src_t *t) {
     char p[PATH_MAX];
     for (int i = 0; i < t->ndlc; i++) {
-        if (t->dlc[i].install && dlc_failed(t->dlc[i].pkg.content_id))
+        if (t->dlc[i].install && (dlc_failed(t->dlc[i].pkg.content_id) || dlc_pending(t->dlc[i].pkg.content_id)))
             continue;
         snprintf(p, sizeof(p), HOLD_DIR "/addcont/%s/%s/ac.pkg", t->dlc[i].pkg.title_id,
                  t->dlc[i].pkg.content_id + 20);
@@ -1088,11 +1123,26 @@ static void pump_events(int ms);
  * most): the system copies the pkg into /user/addcont and writes its addcont.db record. */
 /* 0 when installed, 1 when the installer would not take it now, 2 when it already would
  * not earlier in this run (see g_dlc_failed: said once). */
+static uint64_t free_bytes(const char *dir);
+
+/* 0 installed, 1 refused (tried again at the next load), 2 skipped, 3 started in the background. */
 static int dlc_install(dlc_src_t *a) {
     if (dlc_installed(a))
         return 0;
     if (dlc_failed(a->pkg.content_id))
         return 2;
+    int big = a->pkg.pkg_size > DLC_INSTALL_MAX;
+    if (big && dlc_pending(a->pkg.content_id))
+        return 3;
+    if (big && (free_bytes("/user") < a->pkg.pkg_size + DLC_SPACE_MARGIN || g_ndlc_pending == MAX_DLC_PENDING)) {
+        const sfo_item_t *n = sfo_get(&a->sfo, "TITLE");
+        notify(TR("Not enough space on the console to install the add-on %s (%llu MB): free some space and load PS4Mount again",
+                  "No hay espacio en la consola para instalar el DLC %s (%llu MB): libera espacio y vuelve a cargar PS4Mount"),
+               n && !n->is_int ? n->sval : a->pkg.content_id, (unsigned long long)(a->pkg.pkg_size >> 20));
+        if (g_ndlc_failed < MAX_DLC_FAILED)
+            snprintf(g_dlc_failed[g_ndlc_failed++], sizeof(g_dlc_failed[0]), "%s", a->pkg.content_id);
+        return 2;
+    }
     char target[64], url[PATH_MAX + 8], msg[PATH_MAX + 64];
     snprintf(target, sizeof(target), "/user/addcont/%s", a->pkg.title_id);
     /* a folder mounted here by an older PS4Mount: the install must reach the real one */
@@ -1104,6 +1154,14 @@ static int dlc_install(dlc_src_t *a) {
     int task = install_pkg(sys_path(a->path, url, sizeof(url)), n && !n->is_int ? n->sval : a->pkg.content_id,
                            user, msg, sizeof(msg));
     printf("[dlc] %s: %s\n", a->pkg.content_id, msg);
+    if (big && task >= 0) { /* minutes: followed by dlc_pending_check() */
+        dlc_pending_t *p = &g_dlc_pending[g_ndlc_pending++];
+        snprintf(p->content_id, sizeof(p->content_id), "%s", a->pkg.content_id);
+        snprintf(p->name, sizeof(p->name), "%s", n && !n->is_int ? n->sval : a->pkg.content_id);
+        p->size = a->pkg.pkg_size;
+        p->since = time(NULL);
+        return 3;
+    }
     for (int i = 0; task >= 0 && i < 120 && !dlc_installed(a); i++)
         pump_events(500);
     if (!dlc_installed(a)) {
@@ -1117,13 +1175,43 @@ static int dlc_install(dlc_src_t *a) {
     return 0;
 }
 
+/* Big add-ons that the system has finished installing are said; ones that never finish
+ * are given up for this run. */
+static void dlc_pending_check(void) {
+    for (int i = 0; i < g_ndlc_pending;) {
+        dlc_pending_t *p = &g_dlc_pending[i];
+        int done = dlc_copy_done(p->content_id, p->size), late = time(NULL) - p->since > DLC_PENDING_SECONDS;
+        if (!done && !late) {
+            i++;
+            continue;
+        }
+        if (done)
+            notify(TR("Add-on installed: %s", "DLC instalado: %s"), p->name);
+        else {
+            printf("[dlc] %s: not installed after %d s, given up\n", p->content_id, DLC_PENDING_SECONDS);
+            if (g_ndlc_failed < MAX_DLC_FAILED)
+                snprintf(g_dlc_failed[g_ndlc_failed++], sizeof(g_dlc_failed[0]), "%s", p->content_id);
+        }
+        printf("[dlc] %s %s\n", p->content_id, done ? "installed" : "given up");
+        *p = g_dlc_pending[--g_ndlc_pending];
+    }
+}
+
 /* Installs the small add-ons of a registered game. One the installer refuses does not
  * keep the game out of the library: it is said, and tried again at the next load. */
 static void install_title_dlc(title_src_t *t) {
-    int left = 0;
-    for (int i = 0; i < t->ndlc; i++)
-        if (t->dlc[i].install && dlc_install(&t->dlc[i]) == 1)
-            left++;
+    int left = 0, started = 0;
+    uint64_t bytes = 0;
+    for (int i = 0; i < t->ndlc; i++) {
+        int was = dlc_pending(t->dlc[i].pkg.content_id), rc = t->dlc[i].install ? dlc_install(&t->dlc[i]) : 0;
+        left += rc == 1;
+        if (rc == 3 && !was)
+            started++, bytes += t->dlc[i].pkg.pkg_size;
+    }
+    if (started)
+        notify(TR("%s: installing %d big add-on(s) (%llu.%llu GB) in the background; each one is said when it is ready",
+                  "%s: instalando %d DLC grande(s) (%llu,%llu GB) en segundo plano; se avisa cuando cada uno esté listo"),
+               t->name, started, (unsigned long long)(bytes * 10 >> 30) / 10, (unsigned long long)(bytes * 10 >> 30) % 10);
     if (left)
         notify(TR("%s: %d add-on(s) could not be installed now; the game is added without them and they are tried again "
                   "the next time PS4Mount loads",
@@ -1884,7 +1972,7 @@ static int find_dlc_game(const char *root, const pkg_t *dlc, char *tid) {
     struct dirent *e;
     int found = 0;
     while (!found && (e = readdir(d))) {
-        if (strlen(e->d_name) != 9 || strncmp(e->d_name, "CUSA", 4))
+        if (!is_game_id(e->d_name))
             continue;
         static const char *names[] = {"app.pkg", "patch.pkg"};
         for (int i = 0; i < 2 && !found; i++) {
@@ -1935,7 +2023,7 @@ static unsigned long lib_signature(const char *root) {
     struct dirent *e;
     unsigned long sig = 5381;
     while ((e = readdir(d))) {
-        if (strlen(e->d_name) != 9 || strncmp(e->d_name, "CUSA", 4))
+        if (!is_game_id(e->d_name))
             continue;
         snprintf(p, sizeof(p), "%s/%s/app.pkg", lib, e->d_name);
         if (!exists(p))
@@ -2093,7 +2181,7 @@ static int adopt_dir_pass(const char *root, const char *dir, int pass) {
         int is_dlc = cat && !strcmp(cat->sval, "ac");
         if (is_dlc || pass == 1) {
             /* add-ons go in the second pass: their game may be in this folder too */
-            if (pass == 1 && is_dlc && strncmp(pkg.title_id, "CUSA", 4)) {
+            if (pass == 1 && is_dlc && !is_game_id(pkg.title_id)) {
                 if (first_time(path))
                     printf("[scan] skip %s (add-on %s is not for a PS4 title)\n", path, pkg.content_id);
             } else if (pass == 1 && is_dlc) {
@@ -2108,7 +2196,8 @@ static int adopt_dir_pass(const char *root, const char *dir, int pass) {
             pkg_close(&pkg);
             continue;
         }
-        int ok = (is_app || is_patch) && !strncmp(pkg.title_id, "CUSA", 4) && pkg_fake_key(&pkg);
+        int ok = (is_app || is_patch) && is_game_id(pkg.title_id) && pkg_fake_key(&pkg) &&
+                 !(is_app && homebrew_small(pkg.title_id, pkg.pkg_size));
         char tid[10], ver[16] = "";
         uint8_t digest[32];
         snprintf(tid, sizeof(tid), "%s", pkg.title_id);
@@ -2368,7 +2457,7 @@ static int titles_on_root(const char *root, char (*tids)[10], int max) {
     DIR *d = opendir(lib);
     struct dirent *e;
     while (d && (e = readdir(d)) && n < max) {
-        if (strlen(e->d_name) != 9 || strncmp(e->d_name, "CUSA", 4))
+        if (!is_game_id(e->d_name))
             continue;
         char pkg[PATH_MAX];
         snprintf(pkg, sizeof(pkg), "%s/%s/app.pkg", lib, e->d_name);
@@ -3001,7 +3090,7 @@ static int delete_game_files(const char *dir, const char *tid, const char *name)
         char root[PATH_MAX], want[64];
         root_path(i, root, sizeof(root));
         snprintf(want, sizeof(want), "%s/ps4/%s", root, tid);
-        if (strlen(tid) != 9 || strncmp(tid, "CUSA", 4) || strcmp(dir, want))
+        if (!is_game_id(tid) || strcmp(dir, want))
             continue;
         unsigned long long n = tree_size(dir);
         rm_tree(dir);
@@ -3268,7 +3357,7 @@ void app_games_json(buf_t *out) {
     struct dirent *e;
     while (sd && (e = readdir(sd))) {
         size_t n = strlen(e->d_name);
-        if (n != 13 || strcmp(e->d_name + 9, ".src") || strncmp(e->d_name, "CUSA", 4))
+        if (n != 13 || strcmp(e->d_name + 9, ".src") || !game_id_at(e->d_name))
             continue;
         char tid[10], dir[PATH_MAX], drive[32], name[128];
         snprintf(tid, sizeof(tid), "%.9s", e->d_name);
@@ -3589,7 +3678,7 @@ static int folder_dlc_tids(const char *game, char (*tids)[10], int max) {
     int n = 0;
     struct dirent *e;
     while (d && n < max && (e = readdir(d)))
-        if (strlen(e->d_name) == 9 && !strncmp(e->d_name, "CUSA", 4))
+        if (is_game_id(e->d_name))
             snprintf(tids[n++], 10, "%s", e->d_name);
     if (d)
         closedir(d);
@@ -3723,7 +3812,7 @@ static int restore_collect(char (*only)[10], int nonly, restore_item_t *items, i
         DIR *d = opendir(lib);
         struct dirent *e;
         while (d && n < max && (e = readdir(d))) {
-            if (strlen(e->d_name) != 9 || strncmp(e->d_name, "CUSA", 4))
+            if (!is_game_id(e->d_name))
                 continue;
             int wanted = !only;
             for (int k = 0; k < nonly && !wanted; k++)
@@ -3820,7 +3909,7 @@ static int organized_on_root(const char *root, char (*tids)[10], int max) {
     int n = 0;
     struct dirent *e;
     while (n < max && (e = readdir(d))) {
-        if (strlen(e->d_name) != 9 || strncmp(e->d_name, "CUSA", 4) || removed(e->d_name) ||
+        if (!is_game_id(e->d_name) || removed(e->d_name) ||
             installed_internally(e->d_name))
             continue;
         char game[PATH_MAX], app[PATH_MAX + 8], orig[PATH_MAX];
@@ -3893,7 +3982,7 @@ int app_restore(const char *tids, char *msg, size_t cap) {
     for (const char *p = tids; *p;) {
         size_t len = strcspn(p, ",");
         char tid[10], root[PATH_MAX];
-        if (len != 9 || strncmp(p, "CUSA", 4) || strspn(p + 4, "0123456789") < 5) {
+        if (len != 9 || !game_id_at(p)) {
             snprintf(msg, cap, "invalid title id: %.20s", p);
             return -1;
         }
@@ -4044,8 +4133,8 @@ static void nas_apply(int force) {
 
 static void config_save(void) {
     buf_t b = {0};
-    buf_printf(&b, "batch=%d\nbatch_size=%d\ndlc=%d\nrestore_batch=%d\ninternal=%d\norganize=%d\nlang=%s\n", g_cfg.batch,
-               g_cfg.batch_size, g_cfg.dlc, g_cfg.restore_batch, g_cfg.internal, g_cfg.organize,
+    buf_printf(&b, "batch=%d\nbatch_size=%d\ndlc=%d\ndlc_big=%d\nrestore_batch=%d\ninternal=%d\norganize=%d\nlang=%s\n",
+               g_cfg.batch, g_cfg.batch_size, g_cfg.dlc, g_cfg.dlc_big, g_cfg.restore_batch, g_cfg.internal, g_cfg.organize,
                g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto");
     buf_printf(&b, "nas=%d\nnas_proto=%d\nnas_port=%d\nnas_server=%s\nnas_share=%s\nnas_sub=%s\nnas_user=%s\nnas_pass=%s\n",
                g_cfg.nas, g_cfg.nas_proto, g_cfg.nas_port, g_cfg.nas_server, g_cfg.nas_share,
@@ -4071,6 +4160,8 @@ static void config_load(void) {
             c.batch_size = atoi(line + 11);
         else if (!strncmp(line, "dlc=", 4))
             c.dlc = atoi(line + 4) != 0;
+        else if (!strncmp(line, "dlc_big=", 8))
+            c.dlc_big = atoi(line + 8) != 0;
         else if (!strncmp(line, "restore_batch=", 14))
             c.restore_batch = atoi(line + 14);
         else if (!strncmp(line, "internal=", 9))
@@ -4115,10 +4206,10 @@ static void config_load(void) {
 
 void app_config_json(buf_t *out) {
     buf_printf(out,
-               "{\"batch\":%s,\"batch_size\":%d,\"dlc\":%s,\"internal\":%s,\"organize\":%s,\"restore_batch\":%d,\"max_restore_batch\":%d,"
+               "{\"batch\":%s,\"batch_size\":%d,\"dlc\":%s,\"dlc_big\":%s,\"internal\":%s,\"organize\":%s,\"restore_batch\":%d,\"max_restore_batch\":%d,"
                "\"lang\":\"%s\",\"ui_lang\":\"%s\",\"nas_supported\":%s,\"nas\":%s,\"nas_proto\":\"%s\",\"nas_port\":%d,"
                "\"nas_server\":",
-               g_cfg.batch ? "true" : "false", g_cfg.batch_size, g_cfg.dlc ? "true" : "false",
+               g_cfg.batch ? "true" : "false", g_cfg.batch_size, g_cfg.dlc ? "true" : "false", g_cfg.dlc_big ? "true" : "false",
                g_cfg.internal ? "true" : "false", g_cfg.organize ? "true" : "false", g_cfg.restore_batch, MAX_RESTORE_BATCH,
                g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto", lang_tag(g_lang),
                nas_supported() ? "true" : "false", g_cfg.nas ? "true" : "false",
@@ -4236,6 +4327,8 @@ int app_config_set(const char *body, char *msg, size_t cap) {
                 c.batch_size = atoi(value);
             else if (k == 3 && !strncmp(p, "dlc", 3))
                 c.dlc = atoi(value) != 0;
+            else if (k == 7 && !strncmp(p, "dlc_big", 7))
+                c.dlc_big = atoi(value) != 0;
             else if (k == 8 && !strncmp(p, "internal", 8))
                 c.internal = atoi(value) != 0;
             else if (k == 8 && !strncmp(p, "organize", 8))
@@ -4449,7 +4542,8 @@ void app_check(const void *data, size_t len, uint64_t size, buf_t *out) {
                  c.title_id, root_label(where));
     ver_text(c.system_ver, sv, sizeof(sv));
     ver_text(g_fw, fw, sizeof(fw));
-    buf_printf(out, "{\"ok\":%s,\"problem\":", problem[0] ? "false" : "true");
+    buf_printf(out, "{\"ok\":%s,\"install\":%s,\"problem\":", problem[0] ? "false" : "true",
+               c.installable && !installed_internally(c.title_id) ? "true" : "false");
     json_str(out, problem);
     buf_printf(out, ",\"kind\":\"%s\",\"title\":", pkg_kind_name(c.kind));
     json_str(out, c.title);
@@ -4480,8 +4574,89 @@ static void upload_done(const char *path) {
     app_rescan(); /* the scan picks it up now */
 }
 
+/* --- homebrew apps sent to be installed --- */
+/* A small homebrew app is not used from its pkg: sent from the panel with "Send and
+ * install", it lands in INSTALL_DIR and goes to the system's installer, like a pkg
+ * installed by hand. The copy is deleted once the system has the app. */
+#define INSTALL_DIR STATE_DIR "/install"
+#define INSTALL_KEEP_SECONDS 600 /* a copy is only deleted this long after it arrived */
+
+static pthread_mutex_t g_inst_mu = PTHREAD_MUTEX_INITIALIZER;
+static char g_inst_path[PATH_MAX]; /* received, for the main loop to install */
+
+static void upload_install_done(const char *path) {
+    pthread_mutex_lock(&g_inst_mu);
+    snprintf(g_inst_path, sizeof(g_inst_path), "%s", path);
+    pthread_mutex_unlock(&g_inst_mu);
+}
+
+/* The title ID and title of the pkg at path; 0 when read. */
+static int pkg_id_title(const char *path, char *tid, char *title, size_t n) {
+    pkg_t *pkg = mem_alloc(sizeof(*pkg));
+    sfo_t *sfo = mem_alloc(sizeof(*sfo));
+    int rc = -1;
+    if (pkg && sfo && !pkg_open(pkg, path)) {
+        snprintf(tid, 10, "%s", pkg->title_id);
+        const sfo_item_t *t = read_sfo(pkg, sfo) ? NULL : sfo_get(sfo, "TITLE");
+        snprintf(title, n, "%s", t && !t->is_int ? t->sval : pkg->title_id);
+        pkg_close(pkg);
+        rc = 0;
+    }
+    mem_free(pkg);
+    mem_free(sfo);
+    return rc;
+}
+
+/* The installer service is used from the main loop only (the upload has a thread of its own). */
+static void install_received(void) {
+    char path[PATH_MAX];
+    pthread_mutex_lock(&g_inst_mu);
+    snprintf(path, sizeof(path), "%s", g_inst_path);
+    g_inst_path[0] = 0;
+    pthread_mutex_unlock(&g_inst_mu);
+    if (!path[0])
+        return;
+    char tid[10] = "", title[128] = "", url[PATH_MAX + 8], msg[PATH_MAX + 64];
+    if (pkg_id_title(path, tid, title, sizeof(title)))
+        snprintf(title, sizeof(title), "%s", path);
+    int32_t user = 0;
+    sceUserServiceGetForegroundUser(&user);
+    int task = install_pkg(sys_path(path, url, sizeof(url)), title, user, msg, sizeof(msg));
+    printf("[install] %s: %s\n", path, msg);
+    if (task < 0)
+        notify(TR("%s could not be installed: the system's installer turned it down (see the log)",
+                  "%s no se pudo instalar: el instalador del sistema lo rechazó (mira el log)"),
+               title);
+    else
+        notify(TR("Installing %s: it shows on the home screen when it is done", "Instalando %s: aparece en la pantalla de inicio cuando termine"),
+               title);
+}
+
+/* Copies whose app the system has installed by now (whole, and a while ago) are deleted. */
+static void install_cleanup(void) {
+    DIR *d = opendir(INSTALL_DIR);
+    struct dirent *e;
+    while (d && (e = readdir(d))) {
+        size_t l = strlen(e->d_name);
+        if (l < 5 || strcmp(e->d_name + l - 4, ".pkg"))
+            continue; /* the part being received, or anything else */
+        char path[PATH_MAX], tid[10] = "", title[128], app[64];
+        struct stat st, ast;
+        snprintf(path, sizeof(path), INSTALL_DIR "/%s", e->d_name);
+        if (stat(path, &st) || time(NULL) - st.st_mtime < INSTALL_KEEP_SECONDS || pkg_id_title(path, tid, title, sizeof(title)))
+            continue;
+        snprintf(app, sizeof(app), "/user/app/%s/app.pkg", tid);
+        if (!installed_internally(tid) || !db_is_registered(tid) || stat(app, &ast) || ast.st_size != st.st_size)
+            continue;
+        unlink(path);
+        printf("[install] %s installed: %s deleted\n", tid, path);
+    }
+    if (d)
+        closedir(d);
+}
+
 int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint64_t length, char *msg, size_t cap) {
-    char dest[16] = "", raw[512] = "", name[256], dir[PATH_MAX];
+    char dest[16] = "", raw[512] = "", name[256], dir[PATH_MAX], inst[4] = "";
     const char *q = strchr(query, '?');
     for (const char *p = q ? q + 1 : ""; *p;) {
         const char *amp = strchr(p, '&'), *eq = strchr(p, '=');
@@ -4492,14 +4667,19 @@ int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint6
                 url_decode(eq + 1, (size_t)(p + l - eq - 1), dest, sizeof(dest));
             else if (k == 4 && !strncmp(p, "name", 4))
                 url_decode(eq + 1, (size_t)(p + l - eq - 1), raw, sizeof(raw));
+            else if (k == 7 && !strncmp(p, "install", 7))
+                url_decode(eq + 1, (size_t)(p + l - eq - 1), inst, sizeof(inst));
         }
         p = amp ? amp + 1 : p + l;
     }
+    int install = !strcmp(inst, "1");
     if (upload_clean_name(raw, name, sizeof(name))) {
         snprintf(msg, cap, "%s", TR("no file name", "falta el nombre del archivo"));
         return -1;
     }
-    if (upload_dir(dest, dir, sizeof(dir))) {
+    if (install)
+        snprintf(dir, sizeof(dir), "%s", INSTALL_DIR); /* on the console: installed from there */
+    else if (upload_dir(dest, dir, sizeof(dir))) {
         snprintf(msg, cap, TR("%s is not available", "%s no está disponible"), dest[0] ? dest : TR("the destination", "el destino"));
         return -1;
     }
@@ -4510,7 +4690,7 @@ int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint6
                  (unsigned long long)(fb >> 20), (unsigned long long)((length + margin) >> 20));
         return -1;
     }
-    if (upload_start(fd, dir, name, length, pre, pre_len, g_fw, upload_done)) {
+    if (upload_start(fd, dir, name, length, pre, pre_len, g_fw, install, install ? upload_install_done : upload_done)) {
         snprintf(msg, cap, "%s", TR("another pkg is being received: wait for it to finish", "ya se está recibiendo otro pkg: espera a que termine"));
         return -1;
     }
@@ -5368,6 +5548,7 @@ int main(void) {
         }
         nas_apply(0); /* retries a share that was not reached, or the settings changed */
         nas_ask_reload(); /* the boot instance cannot open the fuse devices: ask for a load */
+        install_received(); /* an app sent with "Send and install" */
         if (time(NULL) >= g_next_scan && !g_deleting) {
             if (g_reg_mode != REG_NONE) {
                 migrate_organized(); /* organize off: the games it had organized, back in place */
@@ -5378,6 +5559,8 @@ int main(void) {
                        g_fw_text);
             g_manual_scan = 0;
             g_next_scan = time(NULL) + SCAN_SECONDS;
+            install_cleanup();
+            dlc_pending_check();
         }
         keep_awake();
         pump_events(1000);

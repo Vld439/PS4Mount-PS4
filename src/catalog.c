@@ -40,7 +40,7 @@ static int skip_dir(const char *name, const char *rel) {
 
 /* Records a pkg found by the walk. The first `sorted` entries are the ones known before it. */
 static int found(catalog_t *c, int sorted, const char *path, const struct stat *st) {
-    cat_pkg_t key;
+    cat_pkg_t key = {0}; /* only the path is compared */
     snprintf(key.path, sizeof(key.path), "%s", path);
     cat_pkg_t *p = sorted ? bsearch(&key, c->pkgs, (size_t)sorted, sizeof(*c->pkgs), by_path) : NULL;
     if (!p) {
@@ -184,7 +184,7 @@ static int read_one(cat_pkg_t *p, pkg_t *pkg, sfo_t *sfo) {
     int rc = -1;
     size_t len = 0;
     uint8_t *d = NULL;
-    if (strncmp(pkg->title_id, "CUSA", 4) || !pkg_fake_key(pkg))
+    if (!is_game_id(pkg->title_id) || !pkg_fake_key(pkg))
         goto out;
     d = pkg_entry(pkg, 0x1000, &len);
     if (!d || sfo_parse(d, len, sfo))
@@ -192,6 +192,11 @@ static int read_one(cat_pkg_t *p, pkg_t *pkg, sfo_t *sfo) {
     const sfo_item_t *cat = sfo_get(sfo, "CATEGORY");
     if (!cat || cat->is_int || (strcmp(cat->sval, "gd") && strcmp(cat->sval, "gp") && strcmp(cat->sval, "ac")))
         goto out;
+    if (!strcmp(cat->sval, "gd") && homebrew_small(pkg->title_id, pkg->pkg_size)) {
+        printf("[scan] skip %s (homebrew app %s of %llu MB: install it the usual way)\n", p->path, pkg->title_id,
+               (unsigned long long)(pkg->pkg_size >> 20));
+        goto out;
+    }
     snprintf(p->category, sizeof(p->category), "%.3s", cat->sval);
     snprintf(p->title_id, sizeof(p->title_id), "%s", pkg->title_id);
     snprintf(p->content_id, sizeof(p->content_id), "%s", pkg->content_id);
@@ -496,7 +501,11 @@ void catalog_link(catalog_t *all, int n, cat_choose_fn choose, int cross) {
         }
 }
 
-/* One line per read pkg, fields separated by tabs, the path last:
+/* What makes a pkg usable: the pkgs a catalog saved with other rules found unusable are
+ * read again (2: homebrew title IDs of 1 GB and over). */
+#define CAT_RULES 2
+
+/* "#rules N" first, then one line per read pkg, fields separated by tabs, the path last:
  * state size mtime category title_id content_id app_ver nservices services... name path
  * (lines saved before 0.6 have no name: add-ons among them are read again). */
 int catalog_save(const catalog_t *c, const char *path) {
@@ -505,6 +514,7 @@ int catalog_save(const catalog_t *c, const char *path) {
     FILE *f = fopen(tmp, "w");
     if (!f)
         return -1;
+    fprintf(f, "#rules %d\n", CAT_RULES);
     for (int i = 0; i < c->npkgs; i++) {
         const cat_pkg_t *p = &c->pkgs[i];
         if (p->state == CAT_UNREAD || p->state == CAT_SHORT || strpbrk(p->path, "\t\r\n"))
@@ -577,10 +587,17 @@ int catalog_load(catalog_t *c, const char *path) {
     catalog_free(c);
     char *line = malloc(PATH_MAX + 512);
     cat_pkg_t p;
+    int rules = 0;
     while (line && fgets(line, PATH_MAX + 512, f)) {
         line[strcspn(line, "\r\n")] = 0;
+        if (!strncmp(line, "#rules ", 7)) {
+            rules = atoi(line + 7);
+            continue;
+        }
         if (parse_line(line, &p))
             continue;
+        if (p.state == CAT_BAD && rules != CAT_RULES)
+            p.state = CAT_UNREAD; /* unusable by older rules: read again */
         if (c->npkgs == c->cap) {
             int cap = c->cap ? c->cap * 2 : 64;
             cat_pkg_t *n = realloc(c->pkgs, (size_t)cap * sizeof(*n));

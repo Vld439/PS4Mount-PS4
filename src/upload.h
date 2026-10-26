@@ -15,10 +15,11 @@
  * already read) into dir/name. It is written to dir/.ps4mount-upload.part, checked once
  * its first bytes are in and again at the end, and only then renamed: the scan never
  * sees a pkg that is incomplete or unusable. Runs in its own thread, answers the request
- * and closes fd; done (may be NULL) is called with the final path. One at a time:
+ * and closes fd; done (may be NULL) is called with the final path. install: the pkg is
+ * to be installed, so an app PS4Mount does not use from its pkg is taken too. One at a time:
  * returns -1 (fd left to the caller) when another one is running. */
 int upload_start(int fd, const char *dir, const char *name, uint64_t length, const void *pre, size_t pre_len,
-                 uint32_t fw, void (*done)(const char *path));
+                 uint32_t fw, int install, void (*done)(const char *path));
 
 /* {"state":"idle|receiving|done|failed",...} */
 void upload_status_json(buf_t *out);

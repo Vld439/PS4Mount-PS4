@@ -39,7 +39,7 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 | **Actualizaciones** | ✅ probado |
 | Juegos **donde están**, sin mover ni renombrar los pkgs (cualquier carpeta de la unidad) | ✅ probado |
 | **DLC** de hasta 256 MB (casi todos: trajes, packs, licencias) | ✅ probado: PS4Mount los instala con el instalador del sistema en segundos, y aparecen en la información del juego |
-| DLC de más de 256 MB | ⚠️ se montan sin instalar, pero el sistema puede no mostrarlos |
+| DLC de más de 256 MB | ✅ probado: se instalan solos con el instalador del sistema, en segundo plano (ocupan memoria interna; se puede apagar en Ajustes) |
 | **Enviar juegos desde el PC** por la red, con comprobación previa | ✅ probado (unos 16 MB/s por cable) |
 | **Borrar** un juego desde la consola | ✅ probado: borra también sus pkgs y libera el espacio |
 | **Copias en Google Drive**: subir y volver a bajar juegos desde la consola | ✅ probado: la subida va a la velocidad de tu conexión, la bajada a unos 15 MB/s (el máximo de la PS4) |
@@ -48,7 +48,8 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 | Un juego **nuevo**, o una actualización que llega después del juego | ⚠️ necesita **reiniciar la consola una vez**; después se juega siempre |
 | Otros firmwares | ⚠️ sin probar todavía |
 | Pkgs **retail** (no fake) | ❌ |
-| Apps homebrew (tiendas, emuladores…) | ❌ instálalas de la forma normal; pesan poco |
+| **Ports homebrew** (juegos sin CUSA, como SMW o SSBU: `SMWR00001`, `SSBU00001`) | ✅ probado: se juegan desde el pkg como un juego, si pesan **1 GB o más** |
+| Apps homebrew (tiendas, emuladores…), de menos de 1 GB | ✅ probado: no se juegan desde el pkg, pero **Enviar juegos** las envía y las instala en la consola |
 
 ## Requisitos
 
@@ -267,6 +268,7 @@ Ya está: el panel muestra tu correo y tu espacio. La conexión se guarda en la 
 | Carpetas donde buscar pkgs | `/PS4Mount` | Solo se usa con **Organizar** activado: carpetas de cada disco donde se buscan pkgs nuevos, una por línea (`/` es la raíz: todos los pkgs de juegos de la raíz se moverían a `ps4/`). Se miran hasta dos niveles de subcarpetas. `ps4` no se puede usar. Apagado (por defecto), se busca en toda la unidad, sin renombrar ni mover nada. |
 | Añadir los juegos nuevos por grupos / Juegos por grupo | Sí / 5 | Añade muchos juegos por grupos, para no saturar la consola. |
 | Instalar DLC | Sí | Instala los DLC (ver arriba). |
+| Instalar también los DLC grandes | Sí | Los DLC de más de 256 MB también se instalan, en segundo plano: un juego solo ve un DLC instalado por el sistema. Ocupan memoria interna; antes se comprueba que haya sitio. Apagado, no se usan. |
 | Organizar los pkgs en la carpeta ps4 | No | Mueve los pkgs a `ps4/<TITLE_ID>/` para tenerlos ordenados. Apagado (por defecto), los pkgs se usan donde están, con su nombre, sin mover ni renombrar nada; los que PS4Mount ya había organizado vuelven solos a su sitio original (los organizados a mano se quedan en `ps4/`). En la memoria interna se buscan solo `/data/PS4Mount` y `ps4`. |
 | Usar también los pkgs de /data/PS4Mount | Sí | Usa también los pkgs de la memoria interna. |
 | NAS (NFS o SMB) | No | Usa los pkgs de una carpeta compartida en red, **solo lectura** y sin mover ni renombrar nada (con Organizar activado no aparece). Solo firmware 13.52 (ver abajo). |
@@ -426,7 +428,7 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 | **Updates** | ✅ tested |
 | Games **where they are**, without moving or renaming their pkgs (any folder of the drive) | ✅ tested |
 | **Add-ons (DLC)** up to 256 MB (almost all: costumes, packs, licenses) | ✅ tested: PS4Mount installs them with the system's installer in seconds, and they show in the game's information |
-| Add-ons over 256 MB | ⚠️ mounted without installing, but the system may not show them |
+| Add-ons over 256 MB | ✅ tested: installed on their own with the system's installer, in the background (they take internal space; can be turned off in Settings) |
 | **Sending games from a computer** over the network, checked first | ✅ tested (about 16 MB/s over a cable) |
 | **Deleting** a game on the console | ✅ tested: its pkgs are deleted too and the space is freed |
 | **Google Drive backups**: uploading games and downloading them back from the console | ✅ tested: uploads go at your line's speed, downloads at about 15 MB/s (the PS4's most) |
@@ -435,7 +437,8 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 | A **new** game, or an update that arrives after its game | ⚠️ needs **one console restart**; it plays every time after that |
 | Other firmwares | ⚠️ not tested yet |
 | **Retail** (not fake) pkgs | ❌ |
-| Homebrew apps (stores, emulators…) | ❌ install them the usual way; they are small |
+| **Homebrew ports** (games without a CUSA ID, such as SMW or SSBU: `SMWR00001`, `SSBU00001`) | ✅ tested: played from the pkg like a game, when they weigh **1 GB or more** |
+| Homebrew apps (stores, emulators…) under 1 GB | ✅ tested: not played from the pkg, but **Send games** sends them and installs them on the console |
 
 ## Requirements
 
@@ -654,6 +657,7 @@ That is all: the panel shows your email and your space. The connection is kept o
 | Folders to search for pkgs | `/PS4Mount` | Only used with **Organize** on: folders of each drive where new pkgs are picked up, one per line (`/` is the root: every game pkg in the root would be moved into `ps4/`). Two levels of subfolders are looked into. `ps4` cannot be used. Off (the default), the whole drive is searched, without renaming or moving anything. |
 | Add new games in groups / Games per group | On / 5 | Adds many games in groups, which keeps the console stable. |
 | Install add-ons (DLC) | On | Installs add-ons (see above). |
+| Also install big add-ons | On | Add-ons over 256 MB are installed too, in the background: a game only sees an add-on the system has installed. They take internal space; there has to be room first. Off, they are not used. |
 | Organize pkgs into the ps4 folder | Off | Moves the pkgs to `ps4/<TITLE_ID>/` to keep them in order. Off (the default), the pkgs are used where they are, with their own names, without moving or renaming anything; the ones PS4Mount had organized go back on their own to where they were (the ones you organized by hand stay in `ps4/`). On the console's storage, only `/data/PS4Mount` and `ps4` are searched. |
 | Also use pkgs in the console's /data/PS4Mount | On | Uses the pkgs in the console's storage too. |
 | NAS (NFS or SMB) | Off | Uses the pkgs in a shared network folder, **read only** and without moving or renaming anything (it does not show with Organize on). Firmware 13.52 only (see below). |

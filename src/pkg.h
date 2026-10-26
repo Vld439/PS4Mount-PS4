@@ -5,6 +5,27 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
+
+/* A title ID at s: four capital letters and five digits. Games are CUSA; homebrew ports
+ * and apps use letters of their own (SSBU00001, PCSX20007). NPXS are the system's apps,
+ * PPSA the PS5's games. */
+static inline int game_id_at(const char *s) {
+    for (int i = 0; i < 9; i++)
+        if (i < 4 ? !(s[i] >= 'A' && s[i] <= 'Z') : !(s[i] >= '0' && s[i] <= '9'))
+            return 0;
+    return strncmp(s, "NPXS", 4) && strncmp(s, "PPSA", 4);
+}
+
+static inline int is_game_id(const char *s) { return strlen(s) == 9 && game_id_at(s); }
+
+#define HOMEBREW_MIN_SIZE (1ull << 30)
+
+/* Homebrew (not CUSA) is played from its pkg only when it is big: a port carries a game's
+ * data (gigabytes), while apps weigh a few MB and are better installed the usual way. */
+static inline int homebrew_small(const char *tid, uint64_t pkg_size) {
+    return strncmp(tid, "CUSA", 4) && pkg_size < HOMEBREW_MIN_SIZE;
+}
 
 #define PKG_MAX_ENTRIES 512
 #define PKG_MAX_ENTRY_SIZE (64u << 20) /* largest entry pkg_entry reads */

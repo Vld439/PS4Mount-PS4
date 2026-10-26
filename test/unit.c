@@ -359,6 +359,18 @@ static void test_check(void) {
 
     make_pkg(p, cid, "gd", 0x09008000, 0, 0x4000, 0x4000);
     CHECK(pkg_check(p, 0x13520001, &c) == 0 && !c.ok && !c.fake && strstr(c.problem, "fake"));
+    CHECK(!c.installable); /* not fake: nothing to offer */
+
+    /* homebrew ports and apps have title IDs of their own */
+    make_pkg(p, "IV0000-SSBU00001_00-SSBURECOMPPS4000", "gd", 0, 1, 0x4000, 0x4000);
+    CHECK(pkg_check(p, 0x13520001, &c) == 0 && !c.ok && c.kind == PKG_KIND_GAME && strstr(c.problem, "homebrew app") &&
+          strstr(c.problem, "SSBU00001") && c.installable); /* a few KB: an app, for the installer */
+    CHECK(homebrew_small("SSBU00001", 600ull << 20) && !homebrew_small("SSBU00001", 5ull << 30) &&
+          !homebrew_small("CUSA00001", 1 << 20)); /* a port is big; CUSA games are never held back */
+    CHECK(is_game_id("CUSA00001") && is_game_id("SSBU00001") && is_game_id("PCSX20007"));
+    CHECK(!is_game_id("NPXS00001") && !is_game_id("PPSA00001") && !is_game_id("cusa00001") && !is_game_id("CUSA0001") &&
+          !is_game_id("CUSA000011") && !is_game_id("CUS100001") && !is_game_id("CUSA0000X") && !is_game_id(""));
+    CHECK(game_id_at("SSBU00001.src") && !game_id_at("SSBU0001"));
 
     make_pkg(p, "UP0000-NPXS00001_00-TESTGAME00000000", "gd", 0, 1, 0x4000, 0x4000);
     CHECK(pkg_check(p, 0x13520001, &c) == 0 && !c.ok && strstr(c.problem, "not a game") && strstr(c.problem, "NPXS00001"));

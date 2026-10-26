@@ -20,6 +20,7 @@
 #include "bearssl.h"
 #include "https.h"
 #include "json.h"
+#include "pkg.h"
 #include "lang.h"
 #include "mem.h"
 
@@ -1651,7 +1652,7 @@ static void save_queue_locked(void) {
 }
 
 static int valid_tid(const char *t) {
-    if (strlen(t) != 9 || strncmp(t, "CUSA", 4))
+    if (!is_game_id(t))
         return 0;
     for (int i = 4; i < 9; i++)
         if (t[i] < '0' || t[i] > '9')

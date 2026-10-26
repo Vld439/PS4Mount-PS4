@@ -2,6 +2,28 @@
 
 PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount) by gasb07 (PS5); its versions start again at 0.1.0. The history of the original is in its project and in this repository's git history.
 
+## 0.6.2-beta
+
+Homebrew **ports** (games with a title ID of their own instead of CUSA, such as SMW or Smash Ultimate) are played from the pkg like any game; **big add-ons** are installed on their own, so games see them; and small **homebrew apps** can be sent from the panel and installed. Tested on a PS4 on firmware 13.52 with GoldHEN: SMW (`SMWR00001`, 5.5 GB) from a NAS over SMB without installing it; Marvel's Spider-Man's three story add-ons (7.3 GB) installed from the NAS in about a minute and a half, all of them showing in the game; PS4SX2 (a 50 MB emulator) sent from the panel and installed.
+
+**Español**
+
+- **Ports homebrew**: los juegos que no son CUSA (`SMWR00001`, `SSBU00001`…) se usan desde el pkg como cualquier juego, desde un USB, la memoria interna o un NAS. Como un port y una app homebrew son iguales por dentro, se distinguen por el peso: lo que no es CUSA se usa si pesa **1 GB o más** (un port lleva los datos del juego); las apps, de pocos MB, se siguen instalando de la forma normal.
+- Un port o una app que ya tengas **instalado de la forma normal no se toca**: para jugarlo desde el pkg, desinstálalo primero (las partidas guardadas se conservan).
+- Las apps del sistema (`NPXS`) y los juegos de PS5 (`PPSA`) no se usan nunca.
+- Al actualizar, los pkgs que la versión anterior había descartado se vuelven a revisar con las reglas nuevas.
+- **DLC grandes (más de 256 MB)**: se **instalan solos** con el instalador del sistema, **en segundo plano**, porque un juego solo ve un DLC que el sistema tiene anotado como instalado (antes se montaban y el juego no los veía). Ocupan memoria interna: antes se comprueba que haya sitio, y se avisa al empezar y cuando cada uno está listo. Se puede apagar en **Ajustes → Instalar también los DLC grandes**.
+- **Enviar e instalar apps homebrew**: en **Enviar juegos**, una app de menos de 1 GB ya no se rechaza sin más: sale como **Lista para instalar**, se envía a la consola y se instala con el instalador del sistema; la copia se borra cuando ya está instalada.
+
+**English**
+
+- **Homebrew ports**: games that are not CUSA (`SMWR00001`, `SSBU00001`…) are used from the pkg like any game, from a USB drive, the console's storage or a NAS. A port and a homebrew app look the same inside, so they are told apart by size: what is not CUSA is used when it weighs **1 GB or more** (a port carries the game's data); apps, a few MB, are still installed the usual way.
+- A port or app already **installed the usual way is left alone**: to play it from the pkg, uninstall it first (saved games are kept).
+- System apps (`NPXS`) and PS5 games (`PPSA`) are never used.
+- On upgrade, the pkgs the previous version had turned down are checked again with the new rules.
+- **Big add-ons (over 256 MB)** are **installed on their own** with the system's installer, **in the background**, because a game only sees an add-on the system has recorded as installed (they used to be mounted, and games did not see them). They take internal space: there has to be room first, and there is a notice when they start and when each one is ready. It can be turned off in **Settings → Also install big add-ons**.
+- **Send and install homebrew apps**: in **Send games**, an app under 1 GB is no longer just turned down: it shows as **Ready to install**, is sent to the console and installed with the system's installer; the copy is deleted once it is installed.
+
 ## 0.6.1-beta
 
 Two big changes. Games are now used **where they are** by default: PS4Mount no longer moves or renames their pkgs unless you turn on `Organize pkgs into the ps4 folder`. And games can be played **from a network share (NAS)**, over SMB or NFS, without copying or installing them, on firmware 13.52: the panel finds the computers and NAS boxes on the network and lists their shared folders, so nothing has to be typed. The catalog code comes from [EzioRamesha's fork](https://github.com/EzioRamesha/ps4mount), adapted to keep the old `ps4/<TITLE_ID>` layout working. Tested on a PS4 on firmware 13.52 with GoldHEN: 31 pkgs on a USB drive (base games, updates, add-ons, merged pkgs and a duplicate copy); Marvel's Spider-Man (42 GB, with its 1.19 update and 4 add-ons) played from a Linux PC over SMB, and other games over NFS; the share found and listed on its own; console on Wi-Fi and on a cable straight to the PC.

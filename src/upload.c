@@ -32,6 +32,7 @@ typedef struct {
     uint8_t *pre;
     size_t pre_len;
     uint32_t fw;
+    int install;
     void (*done)(const char *path);
 } job_t;
 
@@ -130,7 +131,7 @@ static int check_part(const job_t *j, char *msg, size_t n) {
     pthread_mutex_lock(&g_mu);
     snprintf(g_title, sizeof(g_title), "%s", c.title);
     pthread_mutex_unlock(&g_mu);
-    if (!c.ok) {
+    if (!c.ok && !(j->install && c.installable)) {
         snprintf(msg, n, "%s: %s", j->name, c.problem);
         return -1;
     }
@@ -231,7 +232,7 @@ static void *receive(void *arg) {
 }
 
 int upload_start(int fd, const char *dir, const char *name, uint64_t length, const void *pre, size_t pre_len,
-                 uint32_t fw, void (*done)(const char *path)) {
+                 uint32_t fw, int install, void (*done)(const char *path)) {
     pthread_mutex_lock(&g_mu);
     int busy = g_state == ST_RECEIVING;
     if (!busy) {
@@ -248,6 +249,7 @@ int upload_start(int fd, const char *dir, const char *name, uint64_t length, con
     j->fd = fd;
     j->length = length;
     j->fw = fw;
+    j->install = install;
     j->done = done;
     snprintf(j->name, sizeof(j->name), "%s", name);
     snprintf(j->part, sizeof(j->part), "%s/" PART_NAME, dir);
