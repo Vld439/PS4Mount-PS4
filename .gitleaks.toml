@@ -11,3 +11,7 @@ description = "Made-up Google client secret of the Drive tests' stand-in server 
 condition = "AND" # that value in that file only
 paths = ['''^test/drive_test\.c$''']
 regexes = ['''GOCSPX-secret_1''']
+
+[[allowlists]]
+description = "Vendored libsmb2: the published AES test vectors (NIST SP 800-38A example key) in its reference AES"
+paths = ['''^third_party/libsmb2/lib/aes_reference\.c$''']
