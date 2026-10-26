@@ -38,6 +38,64 @@ var LANGS = {
     "Also use pkgs in the console's /data/PS4Mount": 'Usar también los pkgs de /data/PS4Mount de la consola',
     "Pkgs sent to the console's storage are added from there, with no install to wait for. They still take internal space.":
       'Los pkgs enviados a la memoria de la consola se añaden desde ahí, sin esperar una instalación. Ocupan espacio interno.',
+    'NAS (NFS or SMB)': 'NAS (NFS o SMB)',
+    'Not available on this firmware: the NAS needs 13.52.': 'No disponible en este firmware: el NAS necesita 13.52.',
+    'Use a network share (read only)': 'Usar un recurso de red (solo lectura)',
+    'Only firmware 13.52, and only with pkgs used where they are: the share is never renamed or moved. It needs a wired console or a good Wi-Fi: games read at the speed of the network.':
+      'Solo firmware 13.52, y solo con los pkgs usados donde están: el recurso nunca se renombra ni se mueve. Hace falta la consola por cable o un buen Wi-Fi: los juegos leen a la velocidad de la red.',
+    'Protocol': 'Protocolo',
+    'Server': 'Servidor',
+    'Export (NFS) or share (SMB)': 'Exportación (NFS) o recurso (SMB)',
+    'Folder inside it': 'Carpeta dentro',
+    'Port': 'Puerto',
+    'User (SMB)': 'Usuario (SMB)',
+    'Password (SMB)': 'Contraseña (SMB)',
+    'saved': 'guardada',
+    "Find servers on the network":
+      "Buscar servidores en la red",
+    "List the server's shares":
+      "Ver los recursos del servidor",
+    "How to share a folder from a computer or a NAS":
+      "Cómo compartir una carpeta desde un ordenador o un NAS",
+    "Windows:":
+      "Windows:",
+    "right-click the folder, Properties, Sharing, Advanced Sharing, tick \"Share this folder\". Then fill in User and Password here with your Windows account. If the console does not find the PC, set its network as Private.":
+      "clic derecho en la carpeta, Propiedades, Compartir, Uso compartido avanzado, marca «Compartir esta carpeta». Luego pon aquí en Usuario y Contraseña tu cuenta de Windows. Si la consola no encuentra el PC, pon su red como Privada.",
+    "macOS:":
+      "macOS:",
+    "System Settings, General, Sharing: turn on File Sharing and add the folder. In Options, turn on SMB sharing for your user, and use that user and password here.":
+      "Ajustes del Sistema, General, Compartir: activa Compartir archivos y añade la carpeta. En Opciones, activa compartir por SMB para tu usuario, y usa aquí ese usuario y contraseña.",
+    "Linux:":
+      "Linux:",
+    "share the folder with Samba (read only, guest allowed) or NFS (/etc/exports), and let the console's address through the firewall.":
+      "comparte la carpeta con Samba (solo lectura, invitado permitido) o NFS (/etc/exports), y deja pasar la dirección de la consola en el cortafuegos.",
+    "NAS box":
+      "Caja NAS",
+    "(Synology, QNAP, a router with USB): turn on SMB file sharing in its settings and give the shared folder read access.":
+      "(Synology, QNAP, un router con USB): activa compartir archivos por SMB en sus ajustes y da permiso de lectura a la carpeta compartida.",
+    "A cable is much faster than Wi-Fi. With no switch or free router port, a cable straight from the computer to the console works too: share the computer's internet connection on that cable.":
+      "Un cable es mucho más rápido que el Wi-Fi. Si no tienes switch ni un puerto libre en el router, también sirve un cable directo del ordenador a la consola: comparte la conexión a internet del ordenador por ese cable.",
+    "Looking for servers on the console's network...":
+      "Buscando servidores en la red de la consola...",
+    "Choose a server:":
+      "Elige un servidor:",
+    "No server found. Check that the computer or NAS is on, on the same network as the console, shares a folder, and that its firewall allows file sharing.":
+      "No se encontró ningún servidor. Comprueba que el ordenador o el NAS esté encendido, en la misma red que la consola, que comparta una carpeta y que su cortafuegos permita compartir archivos.",
+    "Find a server first, or type its address in Server.":
+      "Busca primero un servidor, o escribe su dirección en Servidor.",
+    "Asking {0} what it shares...":
+      "Preguntando a {0} qué comparte...",
+    "Fill in User and Password, then press \"List the server's shares\".":
+      "Rellena Usuario y Contraseña y pulsa «Ver los recursos del servidor».",
+    "Choose the shared folder with your games:":
+      "Elige la carpeta compartida con tus juegos:",
+    "This server shares no folders.":
+      "Este servidor no comparte ninguna carpeta.",
+    "Ready: press Save to use it.":
+      "Listo: pulsa Guardar para usarlo.",
+    'Turn on BinLoader (port 9090) in GoldHEN to use the share.':
+      'Enciende BinLoader (puerto 9090) en GoldHEN para usar el recurso.',
+    'guest': 'invitado',
     'Language': 'Idioma',
     'Restore original files': 'Restaurar archivos originales',
     'Takes games off the console and puts their pkgs (game, update and add-ons) back where they were, with the names they had. Nothing is deleted. The open game is closed first.':

@@ -20,6 +20,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <signal.h>
@@ -53,12 +54,13 @@
 #include "lang.h"
 #include "logts.h"
 #include "mem.h"
+#include "netfs.h"
 #include "origin.h"
 #include "pkg.h"
 #include "web.h"
 #include "icon_data.h"
 
-#define VERSION "PS4Mount 0.4.18-beta"
+#define VERSION "PS4Mount 0.6.1-beta"
 #define LOCK_PORT 9032
 #define SCAN_SECONDS 10
 /* A full walk of the drive is slower on drives with many files: the catalog is brought
@@ -94,6 +96,14 @@ typedef struct {
     int internal;      /* pkgs in the console's /data/PS4Mount are used too */
     int organize;      /* pkgs are moved into <root>/ps4/<TID>/; off (default): used where they are */
     int lang;          /* LANG_* of notifications and the panel, -1: the console's */
+    int nas;           /* a network share is used too (13.52 only, read only) */
+    int nas_proto;     /* NAS_NFS or NAS_SMB */
+    int nas_port;      /* 0: the protocol's port */
+    char nas_server[64];
+    char nas_share[256]; /* NFS export or SMB share name */
+    char nas_sub[256];   /* folder inside it */
+    char nas_user[64];   /* SMB; "" is the guest account */
+    char nas_pass[64];
 } config_t;
 
 #define MAX_RESTORE_BATCH 10
@@ -102,19 +112,41 @@ typedef struct {
  * moved until the user puts it there (the drive root, "", is still a choice). */
 #define DEFAULT_SCAN_PATH "PS4Mount"
 
-static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, 0, -1};
+static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, 0, -1, 0, NAS_NFS, 0, "", "", "", "", ""};
 
 int sceSystemServiceParamGetInt(int param_id, int *value);
 int sceSystemServicePowerTick(void);
 
 /* The language in use: the one chosen in the settings, else the console's. */
+#define REG_LANGUAGE 0x02020000 /* the system language in the registry */
+
+/* The console's language. Asked to the system service it is always English (1) inside
+ * GoldHEN's process, where AutoRun starts PS4Mount: the registry, read from the kernel,
+ * gives the real one in any process. The service is the fallback. */
+static int console_language(void) {
+    int v = -1, reg = -1, rc = -1;
+    unsigned res = 0;
+    uint32_t h = 0;
+    int loaded = 0;
+    if (kernel_dynlib_handle(getpid(), "libSceRegMgr.sprx", &h)) { /* not in this process yet */
+        int lh = sceKernelLoadStartModule("/system/common/lib/libSceRegMgr.sprx", 0, NULL, 0, NULL, &res);
+        h = lh > 0 ? (uint32_t)lh : 0;
+        loaded = lh;
+    }
+    int (*get)(long, int *) = h ? (void *)kernel_dynlib_dlsym(getpid(), h, "sceRegMgrGetInt") : NULL;
+    if (get && !(rc = get(REG_LANGUAGE, &reg)) && reg >= 0)
+        v = reg;
+    if (v < 0 && sceSystemServiceParamGetInt(1, &v)) /* 1: the system language */
+        v = -1;
+    printf("[main] console language %d (registry %d: handle %u%s, call 0x%x)\n", v, reg, h,
+           loaded ? " loaded" : "", (unsigned)rc);
+    return v;
+}
+
 static void apply_lang(void) {
     static int console = -2;
-    if (console == -2) {
-        int v = -1;
-        console = sceSystemServiceParamGetInt(1, &v) ? -1 : v; /* 1: the system language */
-        printf("[main] console language %d\n", console);
-    }
+    if (console == -2)
+        console = console_language();
     g_lang = g_cfg.lang >= 0 ? g_cfg.lang : lang_from_console(console);
 }
 
@@ -126,6 +158,10 @@ int sceAppInstUtilAppInstallAll(void *);
 int sceAppInstUtilAppUnInstall(const char *);
 int sceKernelSendNotificationRequest(int, notify_request_t *, size_t, int);
 
+/* Set while the boot instance waits to be replaced by a load that can use the share:
+ * what it says is only logged, so the console shows one start, the new one's. */
+static int g_quiet;
+
 static void notify(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 static void notify(const char *fmt, ...) {
     notify_request_t req;
@@ -134,8 +170,9 @@ static void notify(const char *fmt, ...) {
     va_start(ap, fmt);
     vsnprintf(req.message, sizeof(req.message), fmt, ap);
     va_end(ap);
-    printf("[notify] %s\n", req.message);
-    sceKernelSendNotificationRequest(0, &req, sizeof(req), 0);
+    printf("[notify]%s %s\n", g_quiet ? " (not shown)" : "", req.message);
+    if (!g_quiet)
+        sceKernelSendNotificationRequest(0, &req, sizeof(req), 0);
 }
 
 /* --- small fs helpers --- */
@@ -215,17 +252,24 @@ static int is_mountpoint(const char *path) {
 
 /* --- where games are looked for --- */
 
-/* The USB drives, the extended storage and, when turned on, the console's own storage:
- * pkgs sent to /data/PS4Mount are registered from there (library /data/ps4), with no second
- * copy and no install to wait for. They still take internal space. */
-#define NROOTS 11
+/* The USB drives, the extended storage, when turned on the console's own storage (pkgs
+ * sent to /data/PS4Mount are registered from there, library /data/ps4, with no second
+ * copy and no install to wait for; they still take internal space), and when turned on
+ * a network share mounted read-only with FUSE. The share is never organized. */
+#define NROOTS 12
+#define NAS_ROOT 11
+#define NAS_ROOT_PATH "/mnt/usb0/ps4mount/nas"
 #define INTERNAL_ROOT "/data"
+/* Only 13.52 has the fusefs module the FUSE mount needs. */
+#define NAS_FIRMWARE 0x13520001u
 
 static void root_path(int i, char *out, size_t n) {
     if (i < 8)
         snprintf(out, n, "/mnt/usb%d", i);
     else if (i < 10)
         snprintf(out, n, "/mnt/ext%d", i - 8);
+    else if (i == NAS_ROOT)
+        snprintf(out, n, "%s", nas_mountpoint()[0] ? nas_mountpoint() : NAS_ROOT_PATH);
     else
         snprintf(out, n, INTERNAL_ROOT);
 }
@@ -243,11 +287,38 @@ static const char *sys_path(const char *path, char *out, size_t n) {
     return out;
 }
 
-static int root_present(const char *root) { return is_internal(root) ? g_cfg.internal : is_mountpoint(root); }
+/* The mountpoint of the NAS changes on every start (an old mount cannot be
+ * removed), so both the live path and its placeholder name it. */
+static int is_nas(const char *root) {
+    const char *m = nas_mountpoint();
+    return (m[0] && !strcmp(root, m)) || !strcmp(root, NAS_ROOT_PATH);
+}
 
-/* "usb0", "ext0", "internal storage" */
+/* A share is only used with pkgs where they are: organizing would rename them. */
+static int root_present(const char *root) {
+    if (is_nas(root))
+        return !g_cfg.organize && nas_active();
+    return is_internal(root) ? g_cfg.internal : is_mountpoint(root);
+}
+
+/* "usb0", "ext0", "internal storage", "NAS" */
 static const char *root_label(const char *root) {
+    if (is_nas(root))
+        return "NAS";
     return is_internal(root) ? TR("internal storage", "memoria interna") : root + 5;
+}
+
+/* The short name of a drive in the state folder and in the panel. The share keeps one
+ * per mountpoint: a mount left by a dead process must not be read as the current one. */
+static const char *root_id(const char *root, char *out, size_t n) {
+    if (is_nas(root)) {
+        const char *b = strrchr(root, '/');
+        snprintf(out, n, "%s", b ? b + 1 : "nas");
+    } else if (is_internal(root))
+        snprintf(out, n, "%s", "internal");
+    else
+        snprintf(out, n, "%s", root + 5);
+    return out;
 }
 
 /* The pkgs found on each drive when they are used where they are (organize off). The
@@ -259,7 +330,7 @@ static time_t g_cat_walked[NROOTS]; /* when the drive was last searched for pkgs
 static pthread_mutex_t g_cat_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static catalog_t *drive_catalog(const char *root) {
-    char r[32];
+    char r[PATH_MAX];
     for (int i = 0; i < NROOTS; i++) {
         root_path(i, r, sizeof(r));
         if (!strcmp(r, root))
@@ -1170,6 +1241,7 @@ typedef struct {
 
 static managed_t g_managed[MAX_TITLES];
 static int g_manual_scan; /* "Scan for games" in the panel */
+static int g_walk_now;    /* a drive came (the share connected): walked now, without saying so */
 static int g_deleting; /* a delete screen is open: game folders are unmounted */
 static time_t g_deleting_since;
 static time_t g_deleting_close_at; /* set when the uninstall finished */
@@ -2160,7 +2232,10 @@ typedef struct {
 /* A ps4/ folder or a .pkg in the root. Other partitions (like the boot partition
  * Ventoy adds to a drive) are skipped without a notification. */
 static void scan_dir(char *out, size_t n, const char *root, int i) {
-    if (is_internal(root))
+    if (is_nas(root))
+        /* the folder inside the share is already the root of the mount */
+        snprintf(out, n, "%s", root);
+    else if (is_internal(root))
         /* PS4Mount's own folder: /data/pkg holds the pkgs people install the usual way */
         snprintf(out, n, "%s", i ? "" : INTERNAL_ROOT "/" DEFAULT_SCAN_PATH); /* never /data itself */
     else if (g_cfg.paths[i][0])
@@ -2344,11 +2419,28 @@ static int internal_dir_skip(const char *path, const char *rel) {
     return strncmp(rel, "ps4", 3) || (rel[3] && rel[3] != '/');
 }
 
+/* The share is mounted inside a drive the system already trusts, so that drive's walk
+ * must not find its games a second time (and the share would be organized by it).
+ * The USB drive is exFAT: the name it was made with may not be the one given here. */
+static int nas_dir_skip(const char *path) {
+    const char *m = nas_mountpoint();
+    size_t n = strlen(m);
+    return m[0] && !strncasecmp(path, m, n) && (!path[n] || path[n] == '/');
+}
+
+static int root_dir_skip(const char *path, const char *rel) {
+    if (is_nas(g_walk_root))
+        return 0; /* the share is the root itself */
+    if (nas_dir_skip(path))
+        return 1;
+    return is_internal(g_walk_root) && internal_dir_skip(path, rel);
+}
+
 /* Brings the catalog of the drive at root up to date: only new or changed pkgs are read,
  * also across restarts (STATE_DIR/catalog-<drive>.txt). 1 when it has games. */
 static int catalog_update(catalog_t *cat, const char *root, int fresh) {
-    char file[64];
-    snprintf(file, sizeof(file), STATE_DIR "/catalog-%s.txt", is_internal(root) ? "internal" : root + 5);
+    char file[96], id[64];
+    snprintf(file, sizeof(file), STATE_DIR "/catalog-%s.txt", root_id(root, id, sizeof(id)));
     int idx = (int)(cat - g_cat);
     if (!g_cat_loaded[idx]) {
         g_cat_loaded[idx] = 1;
@@ -2358,13 +2450,13 @@ static int catalog_update(catalog_t *cat, const char *root, int fresh) {
     }
     /* A drive with no sign of games (a music stick, the boot partition) is searched all
      * the same, but without saying so: only a ps4 folder or a pkg announces the scan. */
-    int announce = fresh && (has_candidates(root) || has_pkg(root));
+    int announce = fresh && g_manual_scan && (has_candidates(root) || has_pkg(root));
     if (announce)
         notify(TR("Scanning %s for PS4 games...", "Buscando juegos de PS4 en %s..."), root_label(root));
     int before = cat->npkgs;
     g_walk_root = root;
     g_walk_restored = exists(RESTORED_LIST);
-    int unread = catalog_walk(cat, root, walk_skip, is_internal(root) ? internal_dir_skip : NULL, NULL, 0);
+    int unread = catalog_walk(cat, root, walk_skip, root_dir_skip, NULL, 0);
     if (unread) {
         int read = catalog_read(cat);
         printf("[scan] %s: %d pkg(s), %d new or changed read\n", root, cat->npkgs, read);
@@ -2411,7 +2503,7 @@ static void scan_root(const char *root, int fresh, int reconnected) {
             printf("[scan] %s: no ps4 folder or pkg, skipped\n", root);
         return;
     }
-    if (fresh && g_cfg.organize)
+    if (fresh && g_manual_scan && g_cfg.organize)
         notify(TR("Scanning %s for PS4 games...", "Buscando juegos de PS4 en %s..."), label);
     if (reconnected)
         clear_removed_dlc();
@@ -2443,9 +2535,10 @@ static void scan_root(const char *root, int fresh, int reconnected) {
         pending += t->state == 1;
         src_close(&src);
     }
-    if (fresh && !count)
+    /* the totals for a scan asked in the panel; otherwise only what changed */
+    if (fresh && g_manual_scan && !count)
         notify(TR("%s: no PS4 games found", "%s: no se encontraron juegos de PS4"), label);
-    else if (fresh)
+    else if (fresh && g_manual_scan)
         notify(TR("%s: %d PS4 game(s) found, %d new or updated", "%s: %d juego(s) de PS4 encontrado(s), %d nuevo(s) o actualizado(s)"),
                label, count, pending);
     else if (pending)
@@ -2609,9 +2702,12 @@ static void release_stale(void) {
     closedir(d);
 }
 
+#define NAS_SCAN_SECONDS 60
+
 static void scan_all(void) {
     static int seen[NROOTS], first = 1;
-    char root[32];
+    static time_t nas_scanned;
+    char root[PATH_MAX];
     release_stale();
     if (!g_cfg.organize) {
         /* Pkgs are used where they are: bring every catalog up to date first, then group
@@ -2623,9 +2719,9 @@ static void scan_all(void) {
         for (int i = 0; i < NROOTS; i++) {
             root_path(i, root, sizeof(root));
             if (root_present(root)) {
-                int due = g_manual_scan || !g_cat_loaded[i] || now - g_cat_walked[i] >= CATALOG_SECONDS;
+                int due = g_manual_scan || g_walk_now || !g_cat_loaded[i] || now - g_cat_walked[i] >= CATALOG_SECONDS;
                 if (due) {
-                    ready[i] = catalog_update(&g_cat[i], root, !seen[i] || g_manual_scan);
+                    ready[i] = catalog_update(&g_cat[i], root, !seen[i] || g_manual_scan || g_walk_now);
                     g_cat_walked[i] = now;
                 } else {
                     ready[i] = catalog_has_games(root);
@@ -2643,8 +2739,15 @@ static void scan_all(void) {
         for (int i = 0; i < NROOTS; i++) {
             root_path(i, root, sizeof(root));
             int present = root_present(root);
+            /* every pkg of a game is opened in a scan: over the share that is a round trip
+             * per pkg, so it is looked at less often */
+            int fresh = !seen[i] || g_manual_scan || g_walk_now;
+            if (ready[i] && is_nas(root) && !fresh && now - nas_scanned < NAS_SCAN_SECONDS)
+                ready[i] = 0;
+            else if (ready[i] && is_nas(root))
+                nas_scanned = now;
             if (ready[i])
-                scan_root(root, !seen[i] || g_manual_scan, !seen[i] && !first);
+                scan_root(root, fresh, !seen[i] && !first);
             seen[i] = present;
         }
     } else {
@@ -2671,6 +2774,7 @@ static void scan_all(void) {
     }
     first = 0;
     g_manual_scan = 0;
+    g_walk_now = 0;
 }
 
 /* --- klog events --- */
@@ -2894,7 +2998,7 @@ static unsigned long long tree_size(const char *path) {
  * deleting them is PS4Mount's own job. 1 deleted, 0 refused. */
 static int delete_game_files(const char *dir, const char *tid, const char *name) {
     for (int i = 0; i < NROOTS; i++) {
-        char root[32], want[64];
+        char root[PATH_MAX], want[64];
         root_path(i, root, sizeof(root));
         snprintf(want, sizeof(want), "%s/ps4/%s", root, tid);
         if (strlen(tid) != 9 || strncmp(tid, "CUSA", 4) || strcmp(dir, want))
@@ -3064,7 +3168,7 @@ static void json_str(buf_t *b, const char *s) {
  * game the catalog found where it is. */
 static int find_root(const char *tid, char *root, size_t n) {
     for (int i = 0; i < NROOTS; i++) {
-        char r[32], p[PATH_MAX];
+        char r[PATH_MAX], p[PATH_MAX];
         root_path(i, r, sizeof(r));
         if (!root_present(r))
             continue;
@@ -3092,7 +3196,7 @@ void app_games_json(buf_t *out) {
     int first = 1, nlisted = 0;
     static char listed[MAX_TITLES][10];
     for (int i = 0; i < NROOTS; i++) {
-        char root[32];
+        char root[PATH_MAX];
         root_path(i, root, sizeof(root));
         if (!root_present(root))
             continue;
@@ -3198,7 +3302,7 @@ int app_pic(const char *tid, buf_t *out) { return app_art(tid, "pic0.png", 0x122
 /* Artwork of a game: the copy written into /user/appmeta when it was added, or the entry
  * id of its pkgs (the update's first: its artwork wins, as with a real install). */
 static int app_art(const char *tid, const char *name, uint32_t id, buf_t *out) {
-    char p[PATH_MAX], root[32];
+    char p[PATH_MAX], root[PATH_MAX];
     snprintf(p, sizeof(p), "/user/appmeta/%s/%s", tid, name);
     int fd = open(p, O_RDONLY);
     if (fd >= 0) {
@@ -3237,7 +3341,7 @@ static int app_art(const char *tid, const char *name, uint32_t id, buf_t *out) {
 }
 
 int app_add(const char *tid, char *msg, size_t cap) {
-    char rm[64], root[32];
+    char rm[64], root[PATH_MAX];
     if (find_root(tid, root, sizeof(root))) {
         snprintf(msg, cap, TR("%s is not on any connected drive", "%s no está en ninguna unidad conectada"), tid);
         return -1;
@@ -3313,8 +3417,12 @@ int app_remove(const char *tid, char *msg, size_t cap) {
     snprintf(path, sizeof(path), STATE_DIR "/%s.src", tid);
     unlink(path);
     int rc = db_is_registered(tid) ? uninstall_title(tid) : 0;
-    if (!rc)
+    if (!rc) {
         clean_holds(tid, m ? m->dlc_tids : NULL, m ? m->ndlc_tids : 0);
+        /* the task goes with it: BGFT keeps the state of an id for the whole boot, and a
+         * game added again under the same one could not start */
+        bgft_remove(tid);
+    }
     if (m)
         m->used = 0;
     printf("[web] remove %s: uninstall=0x%08x\n", tid, rc);
@@ -3600,14 +3708,14 @@ static int close_open_games(void) {
 
 /* Folders of games on every connected drive (or only tid), with their name. */
 typedef struct {
-    char root[32], tid[10], name[128];
+    char root[PATH_MAX], tid[10], name[128];
 } restore_item_t;
 
 /* only: n title ids to keep, or NULL for every game. */
 static int restore_collect(char (*only)[10], int nonly, restore_item_t *items, int max) {
     int n = 0;
     for (int i = 0; i < NROOTS && n < max; i++) {
-        char root[32], lib[PATH_MAX];
+        char root[PATH_MAX], lib[PATH_MAX];
         root_path(i, root, sizeof(root));
         if (!root_present(root))
             continue;
@@ -3732,7 +3840,7 @@ static void migrate_organized(void) {
         return;
     int pending = 0;
     for (int i = 0; i < NROOTS && !pending; i++) {
-        char root[32];
+        char root[PATH_MAX];
         root_path(i, root, sizeof(root));
         pending = !g_migrated[i] && root_present(root);
     }
@@ -3747,7 +3855,7 @@ static void migrate_organized(void) {
     for (int i = 0; i < NROOTS && n < MAX_TITLES; i++) {
         if (g_migrated[i])
             continue;
-        char root[32];
+        char root[PATH_MAX];
         root_path(i, root, sizeof(root));
         if (!root_present(root))
             continue; /* plugged in later: tried then */
@@ -3784,7 +3892,7 @@ int app_restore(const char *tids, char *msg, size_t cap) {
     int n = 0;
     for (const char *p = tids; *p;) {
         size_t len = strcspn(p, ",");
-        char tid[10], root[32];
+        char tid[10], root[PATH_MAX];
         if (len != 9 || strncmp(p, "CUSA", 4) || strspn(p + 4, "0123456789") < 5) {
             snprintf(msg, cap, "invalid title id: %.20s", p);
             return -1;
@@ -3861,11 +3969,87 @@ static int clean_scan_path(const char *in, char *out, size_t n, char *why, size_
     return 0;
 }
 
+/* --- the network share --- */
+
+/* The FUSE mount of 13.52 only: no other firmware has the fusefs module it needs. */
+static int nas_supported(void) { return g_fw == NAS_FIRMWARE; }
+
+static void nas_cfg_from(nas_cfg_t *n) {
+    memset(n, 0, sizeof(*n));
+    n->proto = g_cfg.nas_proto == NAS_SMB ? NAS_SMB : NAS_NFS;
+    n->port = g_cfg.nas_port;
+    snprintf(n->server, sizeof(n->server), "%s", g_cfg.nas_server);
+    snprintf(n->share, sizeof(n->share), "%s", g_cfg.nas_share);
+    snprintf(n->sub, sizeof(n->sub), "%s", g_cfg.nas_sub);
+    snprintf(n->user, sizeof(n->user), "%s", g_cfg.nas_user);
+    snprintf(n->pass, sizeof(n->pass), "%s", g_cfg.nas_pass);
+}
+
+static time_t g_nas_next;      /* when to try again after a failure */
+static time_t g_nas_fail_at;   /* when the failures started */
+static char g_nas_last[192];   /* last failure, to not repeat it every 20 s */
+static int g_nas_told;         /* that failure was already shown to the player */
+static int g_nas_on;           /* connected when the last call looked */
+
+/* Mounts the share or replaces its client, only when the settings say so. force: the
+ * panel just saved and the address may have changed. */
+static void nas_apply(int force) {
+    if (!g_cfg.nas || !nas_supported()) {
+        if (nas_mounted())
+            nas_stop();
+        if (g_nas_on)
+            printf("[nas] off\n");
+        g_nas_on = 0;
+        return;
+    }
+    if (!force && nas_active())
+        return;
+    if (!force && nas_need_reload()) /* this process cannot open the devices: nas_ask_reload() */
+        return;
+    time_t now = time(NULL);
+    if (!force && now < g_nas_next)
+        return;
+
+    nas_cfg_t n;
+    nas_cfg_from(&n);
+    char err[160] = "";
+    int r = nas_mounted() ? nas_reconnect(&n, err, sizeof(err)) : nas_start(&n, err, sizeof(err));
+    if (r) {
+        g_nas_next = now + 20;
+        if (!g_nas_fail_at)
+            g_nas_fail_at = now;
+        if (strcmp(err, g_nas_last)) {
+            printf("[nas] %s: %s\n", nas_status(), err);
+            snprintf(g_nas_last, sizeof(g_nas_last), "%s", err);
+            g_nas_told = 0;
+        }
+        /* The first seconds after a boot the share can fail before the console
+         * is ready: only tell the player when it keeps failing. */
+        if (!g_nas_told && now - g_nas_fail_at >= 120) {
+            notify(TR("NAS: %s", "NAS: %s"), err);
+            g_nas_told = 1;
+        }
+        g_nas_on = 0;
+        return;
+    }
+    g_nas_last[0] = 0;
+    g_nas_told = 0;
+    g_nas_fail_at = 0;
+    g_nas_next = now + 3600; /* connected: no need to ask again */
+    if (!g_nas_on)
+        printf("[nas] ready: %s\n", nas_status());
+    g_nas_on = 1;
+    g_walk_now = 1; /* a new drive to walk */
+}
+
 static void config_save(void) {
     buf_t b = {0};
     buf_printf(&b, "batch=%d\nbatch_size=%d\ndlc=%d\nrestore_batch=%d\ninternal=%d\norganize=%d\nlang=%s\n", g_cfg.batch,
                g_cfg.batch_size, g_cfg.dlc, g_cfg.restore_batch, g_cfg.internal, g_cfg.organize,
                g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto");
+    buf_printf(&b, "nas=%d\nnas_proto=%d\nnas_port=%d\nnas_server=%s\nnas_share=%s\nnas_sub=%s\nnas_user=%s\nnas_pass=%s\n",
+               g_cfg.nas, g_cfg.nas_proto, g_cfg.nas_port, g_cfg.nas_server, g_cfg.nas_share,
+               g_cfg.nas_sub, g_cfg.nas_user, g_cfg.nas_pass);
     for (int i = 0; i < g_cfg.npaths; i++)
         buf_printf(&b, "path=%s\n", g_cfg.paths[i]);
     write_file(CONFIG_PATH, b.data, b.len, 0666);
@@ -3878,7 +4062,7 @@ static void config_load(void) {
         return;
     config_t c = g_cfg;
     c.npaths = 0;
-    char line[256], why[160], path[128];
+    char line[768], why[160], path[128];
     while (fgets(line, sizeof(line), f)) {
         line[strcspn(line, "\r\n")] = 0;
         if (!strncmp(line, "batch=", 6))
@@ -3898,6 +4082,22 @@ static void config_load(void) {
         else if (!strncmp(line, "path=", 5) && c.npaths < MAX_SCAN_PATHS &&
                  !clean_scan_path(line + 5, path, sizeof(path), why, sizeof(why)))
             snprintf(c.paths[c.npaths++], sizeof(c.paths[0]), "%s", path);
+        else if (!strncmp(line, "nas=", 4))
+            c.nas = atoi(line + 4) != 0;
+        else if (!strncmp(line, "nas_proto=", 10))
+            c.nas_proto = atoi(line + 10) == NAS_SMB ? NAS_SMB : NAS_NFS;
+        else if (!strncmp(line, "nas_port=", 9))
+            c.nas_port = atoi(line + 9);
+        else if (!strncmp(line, "nas_server=", 11))
+            snprintf(c.nas_server, sizeof(c.nas_server), "%s", line + 11);
+        else if (!strncmp(line, "nas_share=", 10))
+            snprintf(c.nas_share, sizeof(c.nas_share), "%s", line + 10);
+        else if (!strncmp(line, "nas_sub=", 8))
+            snprintf(c.nas_sub, sizeof(c.nas_sub), "%s", line + 8);
+        else if (!strncmp(line, "nas_user=", 9))
+            snprintf(c.nas_user, sizeof(c.nas_user), "%s", line + 9);
+        else if (!strncmp(line, "nas_pass=", 9))
+            snprintf(c.nas_pass, sizeof(c.nas_pass), "%s", line + 9);
     }
     fclose(f);
     if (c.batch_size < 1 || c.batch_size > 50)
@@ -3916,10 +4116,24 @@ static void config_load(void) {
 void app_config_json(buf_t *out) {
     buf_printf(out,
                "{\"batch\":%s,\"batch_size\":%d,\"dlc\":%s,\"internal\":%s,\"organize\":%s,\"restore_batch\":%d,\"max_restore_batch\":%d,"
-               "\"lang\":\"%s\",\"ui_lang\":\"%s\",\"paths\":[",
+               "\"lang\":\"%s\",\"ui_lang\":\"%s\",\"nas_supported\":%s,\"nas\":%s,\"nas_proto\":\"%s\",\"nas_port\":%d,"
+               "\"nas_server\":",
                g_cfg.batch ? "true" : "false", g_cfg.batch_size, g_cfg.dlc ? "true" : "false",
                g_cfg.internal ? "true" : "false", g_cfg.organize ? "true" : "false", g_cfg.restore_batch, MAX_RESTORE_BATCH,
-               g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto", lang_tag(g_lang));
+               g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto", lang_tag(g_lang),
+               nas_supported() ? "true" : "false", g_cfg.nas ? "true" : "false",
+               g_cfg.nas_proto == NAS_SMB ? "smb" : "nfs", g_cfg.nas_port);
+    json_str(out, g_cfg.nas_server);
+    buf_printf(out, ",\"nas_share\":");
+    json_str(out, g_cfg.nas_share);
+    buf_printf(out, ",\"nas_sub\":");
+    json_str(out, g_cfg.nas_sub);
+    buf_printf(out, ",\"nas_user\":");
+    json_str(out, g_cfg.nas_user);
+    buf_printf(out, ",\"nas_has_pass\":%s,\"nas_reload\":%s,\"nas_status\":",
+               g_cfg.nas_pass[0] ? "true" : "false", nas_need_reload() ? "true" : "false");
+    json_str(out, nas_status());
+    buf_printf(out, ",\"paths\":[");
     for (int i = 0; i < g_cfg.npaths; i++) {
         char shown[130];
         snprintf(shown, sizeof(shown), "/%s", g_cfg.paths[i]);
@@ -3942,6 +4156,66 @@ static void url_decode(const char *in, size_t len, char *out, size_t n) {
             out[o++] = in[i];
     }
     out[o] = 0;
+}
+
+/* The value of key in a form-encoded body ("" when it is not there). */
+static void form_field(const char *body, const char *key, char *out, size_t n) {
+    size_t kl = strlen(key);
+    out[0] = 0;
+    for (const char *p = body; p && *p;) {
+        const char *amp = strchr(p, '&');
+        size_t len = amp ? (size_t)(amp - p) : strlen(p);
+        if (len > kl && p[kl] == '=' && !strncmp(p, key, kl)) {
+            url_decode(p + kl + 1, len - kl - 1, out, n);
+            return;
+        }
+        p = amp ? amp + 1 : NULL;
+    }
+}
+
+/* /api/nas/scan: the file servers on the console's network. */
+void app_nas_scan_json(buf_t *out) {
+    static nas_host_t h[64];
+    int n = nas_supported() ? nas_scan(h, 64) : 0;
+    buf_printf(out, "{\"hosts\":[");
+    for (int i = 0; i < n; i++) {
+        buf_printf(out, "%s{\"ip\":", i ? "," : "");
+        json_str(out, h[i].ip);
+        buf_printf(out, ",\"name\":");
+        json_str(out, h[i].name);
+        buf_printf(out, ",\"smb\":%s,\"nfs\":%s}", h[i].smb ? "true" : "false", h[i].nfs ? "true" : "false");
+    }
+    buf_printf(out, "]}");
+}
+
+/* /api/nas/shares, body proto=smb|nfs&server=&port=&user=&pass=: what that server shares.
+ * An empty password is the saved one when server and user are the saved ones. */
+void app_nas_shares_json(const char *body, buf_t *out) {
+    nas_cfg_t c;
+    char v[256];
+    memset(&c, 0, sizeof(c));
+    form_field(body, "proto", v, sizeof(v));
+    c.proto = !strcmp(v, "smb") ? NAS_SMB : NAS_NFS;
+    form_field(body, "port", v, sizeof(v));
+    c.port = atoi(v);
+    form_field(body, "server", c.server, sizeof(c.server));
+    form_field(body, "user", c.user, sizeof(c.user));
+    form_field(body, "pass", c.pass, sizeof(c.pass));
+    if (!c.pass[0] && !strcmp(c.server, g_cfg.nas_server) && !strcmp(c.user, g_cfg.nas_user))
+        snprintf(c.pass, sizeof(c.pass), "%s", g_cfg.nas_pass);
+    static char names[64][NAS_NAME_MAX];
+    char err[192] = "";
+    int k = !nas_supported() ? -1 : c.server[0] ? nas_shares(&c, names, 64, err, sizeof(err)) : -1;
+    if (k < 0 && !err[0])
+        snprintf(err, sizeof(err), "%s", TR("no server given", "falta el servidor"));
+    buf_printf(out, "{\"ok\":%s,\"auth\":%s,\"message\":", k >= 0 ? "true" : "false", k == -2 ? "true" : "false");
+    json_str(out, k >= 0 ? "" : err);
+    buf_printf(out, ",\"shares\":[");
+    for (int i = 0; i < k; i++) {
+        buf_printf(out, "%s", i ? "," : "");
+        json_str(out, names[i]);
+    }
+    buf_printf(out, "]}");
 }
 
 /* body: batch=0|1&batch_size=N&dlc=0|1&restore_batch=N&paths=<folders, one per line> (form
@@ -3972,6 +4246,23 @@ int app_config_set(const char *body, char *msg, size_t cap) {
                 char *end;
                 long v = strtol(value, &end, 10);
                 c.restore_batch = *value && !*end ? (int)v : 0;
+            } else if (k == 3 && !strncmp(p, "nas", 3))
+                c.nas = atoi(value) != 0;
+            else if (k == 9 && !strncmp(p, "nas_proto", 9))
+                c.nas_proto = !strcmp(value, "smb") ? NAS_SMB : NAS_NFS;
+            else if (k == 8 && !strncmp(p, "nas_port", 8))
+                c.nas_port = atoi(value);
+            else if (k == 10 && !strncmp(p, "nas_server", 10))
+                snprintf(c.nas_server, sizeof(c.nas_server), "%s", value);
+            else if (k == 9 && !strncmp(p, "nas_share", 9))
+                snprintf(c.nas_share, sizeof(c.nas_share), "%s", value);
+            else if (k == 7 && !strncmp(p, "nas_sub", 7))
+                snprintf(c.nas_sub, sizeof(c.nas_sub), "%s", value);
+            else if (k == 8 && !strncmp(p, "nas_user", 8))
+                snprintf(c.nas_user, sizeof(c.nas_user), "%s", value);
+            else if (k == 8 && !strncmp(p, "nas_pass", 8)) { /* empty: keep the saved one */
+                if (value[0])
+                    snprintf(c.nas_pass, sizeof(c.nas_pass), "%s", value);
             } else if (k == 5 && !strncmp(p, "paths", 5)) {
                 c.npaths = 0;
                 for (char *line = strtok(value, "\n"); line; line = strtok(NULL, "\n")) {
@@ -4010,6 +4301,35 @@ int app_config_set(const char *body, char *msg, size_t cap) {
         snprintf(msg, cap, "%s", TR("Not saved: add at least one folder (/ is the drive root)", "No se guardó: añade al menos una carpeta (/ es la raíz de la unidad)"));
         return -1;
     }
+    /* NAS: only 13.52, read only, and never with the organizer. */
+    char *sub = c.nas_sub;
+    while (sub[0] == '/' || sub[0] == '\\')
+        memmove(sub, sub + 1, strlen(sub));
+    for (size_t l = strlen(sub); l && (sub[l - 1] == '/' || sub[l - 1] == '\\'); l--)
+        sub[l - 1] = 0;
+    if (c.nas && !nas_supported()) {
+        snprintf(msg, cap, "%s", TR("Not saved: the NAS needs firmware 13.52", "No se guardó: el NAS necesita el firmware 13.52"));
+        return -1;
+    }
+    if (c.nas && c.organize) {
+        snprintf(msg, cap, "%s", TR("Not saved: the NAS is read only, so turn off organizing pkgs first",
+                                    "No se guardó: el NAS es de solo lectura, así que desactiva antes organizar los pkg"));
+        return -1;
+    }
+    if (c.nas && (!c.nas_server[0] || !c.nas_share[0])) {
+        snprintf(msg, cap, "%s", TR("Not saved: the NAS needs a server and a share",
+                                    "No se guardó: el NAS necesita un servidor y un recurso"));
+        return -1;
+    }
+    if (c.nas_port < 0 || c.nas_port > 65535) {
+        snprintf(msg, cap, "%s", TR("Not saved: the port must be between 1 and 65535",
+                                    "No se guardó: el puerto debe estar entre 1 y 65535"));
+        return -1;
+    }
+    int nas_changed = c.nas != g_cfg.nas || c.nas_proto != g_cfg.nas_proto ||
+                      c.nas_port != g_cfg.nas_port || strcmp(c.nas_server, g_cfg.nas_server) ||
+                      strcmp(c.nas_share, g_cfg.nas_share) || strcmp(c.nas_sub, g_cfg.nas_sub) ||
+                      strcmp(c.nas_user, g_cfg.nas_user) || strcmp(c.nas_pass, g_cfg.nas_pass);
     g_cfg = c;
     apply_lang();
     config_save();
@@ -4018,8 +4338,14 @@ int app_config_set(const char *body, char *msg, size_t cap) {
     if (was_organize && !c.organize) /* turned off: send the organized games back to where they were */
         for (int i = 0; i < NROOTS; i++)
             g_migrated[i] = 0;
+    if (nas_changed)
+        nas_apply(1);
     g_next_scan = 0;
-    snprintf(msg, cap, "%s", TR("Settings saved", "Ajustes guardados"));
+    if (nas_changed && c.nas && !nas_active())
+        snprintf(msg, cap, TR("Saved, but the NAS did not connect: %s", "Guardado, pero el NAS no conectó: %s"),
+                 nas_status());
+    else
+        snprintf(msg, cap, "%s", TR("Settings saved", "Ajustes guardados"));
     return 0;
 }
 
@@ -4042,11 +4368,12 @@ static uint64_t free_bytes(const char *dir) {
 /* The folder a pkg sent to dest ("usb0".."usb7", "ext0", "ext1", "internal") goes to: the
  * first scan folder of the drive, or /data/PS4Mount. -1 when dest is not usable now. */
 static int upload_dir(const char *dest, char *dir, size_t n) {
-    char root[32];
+    char root[PATH_MAX], id[64];
     for (int i = 0; i < NROOTS; i++) {
         root_path(i, root, sizeof(root));
-        const char *id = is_internal(root) ? "internal" : root + 5;
-        if (!strcmp(dest, id) && root_present(root)) {
+        if (is_nas(root)) /* read only: nothing is sent there */
+            continue;
+        if (!strcmp(dest, root_id(root, id, sizeof(id))) && root_present(root)) {
             scan_dir(dir, n, root, 0);
             return 0;
         }
@@ -4055,17 +4382,18 @@ static int upload_dir(const char *dest, char *dir, size_t n) {
 }
 
 static void dests_json(buf_t *out, uint64_t need) {
-    char root[32], dir[PATH_MAX];
+    char root[PATH_MAX], dir[PATH_MAX];
     int first = 1;
     buf_printf(out, "[");
     for (int i = 0; i < NROOTS; i++) {
+        char id[64];
         root_path(i, root, sizeof(root));
-        if (!root_present(root))
+        if (!root_present(root) || is_nas(root)) /* read only: nothing is sent there */
             continue;
         scan_dir(dir, sizeof(dir), root, 0);
         uint64_t fb = free_bytes(dir);
         buf_printf(out, "%s{\"id\":", first ? "" : ",");
-        json_str(out, is_internal(root) ? "internal" : root + 5);
+        json_str(out, root_id(root, id, sizeof(id)));
         buf_printf(out, ",\"label\":");
         json_str(out, root_label(root));
         buf_printf(out, ",\"folder\":");
@@ -4232,7 +4560,7 @@ static void drive_add_file(drive_file_t *files, int *nf, int max, const char *pa
  * wherever the catalog found them when pkgs are used where they are. Runs in the Drive
  * thread: it only reads (the catalog under its lock). */
 static int drive_game_files(const char *tid, drive_file_t *files, int max, char *name, size_t nn) {
-    char root[32], p[PATH_MAX];
+    char root[PATH_MAX], p[PATH_MAX];
     int nf = 0;
     if (!g_cfg.organize) {
         char app[PATH_MAX] = "", patch[PATH_MAX] = "";
@@ -4313,7 +4641,7 @@ static int drive_library(char (*tids)[10], int max) {
     static char found[MAX_TITLES][10];
     pthread_mutex_lock(&g_cat_lock);
     for (int i = 0; i < NROOTS; i++) {
-        char root[32];
+        char root[PATH_MAX];
         root_path(i, root, sizeof(root));
         if (!root_present(root))
             continue;
@@ -4430,6 +4758,7 @@ static int g_klog = -1, g_web = -1;
 /* Closes the ports and the log before main returns: the process stays (it is the
  * loader's) and anything left open in it would keep the next PS4Mount out. */
 static void shutdown_daemon(int lock) {
+    nas_stop();
     links_stop();
     drive_stop();
     install_close();
@@ -4455,6 +4784,378 @@ static int single_instance(void) {
         return -1;
     }
     return s;
+}
+
+/* ---- the share and GoldHEN's AutoRun ---- */
+/* A payload started at boot by GoldHEN's AutoRun runs inside GoldHEN's own process, where
+ * the fuse devices cannot be opened. Loaded through BinLoader it gets a process of its
+ * own, where they can: the boot instance asks for that load, and the new one asks this
+ * one to step aside. Nothing is closed before the new process is known to be running, so
+ * a load that does not come leaves the panel as it was. */
+
+#define NAS_WAIT STATE_DIR "/nas-wait" /* written before asking: the new one takes over */
+
+static int send_all(int s, const void *data, size_t len) {
+    const char *p = data;
+    while (len) {
+        ssize_t w = send(s, p, len, 0);
+        if (w <= 0)
+            return -1;
+        p += w;
+        len -= (size_t)w;
+    }
+    return 0;
+}
+
+/* A payload file that the console's loader takes: the wrapped .bin (or the ELF). Only the
+ * first bytes are read: the file is 3 MB and this runs where the heap is small. */
+static const char *payload_file(void) {
+    static const char *cand[] = {"/data/payloads/PS4Mount-PS4.bin", "/user/data/payloads/PS4Mount-PS4.bin",
+                                 "/data/ps4mount/PS4Mount-PS4.bin", "/data/payloads/ps4mount-ps4.bin", NULL};
+    static char found[PATH_MAX];
+    for (int i = 0; cand[i]; i++) {
+        struct stat st;
+        if (stat(cand[i], &st) || st.st_size < 4096)
+            continue;
+        uint8_t d[8] = {0};
+        int fd = open(cand[i], O_RDONLY);
+        if (fd < 0)
+            continue;
+        ssize_t n = read(fd, d, sizeof(d));
+        close(fd);
+        if (n < 4)
+            continue;
+        if (!memcmp(d, "\177ELF", 4) || (d[0] == 'U' && d[1] == 'H')) { /* UH: jumps to main */
+            snprintf(found, sizeof(found), "%s", cand[i]);
+            return found;
+        }
+    }
+    return NULL;
+}
+
+/* One line (without its CRLF) within ms; 1 when the socket said something. */
+static int recv_line(int s, char *out, size_t n, int ms) {
+    struct timeval tv = {ms / 1000, (ms % 1000) * 1000};
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    size_t i = 0;
+    int any = 0;
+    for (;;) {
+        char c;
+        ssize_t r = recv(s, &c, 1, 0);
+        if (r <= 0)
+            break;
+        any = 1;
+        if (c == '\n')
+            break;
+        if (c != '\r' && i + 1 < n)
+            out[i++] = c;
+    }
+    out[i] = 0;
+    return any;
+}
+
+/* The console's own address, to reach a loader that is not bound to loopback. */
+static int lan_ip(struct in_addr *out) {
+    int s = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in a = {0}, me;
+    socklen_t n = sizeof(me);
+    a.sin_family = AF_INET;
+    a.sin_port = htons(9);
+    a.sin_addr.s_addr = htonl(0x08080808);
+    int ok = s >= 0 && !connect(s, (struct sockaddr *)&a, sizeof(a)) &&
+             !getsockname(s, (struct sockaddr *)&me, &n);
+    if (s >= 0)
+        close(s);
+    if (ok)
+        *out = me.sin_addr;
+    return ok;
+}
+
+/* Sent in pieces: the file does not fit in memory here. The headers, and the wait for the
+ * "100 Continue" before the body, are curl's: GoldHEN's payloader reads the request with a
+ * small parser that turns down anything else ("Error handling payload") and wants the body
+ * only after the go-ahead. 0 taken, 1 nothing listening, -1 turned down. */
+static int post_payload(const char *path, struct in_addr ip) {
+    struct stat st;
+    int fd = open(path, O_RDONLY);
+    if (fd < 0 || fstat(fd, &st) || st.st_size <= 0) {
+        if (fd >= 0)
+            close(fd);
+        return -1;
+    }
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in a = {0};
+    a.sin_family = AF_INET;
+    a.sin_port = htons(9090);
+    a.sin_addr = ip;
+    if (s < 0) {
+        close(fd);
+        return 1;
+    }
+    struct timeval to = {3, 0};
+    setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &to, sizeof(to));
+    if (connect(s, (struct sockaddr *)&a, sizeof(a))) {
+        close(s);
+        close(fd);
+        return 1;
+    }
+    int on = 1;
+    setsockopt(s, IPPROTO_TCP, 0x01 /* TCP_NODELAY */, &on, sizeof(on));
+    char head[256];
+    int h = snprintf(head, sizeof(head),
+                     "POST / HTTP/1.1\r\nHost: %s:9090\r\nUser-Agent: curl/8.5.0\r\nAccept: */*"
+                     "\r\nContent-Length: %lld\r\nContent-Type: application/x-www-form-urlencoded"
+                     "\r\nExpect: 100-continue\r\n\r\n",
+                     inet_ntoa(ip), (long long)st.st_size);
+    int rc = 0;
+    char line[160];
+    if (send_all(s, head, (size_t)h)) {
+        printf("[nas] BinLoader: headers not sent (%d)\n", errno);
+        rc = -1;
+    } else if (recv_line(s, line, sizeof(line), 2500) && line[0]) {
+        printf("[nas] BinLoader: %s\n", line);
+        if (!strncmp(line, "HTTP/1.1 4", 10) || !strncmp(line, "HTTP/1.1 5", 10))
+            rc = -1;
+    }
+    if (!rc) {
+        static char buf[65536];
+        ssize_t r;
+        while ((r = read(fd, buf, sizeof(buf))) > 0)
+            if (send_all(s, buf, (size_t)r)) {
+                printf("[nas] BinLoader: body cut (%d)\n", errno);
+                rc = -1;
+                break;
+            }
+        if (r < 0)
+            rc = -1;
+    }
+    if (!rc && recv_line(s, line, sizeof(line), 20000) && line[0]) {
+        printf("[nas] BinLoader: %s\n", line);
+        if (!strncmp(line, "HTTP/1.1 4", 10) || !strncmp(line, "HTTP/1.1 5", 10))
+            rc = -1;
+    }
+    close(s);
+    close(fd);
+    return rc;
+}
+
+/* Seconds since the console booted. */
+static long uptime_secs(void) {
+    struct timespec up;
+    if (clock_gettime(CLOCK_MONOTONIC, &up))
+        return 0;
+    return (long)up.tv_sec;
+}
+
+#define NAS_TAKEOVER_AFTER 30 /* GoldHEN is still starting: its loader does not work yet */
+
+/* The boot instance cannot open the fuse devices, so it asks BinLoader for a load of its
+ * own file. BinLoader is only listening once it is switched on in GoldHEN's menu, which can
+ * be any time after the console starts: keep asking (every 10 s) until it takes it once. */
+static time_t g_nas_ask_at;
+static int g_nas_said; /* the reason was already logged */
+static time_t g_quiet_until; /* the load that was taken should have taken over by then */
+static int nas_waiting(void);
+static void notify_running(void);
+
+#define NAS_TAKEOVER_WAIT 30
+
+/* No load is taking over: this instance stays and says so. */
+static void nas_speak(void) {
+    if (!g_quiet)
+        return;
+    g_quiet = 0;
+    notify_running();
+}
+
+static void nas_ask_reload(void) {
+    if (!nas_need_reload())
+        return;
+    if (uptime_secs() < NAS_TAKEOVER_AFTER)
+        return;
+    time_t now = time(NULL);
+    /* once per boot: a load that was taken but never took over must not be sent again
+     * and again (GoldHEN's loader and the Shell UI stopped answering under that) */
+    if (nas_waiting()) {
+        if (!g_quiet_until)
+            g_quiet_until = now + NAS_TAKEOVER_WAIT;
+        if (g_quiet && now >= g_quiet_until) {
+            printf("[nas] the load did not take over: this instance stays\n");
+            nas_speak();
+        }
+        if (!g_nas_said) {
+            printf("[nas] BinLoader took the payload already this boot: not sent again\n");
+            g_nas_said = 1;
+        }
+        return;
+    }
+    if (now < g_nas_ask_at)
+        return;
+    g_nas_ask_at = now + 10;
+    const char *file = payload_file();
+    if (!file) {
+        printf("[nas] no payload file to load again\n");
+        nas_speak();
+        return;
+    }
+    char buf[32];
+    int n = snprintf(buf, sizeof(buf), "%ld\n", boot_time());
+    write_file(NAS_WAIT, buf, (size_t)n, 0666);
+    struct in_addr lan;
+    int have_lan = lan_ip(&lan);
+    for (int i = 0; i < 3; i++) {
+        struct in_addr lo;
+        lo.s_addr = htonl(INADDR_LOOPBACK);
+        if (!post_payload(file, lo)) {
+            g_nas_said = 0;
+            g_quiet_until = now + NAS_TAKEOVER_WAIT;
+            printf("[nas] BinLoader took %s: loading again\n", file);
+            return;
+        }
+        if (have_lan && !post_payload(file, lan)) {
+            g_nas_said = 0;
+            g_quiet_until = now + NAS_TAKEOVER_WAIT;
+            printf("[nas] BinLoader took %s: loading again\n", file);
+            return;
+        }
+        usleep(1500000);
+    }
+    unlink(NAS_WAIT);
+    if (!g_nas_said) {
+        printf("[nas] BinLoader (:9090) did not take the payload\n");
+        g_nas_said = 1;
+    }
+    nas_speak();
+}
+
+/* The panel: the same request the retry makes, now. */
+int app_nas_reload(char *msg, size_t cap) {
+    const char *file = payload_file();
+    if (!file) {
+        snprintf(msg, cap, "%s", TR("the payload is not where the panel expects it",
+                                    "el payload no está donde el panel lo espera"));
+        return 1;
+    }
+    char buf[32];
+    int k = snprintf(buf, sizeof(buf), "%ld\n", boot_time());
+    write_file(NAS_WAIT, buf, (size_t)k, 0666);
+    struct in_addr lo, lan;
+    lo.s_addr = htonl(INADDR_LOOPBACK);
+    int where = post_payload(file, lo);
+    if (where == 1 && lan_ip(&lan))
+        where = post_payload(file, lan);
+    if (where) {
+        unlink(NAS_WAIT);
+        snprintf(msg, cap, "%s", where == 1
+                     ? TR("BinLoader is not listening on port 9090",
+                          "BinLoader no está escuchando en el puerto 9090")
+                     : TR("BinLoader turned the load down", "BinLoader rechazó la carga"));
+        return 1;
+    }
+    snprintf(msg, cap, "%s", TR("BinLoader took the payload: loading it again",
+                                "BinLoader aceptó el payload: cargándolo otra vez"));
+    return 0;
+}
+
+/* 1 when the instance running asked for this one to replace it. */
+static int nas_waiting(void) {
+    char buf[32] = "";
+    int fd = open(NAS_WAIT, O_RDONLY);
+    if (fd < 0)
+        return 0;
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    return n > 0 && atol(buf) == boot_time();
+}
+
+/* 1 when this process can open the fuse devices: the one started at boot cannot, and a
+ * load that cannot either must not take the panel away from it. */
+static int fuse_ok(void) {
+    for (int i = 0; i < 8; i++) {
+        char dev[32];
+        snprintf(dev, sizeof(dev), "/dev/fuse%d", i);
+        int fd = open(dev, O_RDWR);
+        if (fd >= 0) {
+            close(fd);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* 1 when the instance on the panel says it needs a load again (it runs inside GoldHEN's
+ * process: this one, with a process of its own, can take the share). */
+static int running_needs_reload(void) {
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in a = {0};
+    a.sin_family = AF_INET;
+    a.sin_port = htons(WEB_PORT);
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    static const char req[] = "GET /api/config HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n";
+    static const char want[] = "\"nas_reload\":true";
+    static char buf[8192]; /* the stack of a payload can be small */
+    ssize_t n = -1;
+    int found = 0;
+    if (s >= 0 && !connect(s, (struct sockaddr *)&a, sizeof(a))) {
+        if (!send_all(s, req, sizeof(req) - 1)) {
+            n = recv(s, buf, sizeof(buf) - 1, 0);
+            while (n > 0 && !found) {
+                buf[n] = 0;
+                found = strstr(buf, want) != NULL;
+                if (found || n >= (ssize_t)sizeof(buf) - 1)
+                    break;
+                ssize_t more = recv(s, buf + n, sizeof(buf) - 1 - (size_t)n, 0);
+                if (more <= 0)
+                    break;
+                n += more;
+            }
+        }
+    }
+    if (s >= 0)
+        close(s);
+    return found;
+}
+
+/* Asks the instance that asked for us to stop. */
+static int stop_running(void) {
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in a = {0};
+    a.sin_family = AF_INET;
+    a.sin_port = htons(WEB_PORT);
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    static const char req[] = "POST /api/stop HTTP/1.0\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\n\r\n";
+    int rc = -1;
+    if (s >= 0 && !connect(s, (struct sockaddr *)&a, sizeof(a)))
+        rc = send_all(s, req, sizeof(req) - 1);
+    if (s >= 0)
+        close(s);
+    return rc;
+}
+
+/* The one that was running asked to be replaced: it goes, this one stays. */
+static int nas_takeover(int *lock) {
+    if (!nas_waiting() && !running_needs_reload())
+        return 0;
+    if (!fuse_ok()) { /* loaded again inside the same process: nothing to gain */
+        printf("[main] this load cannot use fusefs either: the running one stays\n");
+        return 0;
+    }
+    if (stop_running()) {
+        printf("[main] the running instance did not take the stop\n");
+        return 0;
+    }
+    /* it may take a while to close: a Drive or download request has to end first */
+    for (int i = 0; i < 240; i++) {
+        usleep(250000);
+        *lock = single_instance();
+        if (*lock >= 0) {
+            unlink(NAS_WAIT);
+            printf("[main] replaced the instance of the boot\n");
+            return 1;
+        }
+    }
+    printf("[main] the running instance is still there\n");
+    return 0;
 }
 
 /* Rest mode closes the network sockets of payloads: a listening socket that stopped
@@ -4551,36 +5252,8 @@ static void pump_events(int ms) {
     }
 }
 
-int main(void) {
-    int lock = single_instance();
-    if (lock < 0) {
-        /* before the log: the screen is the only place this is seen */
-        apply_lang(); /* the settings are the running one's: the console's language */
-        notify("%s", TR(VERSION " is already running. Panel at http://<PS4 IP>:8770",
-                  VERSION " ya está en marcha. Panel en http://<IP de la PS4>:8770"));
-        return 0;
-    }
-    sceUserServiceInitialize(0);
-    sceAppInstUtilInitialize();
-    mkdirs(STATE_DIR, 0777);
-    /* the log goes to a file, every line with its time; when it cannot be opened, stdout
-     * stays as it was */
-    /* the PS4 loader runs the payload in a process of its own and returning from main
-     * goes back to it: no exit, no atexit. What the payload opened is closed by
-     * shutdown() before main returns */
-    log_start(STATE_DIR "/log.txt");
-    setvbuf(stdout, NULL, _IOLBF, 0);
-    config_load();
-    apply_lang();
-    signal(SIGPIPE, SIG_IGN);
-    check_firmware();
-    if (user_app_masked())
-        unmask_leftover();
-    /* no Media tab shortcut: it is a PS5 web app (param.json); the panel is opened from
-     * a browser */
-    g_web = web_listen();
-    drive_begin();
-    links_begin();
+/* The start, as the console shows it. */
+static void notify_running(void) {
     if (g_reg_mode == REG_ALL)
         notify("%s", g_web >= 0 ? TR(VERSION " running. Panel at http://<PS4 IP>:8770",
                                VERSION " en marcha. Panel en http://<IP de la PS4>:8770")
@@ -4595,6 +5268,44 @@ int main(void) {
                   VERSION ": el firmware %s aún no es compatible. Para proteger la base de datos del sistema, no se "
                           "añaden juegos."),
                g_fw_text);
+}
+
+int main(void) {
+    mkdirs(STATE_DIR, 0777);
+    /* the log goes to a file, every line with its time; when it cannot be opened, stdout
+     * stays as it was. Opened first of all: a load that ends before the panel is up is
+     * only seen here */
+    log_start(STATE_DIR "/log.txt");
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    int lock = single_instance();
+    if (lock < 0 && !nas_takeover(&lock)) {
+        apply_lang(); /* the settings are the running one's: the console's language */
+        printf("[main] already running: this load ends here\n");
+        notify("%s", TR(VERSION " is already running. Panel at http://<PS4 IP>:8770",
+                  VERSION " ya está en marcha. Panel en http://<IP de la PS4>:8770"));
+        log_stop();
+        return 0;
+    }
+    sceUserServiceInitialize(0);
+    sceAppInstUtilInitialize();
+    /* the PS4 loader runs the payload in a process of its own and returning from main
+     * goes back to it: no exit, no atexit. What the payload opened is closed by
+     * shutdown() before main returns */
+    printf("[main] start (lock %d, pid %d)\n", lock, (int)getpid());
+    config_load();
+    apply_lang();
+    signal(SIGPIPE, SIG_IGN);
+    check_firmware();
+    nas_apply(1); /* the share, when the settings have one */
+    g_quiet = nas_need_reload(); /* a load of its own takes over in a few seconds */
+    if (user_app_masked())
+        unmask_leftover();
+    /* no Media tab shortcut: it is a PS5 web app (param.json); the panel is opened from
+     * a browser */
+    g_web = web_listen();
+    drive_begin();
+    links_begin();
+    notify_running();
     unlink(STATE_DIR "/stop");
     for (;;) {
         if (g_stop || exists(STATE_DIR "/stop")) {
@@ -4655,6 +5366,8 @@ int main(void) {
             readd_title(tid);
             continue;
         }
+        nas_apply(0); /* retries a share that was not reached, or the settings changed */
+        nas_ask_reload(); /* the boot instance cannot open the fuse devices: ask for a load */
         if (time(NULL) >= g_next_scan && !g_deleting) {
             if (g_reg_mode != REG_NONE) {
                 migrate_organized(); /* organize off: the games it had organized, back in place */

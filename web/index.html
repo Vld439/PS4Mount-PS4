@@ -51,13 +51,20 @@ form.settings{display:flex;flex-direction:column;gap:14px}
 form.settings label{display:flex;flex-direction:column;gap:6px}
 form.settings label.check{flex-direction:row;align-items:center;gap:10px}
 a{color:#8fb4ff}
-form.settings textarea,form.settings input[type=number],form.settings input[type=text],form.settings input[type=password]{background:#0b0d11;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+form.settings textarea,form.settings select,form.settings input[type=number],form.settings input[type=text],form.settings input[type=password]{background:#0b0d11;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
 form.settings textarea{min-height:90px;resize:vertical;font-family:ui-monospace,Consolas,monospace}
 form.settings .hint{color:var(--muted);font-size:13px}
 form.settings .row{display:flex;gap:8px;justify-content:flex-end}
 form.settings fieldset{border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:12px}
 form.settings legend{font-weight:600;padding:0 6px}
 form.settings input.num{width:6em}
+form.settings .nasgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+@media(max-width:560px){form.settings .nasgrid{grid-template-columns:1fr}}
+form.settings .naslist{display:flex;flex-wrap:wrap;gap:8px}
+form.settings .naslist:empty{display:none}
+form.settings .naslist button.on{border-color:var(--accent)}
+form.settings details.nashelp p{margin:8px 0;font-size:13px;color:var(--muted)}
+form.settings details.nashelp summary{cursor:pointer}
 .picker{width:100%;border-collapse:collapse;font-size:14px}
 .picker th,.picker td{border-bottom:1px solid var(--line);padding:8px 6px;text-align:left;vertical-align:top}
 .picker td.c,.picker th.c{width:36px;text-align:center}
@@ -138,6 +145,43 @@ button.small{padding:5px 10px;font-size:13px}
   <label class="check"><input type="checkbox" id="s-internal"> Also use pkgs in the console's /data/PS4Mount</label>
   <span class="hint" style="margin-top:-8px">Pkgs sent to the console's storage are added from there, with no install to wait
     for. They still take internal space.</span>
+  <fieldset id="nasbox"><legend>NAS (NFS or SMB)</legend>
+    <span class="hint" id="nas-unsupported" hidden>Not available on this firmware: the NAS needs 13.52.</span>
+    <label class="check"><input type="checkbox" id="s-nas"> Use a network share (read only)</label>
+    <span class="hint" style="margin-top:-8px">Only firmware 13.52, and only with pkgs used where they are: the share
+      is never renamed or moved. It needs a wired console or a good Wi-Fi: games read at the speed of the network.</span>
+    <div class="row" style="justify-content:flex-start;flex-wrap:wrap">
+      <button type="button" id="nas-find">Find servers on the network</button>
+      <button type="button" id="nas-list">List the server's shares</button>
+    </div>
+    <span class="hint" id="nas-msg"></span>
+    <div class="naslist" id="nas-hosts"></div>
+    <div class="naslist" id="nas-shares"></div>
+    <details class="nashelp"><summary>How to share a folder from a computer or a NAS</summary>
+      <p><b>Windows:</b> right-click the folder, Properties, Sharing, Advanced Sharing, tick "Share this folder". Then fill in User and
+        Password here with your Windows account. If the console does not find the PC, set its network as Private.</p>
+      <p><b>macOS:</b> System Settings, General, Sharing: turn on File Sharing and add the folder. In Options, turn on SMB sharing
+        for your user, and use that user and password here.</p>
+      <p><b>Linux:</b> share the folder with Samba (read only, guest allowed) or NFS (/etc/exports), and let the console's address
+        through the firewall.</p>
+      <p><b>NAS box</b> (Synology, QNAP, a router with USB): turn on SMB file sharing in its settings and give the shared folder read
+        access.</p>
+      <p>A cable is much faster than Wi-Fi. With no switch or free router port, a cable straight from the computer to the console
+        works too: share the computer's internet connection on that cable.</p>
+    </details>
+    <div class="nasgrid">
+      <label>Protocol
+        <select id="s-nas-proto"><option value="nfs">NFS</option><option value="smb">SMB</option></select>
+      </label>
+      <label>Server <input type="text" id="s-nas-server" spellcheck="false" autocapitalize="off" placeholder="192.168.0.19"></label>
+      <label>Export (NFS) or share (SMB) <input type="text" id="s-nas-share" spellcheck="false" autocapitalize="off" placeholder="/volume1/games"></label>
+      <label>Folder inside it <input type="text" id="s-nas-sub" spellcheck="false" autocapitalize="off" placeholder="/"></label>
+      <label>Port <input type="text" class="num" id="s-nas-port" inputmode="numeric" pattern="[0-9]*" placeholder="auto"></label>
+      <label id="nas-userl">User (SMB) <input type="text" id="s-nas-user" spellcheck="false" autocapitalize="off" placeholder="guest"></label>
+      <label id="nas-passl">Password (SMB) <input type="password" id="s-nas-pass" autocomplete="new-password" placeholder="saved"></label>
+    </div>
+    <span class="hint" id="nas-status"></span>
+  </fieldset>
   <label>Language
     <select id="s-lang"><option value="auto">The console's</option><option value="en">English</option><option value="es">Español</option></select>
   </label>
@@ -378,6 +422,24 @@ $('settingsbtn').onclick = function () {
     $('s-dlc').checked = c.dlc;
     $('s-organize').checked = c.organize;
     $('s-internal').checked = c.internal;
+    var nasOk = !!c.nas_supported;
+    $('s-nas').checked = !!c.nas;
+    $('s-nas').disabled = !nasOk;
+    $('s-nas-proto').value = c.nas_proto === 'smb' ? 'smb' : 'nfs';
+    $('s-nas-server').value = c.nas_server || '';
+    $('s-nas-share').value = c.nas_share || '';
+    $('s-nas-sub').value = c.nas_sub || '';
+    $('s-nas-port').value = c.nas_port ? c.nas_port : '';
+    $('s-nas-user').value = c.nas_user || '';
+    $('s-nas-pass').value = '';
+    $('s-nas-pass').placeholder = c.nas_has_pass ? t('saved') : '';
+    $('nas-unsupported').hidden = nasOk;
+    $('nas-find').disabled = $('nas-list').disabled = !nasOk;
+    $('nas-msg').textContent = '';
+    $('nas-hosts').innerHTML = $('nas-shares').innerHTML = '';
+    $('nas-status').textContent = (c.nas_status || '') +
+      (c.nas_reload ? ' ' + t('Turn on BinLoader (port 9090) in GoldHEN to use the share.') : '');
+    nasFields();
     $('s-lang').value = c.lang || 'auto';
     $('s-size').disabled = !c.batch;
     maxRestore = c.max_restore_batch || 10;
@@ -388,6 +450,91 @@ $('settingsbtn').onclick = function () {
   }).catch(function (e) { toast(t('Could not read the settings: {0}', e.message)); });
 };
 $('s-batch').onchange = function () { $('s-size').disabled = !this.checked; };
+/* The NAS fields only make sense with the box on (and SMB's account only for SMB). */
+function nasFields() {
+  var on = $('s-nas').checked && !$('s-nas').disabled;
+  var smb = $('s-nas-proto').value === 'smb';
+  $('s-nas-proto').disabled = !on;
+  $('s-nas-server').disabled = !on;
+  $('s-nas-share').disabled = !on;
+  $('s-nas-sub').disabled = !on;
+  $('s-nas-port').disabled = !on;
+  $('s-nas-user').disabled = !on || !smb;
+  $('s-nas-pass').disabled = !on || !smb;
+}
+$('s-nas').onchange = nasFields;
+$('s-nas-proto').onchange = nasFields;
+/* Finding a server: the console tries every address of its network, the panel lists what
+ * answered, then what the chosen one shares. Picking one fills in the fields below. */
+function nasPost(path, body) {
+  return fetch(path, {method: body === undefined ? 'GET' : 'POST', cache: 'no-store', body: body,
+    headers: {'X-PS4Mount': '1', 'Content-Type': 'application/x-www-form-urlencoded'}})
+    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+}
+function nasPick(list, btn) {
+  var all = $(list).querySelectorAll('button');
+  for (var i = 0; i < all.length; i++) all[i].className = all[i] === btn ? 'on' : '';
+}
+$('nas-find').onclick = function () {
+  var b = this;
+  b.disabled = true;
+  $('nas-msg').textContent = t('Looking for servers on the console\'s network...');
+  $('nas-hosts').innerHTML = '';
+  $('nas-shares').innerHTML = '';
+  nasPost('/api/nas/scan').then(function (j) {
+    var html = '';
+    j.hosts.forEach(function (h) {
+      ['smb', 'nfs'].forEach(function (p) {
+        if (h[p]) html += '<button type="button" data-ip="' + esc(h.ip) + '" data-proto="' + p + '">' +
+          esc((h.name ? h.name + ' (' + h.ip + ')' : h.ip) + ' · ' + p.toUpperCase()) + '</button>';
+      });
+    });
+    $('nas-hosts').innerHTML = html;
+    $('nas-msg').textContent = html ? t('Choose a server:') :
+      t('No server found. Check that the computer or NAS is on, on the same network as the console, shares a folder, and that its firewall allows file sharing.');
+  }).catch(function (e) { $('nas-msg').textContent = t('Error: {0}', e.message); })
+    .then(function () { b.disabled = false; });
+};
+$('nas-hosts').onclick = function (e) {
+  var b = e.target.closest('button');
+  if (!b) return;
+  nasPick('nas-hosts', b);
+  $('s-nas').checked = true;
+  $('s-nas-proto').value = b.getAttribute('data-proto');
+  $('s-nas-server').value = b.getAttribute('data-ip');
+  $('s-nas-port').value = '';
+  nasFields();
+  nasShares();
+};
+$('nas-list').onclick = function () { nasShares(); };
+function nasShares() {
+  var server = $('s-nas-server').value.trim();
+  if (!server) { $('nas-msg').textContent = t('Find a server first, or type its address in Server.'); return; }
+  var smb = $('s-nas-proto').value === 'smb';
+  $('nas-shares').innerHTML = '';
+  $('nas-msg').textContent = t('Asking {0} what it shares...', server);
+  nasPost('/api/nas/shares', 'proto=' + $('s-nas-proto').value + '&server=' + encodeURIComponent(server) +
+    '&port=' + encodeURIComponent($('s-nas-port').value) + '&user=' + encodeURIComponent(smb ? $('s-nas-user').value.trim() : '') +
+    '&pass=' + encodeURIComponent(smb ? $('s-nas-pass').value : '')).then(function (j) {
+    if (!j.ok) {
+      $('nas-msg').textContent = j.message + (j.auth ? ' ' + t('Fill in User and Password, then press "List the server\'s shares".') : '');
+      if (j.auth) $('s-nas-user').focus();
+      return;
+    }
+    $('nas-shares').innerHTML = j.shares.map(function (n) {
+      return '<button type="button" data-share="' + esc(n) + '">' + esc(n) + '</button>';
+    }).join('');
+    $('nas-msg').textContent = j.shares.length ? t('Choose the shared folder with your games:') : t('This server shares no folders.');
+  }).catch(function (e) { $('nas-msg').textContent = t('Error: {0}', e.message); });
+}
+$('nas-shares').onclick = function (e) {
+  var b = e.target.closest('button');
+  if (!b) return;
+  nasPick('nas-shares', b);
+  $('s-nas-share').value = b.getAttribute('data-share');
+  $('s-nas-sub').value = '';
+  $('nas-msg').textContent = t('Ready: press Save to use it.');
+};
 $('s-cancel').onclick = function () { $('setdlg').close(); };
 /* Number fields: type=number opens the numeric keyboard on the PS5 (inputmode alone does
  * not), inputmode on phones; digits only, capped at max. */
@@ -465,7 +612,14 @@ $('setform').onsubmit = function (e) {
   var size = $('s-size').value;
   if (!/^[0-9]+$/.test(size) || +size < 1 || +size > 50) { toast(t('Games per group must be a number from 1 to {0}', 50)); return; }
   var body = 'batch=' + ($('s-batch').checked ? 1 : 0) + '&batch_size=' + encodeURIComponent($('s-size').value) +
-    '&dlc=' + ($('s-dlc').checked ? 1 : 0) + '&organize=' + ($('s-organize').checked ? 1 : 0) + '&internal=' + ($('s-internal').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value);
+    '&dlc=' + ($('s-dlc').checked ? 1 : 0) + '&organize=' + ($('s-organize').checked ? 1 : 0) + '&internal=' + ($('s-internal').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value) +
+    '&nas=' + ($('s-nas').checked ? 1 : 0) + '&nas_proto=' + $('s-nas-proto').value +
+    '&nas_port=' + encodeURIComponent($('s-nas-port').value) +
+    '&nas_server=' + encodeURIComponent($('s-nas-server').value.trim()) +
+    '&nas_share=' + encodeURIComponent($('s-nas-share').value.trim()) +
+    '&nas_sub=' + encodeURIComponent($('s-nas-sub').value.trim()) +
+    '&nas_user=' + encodeURIComponent($('s-nas-user').value.trim()) +
+    '&nas_pass=' + encodeURIComponent($('s-nas-pass').value);
   fetch('/api/config', {method: 'POST', cache: 'no-store', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: body})
     .then(function (r) { return r.json(); })
     .then(function (j) { toast(j.message || j.error); if (j.ok) { $('setdlg').close(); load(); } })

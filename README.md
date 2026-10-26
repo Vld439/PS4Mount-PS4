@@ -35,6 +35,7 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 | --- | --- |
 | Juegos desde un **USB exFAT** (también pkgs de más de 4 GB) | ✅ probado |
 | Juegos desde la **memoria interna** (`/data/PS4Mount`) | ✅ probado |
+| Juegos desde una **NAS** por **SMB o NFS**, solo lectura, con búsqueda en la red | ✅ probado (solo firmware 13.52) |
 | **Actualizaciones** | ✅ probado |
 | Juegos **donde están**, sin mover ni renombrar los pkgs (cualquier carpeta de la unidad) | ✅ probado |
 | **DLC** de hasta 256 MB (casi todos: trajes, packs, licencias) | ✅ probado: PS4Mount los instala con el instalador del sistema en segundos, y aparecen en la información del juego |
@@ -268,9 +269,54 @@ Ya está: el panel muestra tu correo y tu espacio. La conexión se guarda en la 
 | Instalar DLC | Sí | Instala los DLC (ver arriba). |
 | Organizar los pkgs en la carpeta ps4 | No | Mueve los pkgs a `ps4/<TITLE_ID>/` para tenerlos ordenados. Apagado (por defecto), los pkgs se usan donde están, con su nombre, sin mover ni renombrar nada; los que PS4Mount ya había organizado vuelven solos a su sitio original (los organizados a mano se quedan en `ps4/`). En la memoria interna se buscan solo `/data/PS4Mount` y `ps4`. |
 | Usar también los pkgs de /data/PS4Mount | Sí | Usa también los pkgs de la memoria interna. |
+| NAS (NFS o SMB) | No | Usa los pkgs de una carpeta compartida en red, **solo lectura** y sin mover ni renombrar nada (con Organizar activado no aparece). Solo firmware 13.52 (ver abajo). |
 | Idioma | El de la consola | El idioma del panel y de las notificaciones: el de la consola, inglés o español. |
 
 Se guardan en `/data/ps4mount/config.txt`. Los ajustes también tienen **Restaurar los archivos de todos los juegos** (o de los elegidos) y **Volver a usar los pkgs restaurados**.
+
+### Juegos desde una NAS (SMB o NFS)
+
+Los juegos de una **carpeta compartida en la red** (un PC con Windows, Linux o macOS, o una caja NAS como Synology, QNAP o un router con USB) se juegan **desde ahí**, con su actualización y sus DLC, **sin copiarlos ni instalarlos** en la consola. Es **solo lectura**: PS4Mount nunca escribe, renombra ni mueve nada en el recurso. Solo firmware **13.52**.
+
+**1. Comparte la carpeta de los juegos** en el ordenador o el NAS:
+
+| Equipo | Cómo |
+| --- | --- |
+| **Windows** | Clic derecho en la carpeta → Propiedades → Compartir → Uso compartido avanzado → marca **Compartir esta carpeta**. Windows pide cuenta: en el panel pondrás tu usuario y contraseña de Windows. Si la consola no encuentra el PC, pon su red como **Privada**. |
+| **macOS** | Ajustes del Sistema → General → Compartir → activa **Compartir archivos** y añade la carpeta. En Opciones, activa compartir por SMB para tu usuario. |
+| **Linux** | Comparte la carpeta con **Samba** (solo lectura, invitado permitido) o **NFS** (`/etc/exports`), y deja pasar la dirección de la consola en el cortafuegos. |
+| **Caja NAS** | Activa compartir archivos por **SMB** (o NFS) en sus ajustes y da permiso de lectura a la carpeta. |
+
+**2. En el panel**, en **Ajustes → NAS**, pulsa **Buscar servidores en la red**. La consola prueba toda su red en unos segundos y lista los equipos que comparten archivos. Elige uno y aparecen sus **carpetas compartidas**: elige la de los juegos y pulsa **Guardar**. Si el servidor pide cuenta, el panel lo dice: pon **Usuario** y **Contraseña** y pulsa **Ver los recursos del servidor**.
+
+![Ajustes → NAS: el PC encontrado en la red y sus carpetas compartidas](docs/panel-nas-es.png)
+
+Los juegos aparecen en la biblioteca como los de un USB (la primera vez, reinicia la consola una vez). En su ficha, **En** dice **NAS**:
+
+![Marvel's Spider-Man jugándose desde el NAS](docs/panel-nas-game-es.png)
+
+Los campos se pueden rellenar también a mano:
+
+| Campo | Qué poner |
+| --- | --- |
+| Protocolo | **SMB** (Windows, macOS, la mayoría de NAS) o **NFS** (Linux, NAS). |
+| Servidor | La IP del ordenador o del NAS (`192.168.0.19`). |
+| Exportación (NFS) o recurso (SMB) | En SMB, el nombre del recurso (`games`). En NFS, la ruta exportada (`/volume1/games`). |
+| Carpeta dentro | Opcional: una subcarpeta, para no recorrer todo el recurso. |
+| Puerto | Opcional: se deja vacío (445 en SMB, 2049 en NFS). |
+| Usuario y contraseña (SMB) | Vacíos, entra como invitado. La contraseña se guarda en claro en `config.txt`. |
+
+- **Mejor por cable.** PS4Mount pide los datos por adelantado y varios a la vez, así que aprovecha casi toda la red, pero por Wi-Fi las cargas son lentas y alguna textura tarda en aparecer. **Con cable** se juega como desde el disco interno. Si no tienes switch ni un puerto libre en el router, sirve un **cable directo del PC a la consola**: en el PC, comparte su conexión por ese cable (en Linux con NetworkManager: `nmcli connection add type ethernet ifname <interfaz> con-name ps4 ipv4.method shared`; en Windows, "Conexión compartida a Internet" del adaptador Wi-Fi), y en la PS4 configura la red por cable en modo **Fácil**.
+- **Solo firmware 13.52**: en otros el ajuste sale desactivado (la consola no trae NFS y el sistema de ficheros en modo usuario, FUSE, no se puede activar).
+- **Solo con Organizar apagado** (el valor por defecto): el recurso nunca se organiza.
+- **SMB** usa SMB2/3. **NFS** prueba NFSv4.2, NFSv4.0 y NFSv3; para que el panel liste las exportaciones, el servidor tiene que tener `rpcbind` (si no, escríbela a mano).
+- Un servidor que **no contesta** (apagado, dirección mal escrita, cortafuegos) se avisa en 3 segundos.
+- **Si se corta la red** en plena partida (un cable desenchufado, el PC reiniciado), el juego se queda en pausa y sigue solo cuando vuelve: PS4Mount reconecta y reabre los ficheros. Espera hasta 2 minutos; pasado ese tiempo el juego recibe el error y puede fallar.
+- **Cambiar** de protocolo, servidor o carpeta no necesita reiniciar: se reconecta al momento.
+- El recurso se monta en `/mnt/usb0/ps4mount/nas-<n>`, una ruta que el instalador del sistema acepta. **No hace falta un USB conectado.**
+- **BinLoader tiene que estar encendido** en el menú de GoldHEN: si PS4Mount arranca solo con la consola (AutoRun), ese proceso no puede abrir los dispositivos FUSE (una limitación de GoldHEN), así que PS4Mount se vuelve a cargar solo por BinLoader (puerto 9090), en unos segundos y sin avisos de más. Con BinLoader apagado, los juegos de USB y de la memoria interna funcionan igual, pero la NAS no se monta.
+- **Volver a cargar PS4Mount en el mismo arranque** monta el recurso en otra carpeta (`nas-2`, `nas-3`…), y los juegos del NAS piden reiniciar una vez. Tras unas pocas cargas en el mismo arranque se acaban los dispositivos FUSE: reinicia la consola.
+- Al **borrar un juego desde la consola**, los pkgs del recurso no se borran (son tuyos): el juego sale de la biblioteca y los ficheros siguen en el NAS.
 
 ### Quitar y borrar juegos
 
@@ -321,6 +367,7 @@ Para informar de un problema, abre un [issue](https://github.com/Vld439/PS4Mount
 | `<carpeta de búsqueda>/.ps4mount-drive/` | Descargas de Drive a medias |
 | `/data/ps4mount/links_queue.txt` | Las descargas de enlaces pendientes (con sus enlaces y la contraseña escrita) |
 | `/data/ps4mount/passwords.txt` | Las contraseñas que abrieron un archivo comprimido, para probarlas en los siguientes |
+| `/mnt/usb0/ps4mount/nas-<n>` | Donde se monta el recurso de red, dentro de la unidad USB (su nombre se guarda en `/data/ps4mount/nas-mnt`) |
 | `<carpeta de búsqueda>/.ps4mount-links/` | Descargas de enlaces a medias |
 | `/system_data/ps4mount/` | Las carpetas internas de los juegos |
 
@@ -346,6 +393,8 @@ Necesitas el [ps4-payload-sdk](https://github.com/ps4-payload-dev/sdk) **compila
 - **[libarchive](https://www.libarchive.org)** (BSD-2-Clause) y **[zlib](https://zlib.net)** (licencia zlib): la lectura de los RAR y ZIP mientras se descargan.
 - La **lista de autoridades de certificación de Mozilla** (MPL-2.0): las raíces en las que confía la consola para los enlaces.
 - **[ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus)** (drakmor): inspiración del original para montar juegos desde USB.
+- **[libsmb2](https://github.com/sahlberg/libsmb2)** y **[libnfs](https://github.com/sahlberg/libnfs)** (Ronnie Sahlberg, LGPL-2.1): los clientes SMB y NFS de la NAS.
+- **[libfuse](https://github.com/libfuse/libfuse)** 2.9 (LGPL-2.1) con el port a PS4 de **[Itemzflow](https://github.com/LightningMods/Itemzflow)** (LightningMods, GPL-3.0): el sistema de ficheros en modo usuario y el parche de 13.52 que activa fusefs.
 
 ## Licencia
 
@@ -373,6 +422,7 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 | --- | --- |
 | Games from an **exFAT USB drive** (pkgs over 4 GB too) | ✅ tested |
 | Games from the **console's storage** (`/data/PS4Mount`) | ✅ tested |
+| Games from a **NAS** over **SMB or NFS**, read only, found on the network | ✅ tested (firmware 13.52 only) |
 | **Updates** | ✅ tested |
 | Games **where they are**, without moving or renaming their pkgs (any folder of the drive) | ✅ tested |
 | **Add-ons (DLC)** up to 256 MB (almost all: costumes, packs, licenses) | ✅ tested: PS4Mount installs them with the system's installer in seconds, and they show in the game's information |
@@ -606,9 +656,54 @@ That is all: the panel shows your email and your space. The connection is kept o
 | Install add-ons (DLC) | On | Installs add-ons (see above). |
 | Organize pkgs into the ps4 folder | Off | Moves the pkgs to `ps4/<TITLE_ID>/` to keep them in order. Off (the default), the pkgs are used where they are, with their own names, without moving or renaming anything; the ones PS4Mount had organized go back on their own to where they were (the ones you organized by hand stay in `ps4/`). On the console's storage, only `/data/PS4Mount` and `ps4` are searched. |
 | Also use pkgs in the console's /data/PS4Mount | On | Uses the pkgs in the console's storage too. |
+| NAS (NFS or SMB) | Off | Uses the pkgs in a shared network folder, **read only** and without moving or renaming anything (it does not show with Organize on). Firmware 13.52 only (see below). |
 | Language | The console's | The language of the panel and the notifications: the console's, English or Spanish. |
 
 They are saved in `/data/ps4mount/config.txt`. The settings also have **Restore the files of all games** (or of chosen ones) and **Use restored pkgs again**.
+
+### Games from a NAS (SMB or NFS)
+
+The games in a **shared folder on the network** (a Windows, Linux or macOS computer, or a NAS box such as Synology, QNAP or a router with USB) are played **from there**, with their update and add-ons, **without copying or installing them** on the console. It is **read only**: PS4Mount never writes to, renames or moves anything in the share. Firmware **13.52** only.
+
+**1. Share the games folder** on the computer or NAS:
+
+| Machine | How |
+| --- | --- |
+| **Windows** | Right-click the folder → Properties → Sharing → Advanced Sharing → tick **Share this folder**. Windows asks for an account: in the panel you enter your Windows user and password. If the console does not find the PC, set its network as **Private**. |
+| **macOS** | System Settings → General → Sharing → turn on **File Sharing** and add the folder. In Options, turn on SMB sharing for your user. |
+| **Linux** | Share the folder with **Samba** (read only, guest allowed) or **NFS** (`/etc/exports`), and let the console's address through the firewall. |
+| **NAS box** | Turn on **SMB** (or NFS) file sharing in its settings and give the folder read access. |
+
+**2. In the panel**, in **Settings → NAS**, press **Find servers on the network**. The console tries its whole network in a few seconds and lists the machines that share files. Pick one and its **shared folders** show up: pick the one with the games and press **Save**. When the server asks for an account the panel says so: fill in **User** and **Password** and press **List the server's shares**.
+
+![Settings → NAS: the PC found on the network and its shared folders](docs/panel-nas.png)
+
+The games show up in the library like the ones on a USB drive (the first time, restart the console once). On their page, **On** says **NAS**:
+
+![Marvel's Spider-Man played from the NAS](docs/panel-nas-game.png)
+
+The fields can be filled in by hand too:
+
+| Field | What to enter |
+| --- | --- |
+| Protocol | **SMB** (Windows, macOS, most NAS boxes) or **NFS** (Linux, NAS boxes). |
+| Server | The IP of the computer or NAS (`192.168.0.19`). |
+| Export (NFS) or share (SMB) | For SMB, the share name (`games`). For NFS, the exported path (`/volume1/games`). |
+| Folder inside it | Optional: a subfolder, so the whole share is not walked. |
+| Port | Optional: leave it empty (445 for SMB, 2049 for NFS). |
+| User and password (SMB) | Empty, it goes in as a guest. The password is saved in plain text in `config.txt`. |
+
+- **Wired is best.** PS4Mount asks for the data ahead of time, several pieces at once, so it uses almost all of the network, but over Wi-Fi loading is slow and some textures take a moment. **Over a cable** games play as from the internal drive. With no switch or free router port, a **cable straight from the computer to the console** works too: share the computer's connection on that cable (on Linux with NetworkManager: `nmcli connection add type ethernet ifname <interface> con-name ps4 ipv4.method shared`; on Windows, "Internet Connection Sharing" on the Wi-Fi adapter), and set the PS4's wired network to **Easy**.
+- **Firmware 13.52 only**: on others the setting is disabled (the console has no NFS, and the user-space file system, FUSE, cannot be switched on).
+- **Only with Organize off** (the default): the share is never organized.
+- **SMB** uses SMB2/3. **NFS** tries NFSv4.2, NFSv4.0 and NFSv3; for the panel to list the exports, the server needs `rpcbind` (otherwise type the export by hand).
+- A server that **does not answer** (off, a mistyped address, a firewall) is reported in 3 seconds.
+- **If the network drops** in the middle of a game (a cable pulled, the PC restarted), the game pauses and goes on by itself when it is back: PS4Mount reconnects and reopens the files. It waits up to 2 minutes; after that the game gets the error and may break.
+- **Changing** the protocol, server or folder needs no restart: it reconnects right away.
+- The share is mounted at `/mnt/usb0/ps4mount/nas-<n>`, a path the system's installer accepts. **No USB drive needs to be connected.**
+- **BinLoader has to be on** in GoldHEN's menu: if PS4Mount starts with the console (AutoRun), that process cannot open the FUSE devices (a GoldHEN limitation), so PS4Mount loads itself again through BinLoader (port 9090), in a few seconds and without extra notices. With BinLoader off, games on USB drives and on the console's storage keep working, but the share is not mounted.
+- **Loading PS4Mount again in the same boot** mounts the share in another folder (`nas-2`, `nas-3`…), and the NAS games ask for one restart. After a few loads in the same boot the FUSE devices run out: restart the console.
+- When a game is **deleted on the console**, the pkgs in the share are not deleted (they are yours): the game leaves the library and the files stay on the NAS.
 
 ### Removing and deleting games
 
@@ -659,6 +754,7 @@ To report a problem, open an [issue](https://github.com/Vld439/PS4Mount-PS4/issu
 | `<scan folder>/.ps4mount-drive/` | Unfinished Drive downloads |
 | `/data/ps4mount/links_queue.txt` | Downloads from links still to do (with their links and the password written) |
 | `/data/ps4mount/passwords.txt` | The passwords that opened an archive, tried on the next ones |
+| `/mnt/usb0/ps4mount/nas-<n>` | Where the network share is mounted, inside the USB drive (its name is kept in `/data/ps4mount/nas-mnt`) |
 | `<scan folder>/.ps4mount-links/` | Unfinished downloads from links |
 | `/system_data/ps4mount/` | The games' internal folders |
 
@@ -684,6 +780,8 @@ You need the [ps4-payload-sdk](https://github.com/ps4-payload-dev/sdk) **built f
 - **[libarchive](https://www.libarchive.org)** (BSD-2-Clause) and **[zlib](https://zlib.net)** (zlib license): reading RARs and ZIPs while they download.
 - **Mozilla's list of certificate authorities** (MPL-2.0): the roots the console trusts for links.
 - **[ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus)** (drakmor): the original's inspiration for mounting games from USB drives.
+- **[libsmb2](https://github.com/sahlberg/libsmb2)** and **[libnfs](https://github.com/sahlberg/libnfs)** (Ronnie Sahlberg, LGPL-2.1): the NAS's SMB and NFS clients.
+- **[libfuse](https://github.com/libfuse/libfuse)** 2.9 (LGPL-2.1) with the PS4 port from **[Itemzflow](https://github.com/LightningMods/Itemzflow)** (LightningMods, GPL-3.0): the user-space file system and the 13.52 patch that enables fusefs.
 
 ## License
 

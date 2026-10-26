@@ -35,6 +35,12 @@ int app_restore(const char *tids, char *msg, size_t cap) { return record("restor
 int app_restored_forget(char *msg, size_t cap) { return record("forget", NULL, msg, cap); }
 void app_config_json(buf_t *out) { buf_printf(out, "{\"batch\":true}"); }
 int app_config_set(const char *body, char *msg, size_t cap) { return record("config", body, msg, cap); }
+int app_nas_reload(char *msg, size_t cap) { return record("nas_reload", NULL, msg, cap); }
+void app_nas_scan_json(buf_t *out) { buf_printf(out, "{\"hosts\":[{\"ip\":\"192.168.0.19\",\"name\":\"PC\",\"smb\":true,\"nfs\":false}]}"); }
+void app_nas_shares_json(const char *body, buf_t *out) {
+    record("nas_shares", body, NULL, 0);
+    buf_printf(out, "{\"ok\":true,\"auth\":false,\"message\":\"\",\"shares\":[\"games\"]}");
+}
 int app_icon(const char *tid, buf_t *out) {
     char m[8];
     record("icon", tid, m, sizeof(m));

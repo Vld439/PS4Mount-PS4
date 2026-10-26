@@ -28,6 +28,7 @@
 
 #define IO_SECONDS 60     /* most a read or a write waits */
 #define CONNECT_SECONDS 15
+#define RESOLVE_US (2 * 1000 * 1000) /* each of the two tries of a name */
 #define HEAD_MAX 16384
 
 #ifdef __ORBIS__
@@ -54,13 +55,16 @@ static int resolve(const char *host, struct in_addr *out) {
         pool = sceNetPoolCreate("ps4mount_dns", 4 * 4096, 0);
     int rid = pool < 0 ? -1 : sceNetResolverCreate("ps4mount", pool, 0);
     if (rid >= 0) {
+        /* short: with no internet every request waits for this, and so does a stop of
+         * PS4Mount (a DNS server that is there answers in well under a second) */
         sce_in_addr_t a = {0};
-        int rc = sceNetResolverStartNtoa(rid, host, &a, 5 * 1000 * 1000, 1, 0);
+        int rc = sceNetResolverStartNtoa(rid, host, &a, RESOLVE_US, 1, 0);
         sceNetResolverDestroy(rid);
         if (rc >= 0 && a.s_addr) {
             out->s_addr = a.s_addr;
             return 0;
         }
+        return -1; /* libc's resolver has no resolv.conf here: it only adds ~30 s of waiting */
     }
 #endif
     struct addrinfo hints = {0}, *res = NULL;

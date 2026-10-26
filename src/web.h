@@ -13,6 +13,11 @@ int app_add(const char *tid, char *msg, size_t cap);
 int app_remove(const char *tid, char *msg, size_t cap);
 void app_rescan(void);
 void app_stop(void);
+/* Asks BinLoader (port 9090) for a load now, the way the retry does; 0 when it took it. */
+int app_nas_reload(char *msg, size_t cap);
+/* /api/nas/scan and /api/nas/shares: the servers on the network and what one shares. */
+void app_nas_scan_json(buf_t *out);
+void app_nas_shares_json(const char *body, buf_t *out);
 /* Closes the open game and moves the pkgs of the games in tids (comma separated title ids)
  * or of all games (NULL) back to where they came from. */
 int app_restore(const char *tids, char *msg, size_t cap);

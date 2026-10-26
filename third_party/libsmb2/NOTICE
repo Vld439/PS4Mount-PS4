@@ -1,0 +1,4 @@
+libsmb2, LGPL-2.1 (see LICENCE-LGPL-2.1.txt), from
+https://github.com/sahlberg/libsmb2, commit 727feaa (2026-10-25).
+
+Built without Kerberos, GSSAPI, SMB over QUIC or SMB Direct.

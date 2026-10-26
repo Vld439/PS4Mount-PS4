@@ -1,0 +1,12 @@
+libfuse 2.9 (FUSE 2.x userspace library, mount helper for FreeBSD), LGPL-2.1:
+COPYING.LIB. Copyright (C) 2001-2007 Miklos Szeredi and others.
+
+The PlayStation 4 port (Orbis kernel interface, /dev/fuse handling and the 13.52
+patch that enables fusefs) comes from Itemzflow, GPL-3.0:
+https://github.com/LightningMods/Itemzflow
+
+Changes for PS4Mount:
+- include/orbis/libkernel.h: pthread and module stubs, so it builds with the PS4
+  Payload SDK and needs no runtime module loading.
+- source/mount_bsd.c: fuse_mount_core() takes any mountpoint and the first free
+  /dev/fuseN, instead of itemzflow's fixed /host and /hostapp.

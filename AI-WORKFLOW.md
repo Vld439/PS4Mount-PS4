@@ -16,13 +16,12 @@ A chat in a web browser cannot reach your console: the assistant must be an agen
 
 1. **Never write to the system databases** (`/system_data/priv/mms/*.db`). ShellCore keeps them open with its own cache and flags a database written from outside as corrupted. PS4Mount only reads them (`mode=ro&nolock=1`); what has to be in them is written by the system (`sceAppInstUtilAppInstallAll` for games, a BGFT install for add-ons). `bash test/policy.sh` enforces it.
 2. **The system's delete must never reach a pkg.** Deleting a game made the system follow the `app.pkg` link and empty the user's pkg. The game folders are unmounted while the console's delete screens are open, and PS4Mount deletes the files itself, only `<root>/ps4/<TID>` of a game the user deleted there. A read-only view of the pkgs is no answer: BGFT opens a game's pkg for writing when the game starts, records EROFS in the game task (record `0x68`) and refuses the game. **After any change to how games are mounted or linked, restart the console and start a game before calling it done.**
-3. **No kernel patches, no reverse engineering of ShellCore or other system processes.** Use the system's own interfaces (AppInstUtil, BGFT, the klog). The one restart a new game needs comes from BGFT loading its tasks at boot: it is documented, not worked around.
-4. **One change per version, and test it on the console before the next.** If something gets worse, go back to the last version that worked.
-5. **Run the checks before every commit:** `bash test/run.sh`, `bash test/policy.sh` and `cd test/web && npm test`. `SANITIZE=1 bash test/run.sh` and `bash test/fuzz/run.sh 30 pkg http` for changes to pkg reading, uploads or the panel server.
-6. **The payload runs inside a borrowed system process.** Never call `exit()` (it ends that process). Its libc heap is about 3 MB in all: anything large (pkg entries, artwork, request bodies, lists of add-ons) comes from `mem_alloc` (mmap), never `malloc`.
-7. **Only your own console, your own network and pkgs of games you own.** Never scan or connect to other people's devices. Never ask for, share or link pkgs.
-8. **The panel has no password.** Anyone on the network can use it while PS4Mount runs. Stop it when you are done.
-9. **Google credentials never leave the console.** PS4Mount ships no OAuth client: each user's client ID and secret live only in `/data/ps4mount/drive_client.txt`, their access in `drive.txt`. Never commit them, paste them in an issue or a log, or send them anywhere; the panel never returns the secret.
+3. **One change per version, and test it on the console before the next.** If something gets worse, go back to the last version that worked.
+4. **Run the checks before every commit:** `bash test/run.sh`, `bash test/policy.sh` and `cd test/web && npm test`. `SANITIZE=1 bash test/run.sh` and `bash test/fuzz/run.sh 30 pkg http` for changes to pkg reading, uploads or the panel server.
+5. **The payload runs inside a borrowed system process.** Never call `exit()` (it ends that process). Its libc heap is about 3 MB in all: anything large (pkg entries, artwork, request bodies, lists of add-ons) comes from `mem_alloc` (mmap), never `malloc`.
+6. **Only your own console, your own network and pkgs of games you own.** Never scan or connect to other people's devices. Never ask for, share or link pkgs.
+7. **The panel has no password.** Anyone on the network can use it while PS4Mount runs. Stop it when you are done.
+8. **Google credentials never leave the console.** PS4Mount ships no OAuth client: each user's client ID and secret live only in `/data/ps4mount/drive_client.txt`, their access in `drive.txt`. Never commit them, paste them in an issue or a log, or send them anywhere; the panel never returns the secret.
 
 ## 3. Connecting
 

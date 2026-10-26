@@ -2,9 +2,9 @@
 
 PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount) by gasb07 (PS5); its versions start again at 0.1.0. The history of the original is in its project and in this repository's git history.
 
-## 0.4.18-beta
+## 0.6.1-beta
 
-Games are now used **where they are** by default: PS4Mount no longer moves or renames their pkgs unless you turn on `Organize pkgs into the ps4 folder`. The games PS4Mount had organized are moved back to where they were and used from there; games organized by hand stay in place. The catalog code comes from [EzioRamesha's fork](https://github.com/EzioRamesha/ps4mount), adapted to keep the old `ps4/<TITLE_ID>` layout working. Tested on a PS4 on firmware 13.52 with GoldHEN: 31 pkgs on a USB drive (base games, updates, add-ons, merged pkgs and a duplicate copy), and three games PS4Mount had organized in `/data/ps4/<TITLE_ID>/` went back to their original names in `/data/PS4Mount` and were added again from there.
+Two big changes. Games are now used **where they are** by default: PS4Mount no longer moves or renames their pkgs unless you turn on `Organize pkgs into the ps4 folder`. And games can be played **from a network share (NAS)**, over SMB or NFS, without copying or installing them, on firmware 13.52: the panel finds the computers and NAS boxes on the network and lists their shared folders, so nothing has to be typed. The catalog code comes from [EzioRamesha's fork](https://github.com/EzioRamesha/ps4mount), adapted to keep the old `ps4/<TITLE_ID>` layout working. Tested on a PS4 on firmware 13.52 with GoldHEN: 31 pkgs on a USB drive (base games, updates, add-ons, merged pkgs and a duplicate copy); Marvel's Spider-Man (42 GB, with its 1.19 update and 4 add-ons) played from a Linux PC over SMB, and other games over NFS; the share found and listed on its own; console on Wi-Fi and on a cable straight to the PC.
 
 **Español**
 
@@ -15,6 +15,20 @@ Games are now used **where they are** by default: PS4Mount no longer moves or re
 - Cada unidad se agrupa por separado: una actualización o un DLC que esté en **otra** unidad no se usa, para que desenchufar una no rompa los juegos de las demás.
 - Borrar desde la consola un juego usado donde está **no borra tus pkgs**: lo quita de la biblioteca y lo marca como quitado (los pkgs son tuyos). **Restaurar los archivos originales** no aplica en ese modo: no hay nada que devolver.
 - La búsqueda completa de la unidad (para encontrar pkgs nuevos) se hace cada minuto o al pulsar **Buscar juegos**; entre medias se comprueban los juegos ya conocidos. El catálogo se guarda en `/data/ps4mount/catalog-<unidad>.txt`, así que un reinicio no vuelve a leer todos los pkgs.
+- **Juegos desde una NAS (SMB o NFS)**, en **Ajustes → NAS**: los juegos de una carpeta compartida en un PC con Windows, Linux o macOS, o en una caja NAS (Synology, QNAP, un router con USB), se juegan **desde ahí, sin copiarlos ni instalarlos**, con su actualización y sus DLC. Es **solo lectura**: PS4Mount nunca escribe, renombra ni mueve nada en el recurso. Solo firmware **13.52**: en otros el ajuste sale desactivado.
+- **Buscar servidores en la red**: la consola prueba toda su red en unos segundos y lista los equipos que comparten archivos (con su nombre, si lo dan). Al elegir uno, lista sus **carpetas compartidas**; si pide cuenta, lo dice y basta con poner usuario y contraseña. Debajo hay una ayuda para compartir una carpeta en Windows, macOS, Linux y una caja NAS.
+- **Velocidad**: PS4Mount pide los datos por adelantado y varios a la vez, así que la red se aprovecha casi entera. Por Wi-Fi va lento; **con cable** se juega como desde el disco interno. Si no tienes switch ni un puerto libre en el router, sirve un cable directo del PC a la consola (compartiendo la conexión del PC por ese cable).
+- Un servidor que no contesta (apagado, dirección mal escrita, cortafuegos) se avisa en **3 segundos**, sin dejar el panel bloqueado.
+- **Si se corta la red** (un cable desenchufado, el servidor reiniciado), el juego **se queda en pausa** y sigue solo cuando vuelve, sin errores: PS4Mount reconecta y reabre los ficheros (espera hasta 2 minutos). Probado con 33 segundos sin cable en plena partida.
+- El recurso **nunca se organiza** (con Organizar activado no se usa), y cambiar de protocolo, servidor o carpeta se hace al momento, sin reiniciar. Borrar desde la consola un juego del NAS **no borra sus pkgs**.
+- Si PS4Mount arranca solo con la consola (AutoRun de GoldHEN), ese proceso no puede abrir los dispositivos FUSE (una limitación de GoldHEN): se vuelve a cargar **solo, en unos segundos y sin avisos de más**, por el BinLoader de GoldHEN (puerto 9090), que tiene que estar encendido.
+- Volver a cargar PS4Mount en el mismo arranque monta el recurso en otra carpeta (`nas-2`, `nas-3`…): los juegos del NAS piden reiniciar una vez. Tras unas pocas cargas en el mismo arranque se acaban los dispositivos FUSE y hay que reiniciar.
+
+**Otros cambios**
+
+- **Menos avisos al arrancar**: uno solo, "en marcha". "Buscando juegos…" y los totales salen solo al pulsar **Buscar juegos**; al arrancar solo se avisa de lo nuevo.
+- Los avisos de la copia que arranca con la consola salen **en el idioma de la consola** (antes, siempre en inglés): el idioma se lee del registro del sistema.
+- **Sin internet nada se queda esperando**: un nombre que no se puede resolver (Drive, enlaces) falla en unos segundos en vez de casi un minuto, y cerrar PS4Mount ya no espera a eso.
 
 **English**
 
@@ -25,6 +39,20 @@ Games are now used **where they are** by default: PS4Mount no longer moves or re
 - Each drive is grouped on its own: an update or add-on on **another** drive is not used, so unplugging one drive never breaks the games of the others.
 - Deleting an in-place game from the console **does not delete your pkgs**: the game leaves the library and is marked as removed (the pkgs are yours). **Restore original files** does not apply in that mode: there is nothing to move back.
 - The full walk of a drive (to find new pkgs) runs every minute or when **Scan for games** is pressed; in between, the games already known are checked. The catalog is saved in `/data/ps4mount/catalog-<drive>.txt`, so a restart does not read every pkg again.
+- **Games from a NAS (SMB or NFS)**, in **Settings → NAS**: the games in a shared folder on a Windows, Linux or macOS computer, or on a NAS box (Synology, QNAP, a router with USB), are played **from there, without copying or installing them**, with their update and add-ons. It is **read only**: PS4Mount never writes to, renames or moves anything in the share. Firmware **13.52** only: on others the setting is disabled.
+- **Find servers on the network**: the console tries its whole network in a few seconds and lists the machines that share files (with their name, when they give it). Picking one lists its **shared folders**; when it asks for an account the panel says so, and a user and password is all it takes. Below there is a short guide to sharing a folder on Windows, macOS, Linux and a NAS box.
+- **Speed**: PS4Mount asks for the data ahead of time, several pieces at once, so the network is used almost in full. Over Wi-Fi it is slow; **over a cable** games play as from the internal drive. With no switch or free router port, a cable straight from the computer to the console works too (sharing the computer's connection on it).
+- A server that does not answer (off, a mistyped address, a firewall) is reported in **3 seconds**, without freezing the panel.
+- **If the network drops** (a cable pulled, the server restarted), the game **pauses** and goes on by itself when it is back, with no errors: PS4Mount reconnects and reopens the files (it waits up to 2 minutes). Tested with 33 seconds without a cable in the middle of a game.
+- The share is **never organized** (it is not used with Organize on), and changing the protocol, server or folder happens at once, with no restart. Deleting a NAS game on the console **does not delete its pkgs**.
+- If PS4Mount starts with the console (GoldHEN's AutoRun), that process cannot open the FUSE devices (a GoldHEN limitation): it loads itself again **on its own, in a few seconds and without extra notices**, through GoldHEN's BinLoader (port 9090), which has to be on.
+- Loading PS4Mount again in the same boot mounts the share in another folder (`nas-2`, `nas-3`…): the NAS games ask for one restart. After a few loads in the same boot the FUSE devices run out and the console has to be restarted.
+
+**Other changes**
+
+- **Fewer notices at start**: just one, "running". "Scanning…" and the totals only show when **Scan for games** is pressed; at start only what is new is reported.
+- The notices of the copy that starts with the console are **in the console's language** (they were always in English): the language is read from the system registry.
+- **With no internet nothing hangs**: a name that cannot be resolved (Drive, links) fails in a few seconds instead of almost a minute, and stopping PS4Mount no longer waits for it.
 
 ## 0.4.17-beta
 

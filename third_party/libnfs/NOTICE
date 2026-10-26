@@ -1,0 +1,9 @@
+libnfs, LGPL-2.1 (see LICENCE-LGPL-2.1.txt), from
+https://github.com/sahlberg/libnfs, commit 371333f (2026-10-24).
+
+Changes for PS4Mount:
+- lib/socket.c: the Linux TCP keepalive tunings (TCP_KEEPIDLE, TCP_KEEPINTVL,
+  TCP_KEEPCNT) are no longer fatal; the PS4 kernel rejects them and SO_KEEPALIVE
+  is enough.
+- ps4_compat.h: max_align_t, which the PS4 libc headers (FreeBSD 9) do not have.
+- Built without TLS, Kerberos and RDMA.

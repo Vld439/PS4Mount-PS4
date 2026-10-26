@@ -469,6 +469,22 @@ void web_handle(int fd) {
             links_action(fd, req, path, body, (size_t)(req + n - body), length);
     } else if (!strcmp(path, "/api/log")) {
         send_log(fd);
+    } else if ((!strcmp(path, "/api/nas/scan") || (post && !strcmp(path, "/api/nas/shares"))) && !may_write(fd, req)) {
+        /* they connect to other machines: the panel's own requests only */
+        reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
+    } else if (!strcmp(path, "/api/nas/scan")) {
+        buf_t b = {0};
+        app_nas_scan_json(&b);
+        reply(fd, "200 OK", "application/json; charset=utf-8", b.data, b.len);
+        buf_free(&b);
+    } else if (post && !strcmp(path, "/api/nas/shares")) {
+        buf_t b = {0};
+        app_nas_shares_json(body, &b);
+        reply(fd, "200 OK", "application/json; charset=utf-8", b.data, b.len);
+        buf_free(&b);
+    } else if (post && !strcmp(path, "/api/nas/reload")) {
+        int rc = app_nas_reload(msg, sizeof(msg));
+        json_msg(fd, !rc, msg);
     } else if (post && !strcmp(path, "/api/stop")) {
         json_msg(fd, 1, "PS4Mount is stopping");
         app_stop();
