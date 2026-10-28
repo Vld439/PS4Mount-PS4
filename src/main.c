@@ -51,6 +51,7 @@
 #include "drive.h"
 #include "links.h"
 #include "fw.h"
+#include "https.h"
 #include "install.h"
 #include "lang.h"
 #include "logts.h"
@@ -5180,6 +5181,96 @@ static void install_cleanup(void) {
         closedir(d);
 }
 
+/* --- the panel app --- */
+/* A home screen tile that shows the panel (panel-app/): few find the panel from a notice.
+ * When the console does not have it, its pkg is downloaded from this version's release and
+ * installed like an app sent with "Send and install"; a first start opens it. Once it was
+ * installed, a tile the player deleted is not put back (PANEL_APP_DONE). */
+#define PANEL_APP_URL "https://github.com/Vld439/PS4Mount-PS4/releases/download/v%s/ps4mount-panel.pkg"
+#define PANEL_APP_DONE STATE_DIR "/panel-app"
+#define PANEL_APP_DELAY 15 /* seconds after the start: the network is up by then */
+
+typedef struct { uint32_t sz, user_id, app_opt; uint64_t crash_report, check_flag; } lnc_param_t;
+int sceLncUtilLaunchApp(const char *tid, const char *argv[], lnc_param_t *param);
+
+static int g_panel_fetching; /* the download thread runs; done in this load either way */
+
+static int panel_app_sink(void *ctx, const uint8_t *data, size_t len) {
+    return fwrite(data, 1, len, ctx) != len;
+}
+
+static void *panel_app_fetch(void *arg) {
+    (void)arg;
+    char url[2048], err[192] = "";
+    const char *part = INSTALL_DIR "/ps4mount-panel.part", *pkg = INSTALL_DIR "/ps4mount-panel.pkg";
+    snprintf(url, sizeof(url), PANEL_APP_URL, &VERSION[sizeof("PS4Mount ") - 1]);
+    mkdir(INSTALL_DIR, 0777);
+    FILE *f = fopen(part, "wb");
+    int status = 0;
+    for (int hop = 0; f && hop < 5; hop++) { /* GitHub answers with a redirect to its file server */
+        http_req_t q = {.method = "GET", .url = url, .sink = panel_app_sink, .sink_ctx = f, .any_server = 1};
+        http_resp_t r;
+        memset(&r, 0, sizeof(r));
+        if (http_request(&q, &r, err, sizeof(err))) {
+            http_resp_free(&r);
+            break;
+        }
+        status = r.status;
+        if (status / 100 == 3 && r.location[0])
+            snprintf(url, sizeof(url), "%s", r.location);
+        http_resp_free(&r);
+        if (status / 100 != 3)
+            break;
+        rewind(f); /* the redirect's own body is not the file */
+        if (ftruncate(fileno(f), 0))
+            break;
+    }
+    int ok = f && status == 200 && !fflush(f) && ftell(f) > 0;
+    if (f)
+        fclose(f);
+    if (ok && !rename(part, pkg)) {
+        printf("[panel-app] downloaded %s\n", pkg);
+        upload_install_done(pkg);
+    } else {
+        unlink(part);
+        printf("[panel-app] not downloaded (%d %s): %s\n", status, err, url);
+    }
+    __atomic_store_n(&g_panel_fetching, 2, __ATOMIC_RELEASE);
+    return NULL;
+}
+
+/* The tile, from the main loop: downloaded once per load when missing, and opened by a
+ * first start (not over a game). */
+static void panel_app_step(void) {
+    static time_t start;
+    static int opened;
+    if (!start)
+        start = time(NULL);
+    int have = installed_internally(PANEL_APP_TID);
+    if (have && !exists(PANEL_APP_DONE)) {
+        int fd = open(PANEL_APP_DONE, O_WRONLY | O_CREAT, 0666);
+        if (fd >= 0)
+            close(fd);
+    }
+    if (have && g_setup && !opened && db_is_registered(PANEL_APP_TID)) {
+        uint32_t ids[1];
+        char tids[1][10];
+        opened = 1;
+        if (!open_games(ids, tids, 1)) {
+            int32_t user = 0;
+            sceUserServiceGetForegroundUser(&user);
+            lnc_param_t lp = {sizeof(lp), (uint32_t)user, 0, 0, 0};
+            printf("[panel-app] opened for the first start: 0x%x\n", (unsigned)sceLncUtilLaunchApp(PANEL_APP_TID, NULL, &lp));
+        }
+    }
+    if (have || exists(PANEL_APP_DONE) || g_panel_fetching || time(NULL) - start < PANEL_APP_DELAY)
+        return;
+    pthread_t th;
+    g_panel_fetching = 1;
+    if (!pthread_create(&th, NULL, panel_app_fetch, NULL))
+        pthread_detach(th);
+}
+
 int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint64_t length, char *msg, size_t cap) {
     char dest[16] = "", raw[512] = "", name[256], dir[PATH_MAX], inst[4] = "";
     const char *q = strchr(query, '?');
@@ -6102,6 +6193,7 @@ int main(void) {
         nas_apply(0); /* retries a share that was not reached, or the settings changed */
         nas_ask_reload(); /* the boot instance cannot open the fuse devices: ask for a load */
         install_received(); /* an app sent with "Send and install" */
+        panel_app_step();
         if (time(NULL) >= g_next_scan && !g_deleting) {
             if (g_setup && time(NULL) >= (g_setup_seen > g_setup_start ? g_setup_seen : g_setup_start) + SETUP_WAIT) {
                 printf("[main] first start: nobody at the panel, the default settings are saved\n");

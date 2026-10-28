@@ -15,6 +15,12 @@ env:
   # v0.9 release stops before main on 13.52 (its crt knows firmwares up to 13.50): the
   # SDK is built from a commit with the 13.52 and 14.00 offsets.
   SDK_COMMIT: 573b4a0d0d5fa8695cfeee5f5e2f0447c550035d
+  # The panel app's pkg (panel-app/build.sh): the OpenOrbis toolchain, and the OpenSSL 1.1
+  # its PkgTool.Core needs (Ubuntu 24.04 has only 3).
+  OO_URL: https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz
+  OO_SHA256: 3c7cd5bb593ca74fa1c13fd59f3938dc0fc07985167f7275063019e63abe4526
+  SSL11_URL: http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.24_amd64.deb
+  SSL11_SHA256: 7cf39d70a639017d1dd7c8d36daa2258063608688e449fddf40ffdd46f992a78
 
 jobs:
   build:
@@ -41,6 +47,25 @@ jobs:
           git -C "$RUNNER_TEMP/sdk-src" checkout -q "$SDK_COMMIT"
           make -C "$RUNNER_TEMP/sdk-src" install DESTDIR="$HOME/ps4-payload-sdk"
 
+      - name: Cache OpenOrbis toolchain
+        id: oo-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/openorbis
+            ~/libssl11
+          key: openorbis-${{ env.OO_SHA256 }}-${{ env.SSL11_SHA256 }}
+
+      - name: Install OpenOrbis toolchain
+        if: steps.oo-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sfL "$OO_URL" -o "$RUNNER_TEMP/oo.tar.gz"
+          echo "$OO_SHA256  $RUNNER_TEMP/oo.tar.gz" | sha256sum -c -
+          mkdir -p ~/openorbis && tar xzf "$RUNNER_TEMP/oo.tar.gz" -C ~/openorbis
+          curl -sfL "$SSL11_URL" -o "$RUNNER_TEMP/libssl11.deb"
+          echo "$SSL11_SHA256  $RUNNER_TEMP/libssl11.deb" | sha256sum -c -
+          dpkg-deb -x "$RUNNER_TEMP/libssl11.deb" ~/libssl11
+
       - name: Check that the tag matches the version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -56,8 +81,14 @@ jobs:
       - name: Build
         run: PS4_PAYLOAD_SDK="$HOME/ps4-payload-sdk" bash build.sh
 
+      - name: Panel app pkg
+        run: |
+          OO_PS4_TOOLCHAIN=~/openorbis/OpenOrbis/PS4Toolchain CC=clang-18 LD=ld.lld-18 \
+            SSL_LIBS=~/libssl11/usr/lib/x86_64-linux-gnu bash panel-app/build.sh
+          cp build/panel-app/IV0000-PSMT00001_00-PS4MOUNTPANEL000.pkg build/ps4mount-panel.pkg
+
       - name: Checksum
-        run: cd build && sha256sum ps4mount-ps4.elf ps4mount-ps4.bin > ps4mount-ps4.sha256
+        run: cd build && sha256sum ps4mount-ps4.elf ps4mount-ps4.bin ps4mount-panel.pkg > ps4mount-ps4.sha256
 
       - uses: actions/upload-artifact@v4
         with:
@@ -65,6 +96,7 @@ jobs:
           path: |
             build/ps4mount-ps4.elf
             build/ps4mount-ps4.bin
+            build/ps4mount-panel.pkg
             build/ps4mount-ps4.sha256
           if-no-files-found: error
 
@@ -108,7 +140,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" ps4mount-ps4.elf ps4mount-ps4.bin ps4mount-ps4.sha256 ps4mount-extension.zip \
+          gh release create "${GITHUB_REF_NAME}" ps4mount-ps4.elf ps4mount-ps4.bin ps4mount-panel.pkg ps4mount-ps4.sha256 ps4mount-extension.zip \
             --repo "${GITHUB_REPOSITORY}" \
             --title "PS4Mount-PS4 ${GITHUB_REF_NAME#v}" \
             --notes-file notes.md \

@@ -1,13 +1,15 @@
 #!/bin/bash
 # Builds build/panel-app/IV0000-PSMT00001_00-PS4MOUNTPANEL000.pkg (the panel app) with the
 # OpenOrbis toolchain (https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain, v0.5.4): its
-# create-fself, create-gp4 and PkgTool.Core, the system clang and an ld.lld.
-# Set OO_PS4_TOOLCHAIN to the toolchain root, LD to an ld.lld when it is not in PATH, and
+# create-fself, create-gp4 and PkgTool.Core, a clang and an ld.lld. PS4Mount downloads it
+# from the release (ps4mount-panel.pkg) and installs it.
+# Set OO_PS4_TOOLCHAIN to the toolchain root, CC and LD when clang and ld.lld are not in PATH, and
 # SSL_LIBS to a folder with OpenSSL 1.1 when the system has only 3 (PkgTool.Core needs it).
 set -e
 cd "$(dirname "$0")"
 O=${OO_PS4_TOOLCHAIN:?set OO_PS4_TOOLCHAIN to the OpenOrbis toolchain}
 T=$O/bin/linux
+CC=${CC:-clang}
 LD=${LD:-ld.lld}
 TITLE_ID=PSMT00001 # PANEL_APP_TID in src/main.c
 CONTENT_ID=IV0000-${TITLE_ID}_00-PS4MOUNTPANEL000
@@ -15,7 +17,7 @@ VER=01.00
 W=../build/panel-app
 export OO_PS4_TOOLCHAIN=$O DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 rm -rf "$W" && mkdir -p "$W/sce_sys/about" "$W/sce_module"
-clang --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -O2 -Wall -Wextra -c -isysroot "$O" -isystem "$O/include" \
+$CC --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -O2 -Wall -Wextra -c -isysroot "$O" -isystem "$O/include" \
     -o "$W/main.o" main.c
 $LD "$W/main.o" -o "$W/panel-app.elf" -m elf_x86_64 -pie --script "$O/link.x" --eh-frame-hdr -L"$O/lib" -lc -lkernel \
     -lSceUserService -lSceSystemService -lSceSysmodule -lSceCommonDialog -lSceMsgDialog -lSceWebBrowserDialog "$O/lib/crt1.o"
