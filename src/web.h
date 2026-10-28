@@ -12,6 +12,8 @@ void app_games_json(buf_t *out);
 int app_add(const char *tid, char *msg, size_t cap);
 int app_remove(const char *tid, char *msg, size_t cap);
 void app_rescan(void);
+/* Asks for a scan that reads every pkg again (the panel's "scan for games"). */
+void app_rescan_hard(void);
 void app_stop(void);
 /* Asks BinLoader (port 9090) for a load now, the way the retry does; 0 when it took it. */
 int app_nas_reload(char *msg, size_t cap);

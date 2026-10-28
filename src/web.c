@@ -376,7 +376,7 @@ void web_handle(int fd) {
             json_msg(fd, !rc, msg);
         }
     } else if (post && !strcmp(path, "/api/rescan")) {
-        app_rescan();
+        app_rescan_hard();
         json_msg(fd, 1, "Scanning USB drives for games");
     } else if (post && !strncmp(path, "/api/restore", 12) && (path[12] == 0 || path[12] == '?')) {
         /* ?title_id=<one game>, body title_ids=<games, comma separated>, or neither for all */

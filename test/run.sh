@@ -63,6 +63,10 @@ echo "== pkg catalog"
 $CC $FLAGS -o "$B/catalog_test" test/catalog_test.c src/catalog.c src/pkg.c src/mem.c src/crypto.c
 "$B/catalog_test"
 
+echo "== title cache"
+$CC $FLAGS -o "$B/titlecache_test" test/titlecache_test.c src/titlecache.c src/mem.c
+"$B/titlecache_test"
+
 echo "== firmware simulation"
 $CC $FLAGS -o "$B/fw_sim" test/fw_sim.c src/fw.c
 "$B/fw_sim"

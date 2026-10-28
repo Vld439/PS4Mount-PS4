@@ -27,6 +27,10 @@ void app_rescan(void) {
     char m[8];
     record("rescan", NULL, m, sizeof(m));
 }
+void app_rescan_hard(void) {
+    char m[8];
+    record("rescan-hard", NULL, m, sizeof(m));
+}
 void app_stop(void) {
     char m[8];
     record("stop", NULL, m, sizeof(m));

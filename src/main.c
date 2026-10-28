@@ -57,6 +57,7 @@
 #include "netfs.h"
 #include "origin.h"
 #include "pkg.h"
+#include "titlecache.h"
 #include "web.h"
 #include "icon_data.h"
 
@@ -388,6 +389,9 @@ typedef struct {
     pkg_t app, patch;
     int has_patch;
     sfo_t app_sfo, patch_sfo;
+    /* the update's param.sfo, as /system_data/priv/appmeta keeps it */
+    unsigned char patch_sfo_sha[32];
+    uint32_t patch_sfo_len;
     char name[128], ver[8], marker[PATH_MAX + 160];
     char update_issue[256]; /* why patch.pkg was ignored, empty when used or absent */
     dlc_src_t *dlc;
@@ -396,13 +400,24 @@ typedef struct {
     int ndlc_tids;
 } title_src_t;
 
-static int read_sfo(pkg_t *pkg, sfo_t *sfo) {
+/* title_info_t is title_src_t without the open pkgs (titlecache.h) */
+_Static_assert(MAX_DLC_TIDS == TITLE_DLC_TIDS, "the cache keeps the add-on title IDs of a game");
+
+/* sha and slen, when given, take the digest and length of the param.sfo (the launch
+ * check compares the system's copy with it). */
+static int read_sfo_ex(pkg_t *pkg, sfo_t *sfo, unsigned char *sha, uint32_t *slen) {
     size_t len;
     uint8_t *d = pkg_entry(pkg, 0x1000, &len);
     int rc = d ? sfo_parse(d, len, sfo) : -1;
+    if (d && !rc && sha && slen && len <= 65536) {
+        sha256(d, len, sha);
+        *slen = (uint32_t)len;
+    }
     mem_free(d);
     return rc;
 }
+
+static int read_sfo(pkg_t *pkg, sfo_t *sfo) { return read_sfo_ex(pkg, sfo, NULL, NULL); }
 
 static void src_close(title_src_t *t) {
     pkg_close(&t->app);
@@ -563,7 +578,8 @@ static int src_open_paths(title_src_t *t, const char *tid, const catalog_t *cat,
     }
     if (t->patch_path[0] && exists(t->patch_path)) {
         const sfo_item_t *gv = sfo_get(&t->app_sfo, "VERSION");
-        if (pkg_open(&t->patch, t->patch_path) || read_sfo(&t->patch, &t->patch_sfo)) {
+        if (pkg_open(&t->patch, t->patch_path) ||
+            read_sfo_ex(&t->patch, &t->patch_sfo, t->patch_sfo_sha, &t->patch_sfo_len)) {
             snprintf(t->update_issue, sizeof(t->update_issue), "%s",
                      TR("Update ignored: the update pkg could not be read",
                         "Actualización ignorada: no se pudo leer el pkg de la actualización"));
@@ -645,6 +661,147 @@ static int src_open(title_src_t *t, const char *root, const char *tid) {
     snprintf(t->app_path, sizeof(t->app_path), "%s/app.pkg", t->dir);
     snprintf(t->patch_path, sizeof(t->patch_path), "%s/patch.pkg", t->dir);
     return src_open_paths(t, tid, NULL, NULL);
+}
+
+/* --- what each game is, kept between looks (titlecache.c) --- */
+
+/* One file in the hash: its path, size and time. A missing one still counts (a pkg that
+ * appears or goes away changes the fingerprint). */
+static uint64_t fp_stat(uint64_t h, const char *path) {
+    struct stat st;
+    if (!path[0] || stat(path, &st))
+        return title_fp_add(h, path, UINT64_MAX, 0);
+    return title_fp_add(h, path, (uint64_t)st.st_size, (int64_t)st.st_mtime);
+}
+
+/* The add-ons of the game, added to h; order independent (they come from a folder or a
+ * catalog, in no fixed order). */
+static uint64_t fp_addons(uint64_t h, const char *root, const char *tid) {
+    char x[40];
+    uint64_t dh = 0;
+    int nd = 0;
+    if (!g_cfg.organize) {
+        const catalog_t *c = drive_catalog(root);
+        const cat_game_t *g = c ? catalog_game(c, tid) : NULL;
+        const cat_pkg_t *list[CAT_MAX_DLC];
+        int nl = g ? catalog_dlc_of(g_cat, c, g, list, CAT_MAX_DLC) : 0;
+        for (int k = 0; k < nl; k++) {
+            char rm[96];
+            uint64_t v = fp_stat(title_fp_start(), list[k]->path);
+            snprintf(rm, sizeof(rm), STATE_DIR "/%s.removed", list[k]->content_id);
+            if (exists(rm)) /* deleted on the console: src_open leaves it out too */
+                v ^= 0x9e3779b97f4a7c15ull;
+            dh ^= v;
+            nd++;
+        }
+    } else {
+        char base[PATH_MAX];
+        snprintf(base, sizeof(base), "%s/ps4/%s/addcont", root, tid);
+        DIR *d = opendir(base);
+        struct dirent *e;
+        while (d && (e = readdir(d))) {
+            if (!is_game_id(e->d_name))
+                continue;
+            char sub[PATH_MAX];
+            snprintf(sub, sizeof(sub), "%s/%s", base, e->d_name);
+            DIR *l = opendir(sub);
+            struct dirent *f;
+            while (l && (f = readdir(l))) {
+                if (f->d_name[0] == '.' || strlen(f->d_name) != 16)
+                    continue;
+                char p[PATH_MAX];
+                snprintf(p, sizeof(p), "%s/%s/ac.pkg", sub, f->d_name);
+                dh ^= fp_stat(title_fp_start(), p);
+                nd++;
+            }
+            if (l)
+                closedir(l);
+        }
+        if (d)
+            closedir(d);
+    }
+    snprintf(x, sizeof(x), "addons %016llx", (unsigned long long)dh);
+    return title_fp_add(h, x, (uint64_t)nd, 0);
+}
+
+/* The hash of the files of tid on root, from stats only: over a share, reading a pkg is
+ * a megabyte where each of these is one getattr. */
+static uint64_t title_files_fp(const char *root, const char *tid) {
+    char app[PATH_MAX], patch[PATH_MAX];
+    app[0] = patch[0] = 0;
+    if (!g_cfg.organize) {
+        const catalog_t *c = drive_catalog(root);
+        const cat_game_t *g = c ? catalog_game(c, tid) : NULL;
+        if (!g)
+            return 0;
+        snprintf(app, sizeof(app), "%s", c->pkgs[g->app].path);
+        const cat_pkg_t *p = catalog_patch(g_cat, c, g);
+        if (p)
+            snprintf(patch, sizeof(patch), "%s", p->path);
+    } else {
+        char dir[PATH_MAX];
+        snprintf(dir, sizeof(dir), "%s/ps4/%s", root, tid);
+        snprintf(app, sizeof(app), "%s/app.pkg", dir);
+        snprintf(patch, sizeof(patch), "%s/patch.pkg", dir);
+    }
+    uint64_t h = fp_stat(title_fp_start(), app);
+    h = fp_stat(h, patch);
+    h = title_fp_add(h, g_cfg.dlc ? "add-ons" : "no add-ons", 0, g_cfg.dlc_big ? 1 : 0);
+    return g_cfg.dlc ? fp_addons(h, root, tid) : h;
+}
+
+static void info_from_src(const title_src_t *t, title_info_t *e) {
+    snprintf(e->title_id, sizeof(e->title_id), "%s", t->app.title_id);
+    snprintf(e->dir, sizeof(e->dir), "%s", t->dir);
+    snprintf(e->app_path, sizeof(e->app_path), "%s", t->app_path);
+    snprintf(e->patch_path, sizeof(e->patch_path), "%s", t->patch_path);
+    e->has_patch = t->has_patch;
+    e->app_size = t->app.pkg_size;
+    e->patch_size = t->has_patch ? t->patch.pkg_size : 0;
+    snprintf(e->name, sizeof(e->name), "%s", t->name);
+    snprintf(e->ver, sizeof(e->ver), "%s", t->ver);
+    snprintf(e->content_id, sizeof(e->content_id), "%s", t->app.content_id);
+    snprintf(e->update_issue, sizeof(e->update_issue), "%s", t->update_issue);
+    snprintf(e->marker, sizeof(e->marker), "%s", t->marker);
+    const sfo_t *eff = t->has_patch ? &t->patch_sfo : &t->app_sfo;
+    const sfo_item_t *sv = sfo_get(eff, "SYSTEM_VER"), *av = sfo_get(&t->app_sfo, "APP_VER");
+    e->system_ver = sv && sv->is_int ? sv->ival : 0;
+    snprintf(e->game_ver, sizeof(e->game_ver), "%s", av && !av->is_int ? av->sval : "");
+    if (t->has_patch) {
+        memcpy(e->sfo_sha, t->patch_sfo_sha, sizeof(e->sfo_sha));
+        e->sfo_len = t->patch_sfo_len;
+    }
+    e->ndlc_tids = t->ndlc_tids;
+    memcpy(e->dlc_tids, t->dlc_tids, sizeof(e->dlc_tids));
+    if (t->ndlc > 0) {
+        title_dlc_t *d = title_cache_give_dlc(e, t->ndlc);
+        if (d)
+            for (int i = 0; i < t->ndlc; i++) {
+                snprintf(d[i].title_id, sizeof(d[i].title_id), "%s", t->dlc[i].pkg.title_id);
+                snprintf(d[i].content_id, sizeof(d[i].content_id), "%s", t->dlc[i].pkg.content_id);
+                d[i].install = t->dlc[i].install;
+            }
+        e->ndlc = t->ndlc;
+    }
+}
+
+/* What tid is, read from its pkgs only when its files changed since the last look (or it
+ * was never looked at). NULL when the drive has no such game. */
+static const title_info_t *title_info(const char *root, const char *tid) {
+    uint64_t fp = title_files_fp(root, tid);
+    if (!fp)
+        return NULL;
+    const title_info_t *hit = title_cache_find(root, tid, fp);
+    if (hit)
+        return hit;
+    title_src_t src;
+    if (src_open(&src, root, tid))
+        return NULL;
+    title_info_t *e = title_cache_add(root, tid, fp);
+    if (e)
+        info_from_src(&src, e);
+    src_close(&src);
+    return e;
 }
 
 static void write_meta(pkg_t *pkg, const char *meta_dir, int *rc) {
@@ -830,15 +987,17 @@ static int place_dlc(dlc_src_t *a) {
 /* The ac.pkg link of every add-on exists and reaches its pkg. */
 /* 1 when the add-on is installed the system's way: its own pkg in /user/addcont, not
  * PS4Mount's mount there. */
-static int dlc_installed(const dlc_src_t *a) {
+static int dlc_installed_ids(const char *dtid, const char *cid) {
     char p[96];
     struct stat st;
-    snprintf(p, sizeof(p), "/user/addcont/%s", a->pkg.title_id);
+    snprintf(p, sizeof(p), "/user/addcont/%s", dtid);
     if (mounted_from(p, NULL, 0))
         return 0;
-    snprintf(p, sizeof(p), "/user/addcont/%s/%s/ac.pkg", a->pkg.title_id, a->pkg.content_id + 20);
+    snprintf(p, sizeof(p), "/user/addcont/%s/%s/ac.pkg", dtid, cid + 20);
     return !lstat(p, &st) && S_ISREG(st.st_mode);
 }
+
+static int dlc_installed(const dlc_src_t *a) { return dlc_installed_ids(a->pkg.title_id, a->pkg.content_id); }
 
 /* Add-ons the system's installer would not take in this run: the game goes on without
  * them (and is not registered again for them on every scan); the next PS4Mount tries
@@ -888,14 +1047,14 @@ static int dlc_copy_done(const char *content_id, uint64_t size) {
     return !lstat(p, &st) && S_ISREG(st.st_mode) && (uint64_t)st.st_size == size;
 }
 
-static int dlc_ready(const title_src_t *t) {
+static int dlc_ready(const title_info_t *t) {
     char p[PATH_MAX];
     for (int i = 0; i < t->ndlc; i++) {
-        if (t->dlc[i].install && (dlc_failed(t->dlc[i].pkg.content_id) || dlc_pending(t->dlc[i].pkg.content_id)))
+        const title_dlc_t *d = &t->dlc[i];
+        if (d->install && (dlc_failed(d->content_id) || dlc_pending(d->content_id)))
             continue;
-        snprintf(p, sizeof(p), HOLD_DIR "/addcont/%s/%s/ac.pkg", t->dlc[i].pkg.title_id,
-                 t->dlc[i].pkg.content_id + 20);
-        if (t->dlc[i].install ? !dlc_installed(&t->dlc[i]) : !exists(p))
+        snprintf(p, sizeof(p), HOLD_DIR "/addcont/%s/%s/ac.pkg", d->title_id, d->content_id + 20);
+        if (d->install ? !dlc_installed_ids(d->title_id, d->content_id) : !exists(p))
             return 0;
     }
     return 1;
@@ -1492,7 +1651,7 @@ static int addcont_installed(const char *dtid) {
 
 /* /user/app/<TID> always, /user/patch/<TID> only with an update and
  * /user/addcont/<ADD-ON TID> for each add-on title. */
-static int mount_paths(const char *tid, int has_patch, char (*dtids)[10], int ndtids) {
+static int mount_paths(const char *tid, int has_patch, const char (*dtids)[10], int ndtids) {
     char target[64], hold[PATH_MAX];
     snprintf(target, sizeof(target), "/user/app/%s", tid);
     hold_path(hold, sizeof(hold), "app", tid);
@@ -1519,8 +1678,13 @@ static int mount_title(title_src_t *t) {
     return mount_paths(t->app.title_id, t->has_patch, t->dlc_tids, t->ndlc_tids);
 }
 
-static void manage(const title_src_t *t) {
-    managed_t *m = managed_by(t->app.title_id, NULL);
+static int mount_info(const title_info_t *t) {
+    return mount_paths(t->title_id, t->has_patch, t->dlc_tids, t->ndlc_tids);
+}
+
+static void manage_fields(const char *tid, const char *cid, const char *name, const char *dir, int has_patch,
+                          int ndlc, const char (*dlc_tids)[10], int ndlc_tids) {
+    managed_t *m = managed_by(tid, NULL);
     for (int i = 0; !m && i < MAX_TITLES; i++)
         if (!g_managed[i].used)
             m = &g_managed[i];
@@ -1534,14 +1698,23 @@ static void manage(const title_src_t *t) {
         m->running = keep.running;
         m->running_since = keep.running_since;
     }
-    m->has_patch = t->has_patch;
-    m->ndlc = t->ndlc;
-    m->ndlc_tids = t->ndlc_tids;
-    memcpy(m->dlc_tids, t->dlc_tids, sizeof(m->dlc_tids));
-    snprintf(m->tid, sizeof(m->tid), "%s", t->app.title_id);
-    snprintf(m->cid, sizeof(m->cid), "%s", t->app.content_id);
-    snprintf(m->name, sizeof(m->name), "%s", t->name);
-    snprintf(m->dir, sizeof(m->dir), "%s", t->dir);
+    m->has_patch = has_patch;
+    m->ndlc = ndlc;
+    m->ndlc_tids = ndlc_tids;
+    memcpy(m->dlc_tids, dlc_tids, sizeof(m->dlc_tids));
+    snprintf(m->tid, sizeof(m->tid), "%s", tid);
+    snprintf(m->cid, sizeof(m->cid), "%s", cid);
+    snprintf(m->name, sizeof(m->name), "%s", name);
+    snprintf(m->dir, sizeof(m->dir), "%s", dir);
+}
+
+static void manage(const title_src_t *t) {
+    manage_fields(t->app.title_id, t->app.content_id, t->name, t->dir, t->has_patch, t->ndlc, t->dlc_tids,
+                  t->ndlc_tids);
+}
+
+static void manage_info(const title_info_t *t) {
+    manage_fields(t->title_id, t->content_id, t->name, t->dir, t->has_patch, t->ndlc, t->dlc_tids, t->ndlc_tids);
 }
 
 
@@ -1576,9 +1749,9 @@ static int marker_matches(const char *tid, const char *expected) {
 /* The title is served from another connected drive: the marker names another
  * folder whose game pkg is still there. The first drive keeps it, so the same game
  * on two drives is not switched (and registered again) on every scan. */
-static int served_elsewhere(const title_src_t *t) {
+static int served_elsewhere(const title_info_t *t) {
     char path[64], buf[PATH_MAX + 256] = {0}, pkg[PATH_MAX + 16];
-    snprintf(path, sizeof(path), STATE_DIR "/%s.src", t->app.title_id);
+    snprintf(path, sizeof(path), STATE_DIR "/%s.src", t->title_id);
     int fd = open(path, O_RDONLY);
     if (fd < 0)
         return 0;
@@ -1596,8 +1769,8 @@ static int served_elsewhere(const title_src_t *t) {
     return exists(pkg);
 }
 
-static int title_state(title_src_t *t) {
-    const char *tid = t->app.title_id;
+static int title_state(const title_info_t *t) {
+    const char *tid = t->title_id;
     if (installed_internally(tid) || removed(tid))
         return -1;
     if (served_elsewhere(t)) {
@@ -1623,27 +1796,36 @@ static void pump_events(int ms);
 
 /* The launch check compares /system_data/priv/appmeta/<TID>/param.sfo with the
  * update's param.sfo byte for byte; AppInstallAll writes the game's one there. */
-static void enforce_patch_sfo(title_src_t *t) {
-    if (!t->has_patch)
-        return;
-    size_t len;
-    uint8_t *sfo = pkg_entry(&t->patch, 0x1000, &len);
-    if (!sfo)
+static void enforce_patch_sfo(const char *tid, int has_patch, const char *patch_path, uint32_t sfo_len,
+                              const unsigned char *sfo_sha) {
+    if (!has_patch)
         return;
     char path[96];
-    snprintf(path, sizeof(path), "/system_data/priv/appmeta/%s/param.sfo", t->app.title_id);
+    snprintf(path, sizeof(path), "/system_data/priv/appmeta/%s/param.sfo", tid);
     int fd = open(path, O_RDONLY), same = 0;
     if (fd >= 0) {
-        uint8_t *cur = mem_alloc(len + 1);
-        same = cur && read(fd, cur, len + 1) == (ssize_t)len && !memcmp(cur, sfo, len);
-        mem_free(cur);
+        uint8_t cur[8192], sha[32];
+        ssize_t n = read(fd, cur, sizeof(cur));
+        if (n > 0 && (uint32_t)n == sfo_len && sfo_len <= sizeof(cur)) {
+            sha256(cur, (size_t)n, sha);
+            same = !memcmp(sha, sfo_sha, sizeof(sha));
+        }
         close(fd);
     }
-    if (!same) {
-        printf("[reg] %s: priv param.sfo was not the update's, rewritten\n", t->app.title_id);
+    if (same)
+        return;
+    /* not the one of the update: its own param.sfo goes in its place */
+    pkg_t p;
+    if (pkg_open(&p, patch_path))
+        return;
+    size_t len;
+    uint8_t *sfo = pkg_entry(&p, 0x1000, &len);
+    if (sfo) {
+        printf("[reg] %s: priv param.sfo was not the update's, rewritten\n", tid);
         write_file(path, sfo, len, 0777);
+        mem_free(sfo);
     }
-    mem_free(sfo);
+    pkg_close(&p);
 }
 
 /* Registration method: see fw.h. */
@@ -1911,7 +2093,7 @@ static int register_finish(title_src_t *t) {
         printf("[reg] %s: not registered by the system\n", tid);
         return -1;
     }
-    enforce_patch_sfo(t);
+    enforce_patch_sfo(tid, t->has_patch, t->patch_path, t->patch_sfo_len, t->patch_sfo_sha);
     install_title_dlc(t); /* now the system has the game (already installed ones are skipped) */
     char marker[64];
     snprintf(marker, sizeof(marker), STATE_DIR "/%s.src", tid);
@@ -2605,8 +2787,8 @@ static void scan_root(const char *root, int fresh, int reconnected) {
     int nt = titles_on_root(root, tids, MAX_TITLES);
     for (int k = 0; k < nt && count < MAX_TITLES; k++) {
         const char *tid = tids[k];
-        title_src_t src;
-        if (src_open(&src, root, tid))
+        const title_info_t *info = title_info(root, tid);
+        if (!info)
             continue;
         if (reconnected) {
             char rm[64];
@@ -2615,14 +2797,13 @@ static void scan_root(const char *root, int fresh, int reconnected) {
         }
         title_t *t = &titles[count++];
         snprintf(t->tid, sizeof(t->tid), "%s", tid);
-        snprintf(t->name, sizeof(t->name), "%s", src.name);
-        t->ndlc = src.ndlc;
-        t->has_patch = src.has_patch;
-        t->state = title_state(&src);
+        snprintf(t->name, sizeof(t->name), "%s", info->name);
+        t->ndlc = info->ndlc;
+        t->has_patch = info->has_patch;
+        t->state = title_state(info);
         if (t->state == 1 && retry_waiting(t->tid))
             t->state = -1; /* failed recently: tried again later */
         pending += t->state == 1;
-        src_close(&src);
     }
     /* the totals for a scan asked in the panel; otherwise only what changed */
     if (fresh && g_manual_scan && !count)
@@ -2635,17 +2816,17 @@ static void scan_root(const char *root, int fresh, int reconnected) {
     /* games already in the library: keep them mounted */
     for (int i = 0; i < count; i++) {
         title_t *t = &titles[i];
-        title_src_t src;
-        if (t->state != 0 || src_open(&src, root, t->tid))
+        const title_info_t *info;
+        if (t->state != 0 || !(info = title_info(root, t->tid)))
             continue;
-        enforce_patch_sfo(&src);
-        manage(&src);
+        enforce_patch_sfo(info->title_id, info->has_patch, info->patch_path, info->sfo_len, info->sfo_sha);
+        manage_info(info);
         /* PS4: the system registered another version (the update came later) */
         const char *rv = db_app_ver(t->tid);
-        if (rv && *rv && strcmp(rv, src.ver)) {
+        if (rv && *rv && strcmp(rv, info->ver)) {
             char why[64];
             snprintf(why, sizeof(why), TR("registered as %s, the update is %s", "registrado como %s, la actualización es %s"), rv,
-                     src.ver);
+                     info->ver);
             if (readd_queue(t->tid, why))
                 printf("[reg] %s: %s\n", t->tid, why);
         }
@@ -2656,9 +2837,8 @@ static void scan_root(const char *root, int fresh, int reconnected) {
         } else if (m && !running && m->running && time(NULL) - m->running_since > 60) {
             m->running = 0; /* closed without a klog end event */
         }
-        if (mount_title(&src))
-            notify(TR("Failed to mount %s (%s)", "No se pudo montar %s (%s)"), src.name, t->tid);
-        src_close(&src);
+        if (mount_info(info))
+            notify(TR("Failed to mount %s (%s)", "No se pudo montar %s (%s)"), info->name, t->tid);
     }
     if (!pending)
         return;
@@ -2793,6 +2973,31 @@ static void release_stale(void) {
 
 #define NAS_SCAN_SECONDS 60
 
+/* What each game of the drive is, as the last run left it: a reload of the payload does
+ * not read the whole library again. */
+static int g_titles_loaded[NROOTS];
+
+static void titles_file_name(const char *root, char *out, size_t n) {
+    char id[64];
+    root_id(root, id, sizeof(id));
+    snprintf(out, n, STATE_DIR "/titles-%s.txt", id);
+}
+
+static void titles_file_load(int i, const char *root) {
+    if (g_titles_loaded[i])
+        return;
+    g_titles_loaded[i] = 1;
+    char p[PATH_MAX];
+    titles_file_name(root, p, sizeof(p));
+    title_cache_load(p);
+}
+
+static void titles_file_save(const char *root) {
+    char p[PATH_MAX];
+    titles_file_name(root, p, sizeof(p));
+    title_cache_save(p, root);
+}
+
 static void scan_all(void) {
     static int seen[NROOTS], first = 1;
     static time_t nas_scanned;
@@ -2835,8 +3040,11 @@ static void scan_all(void) {
                 ready[i] = 0;
             else if (ready[i] && is_nas(root))
                 nas_scanned = now;
-            if (ready[i])
+            if (ready[i]) {
+                titles_file_load(i, root);
                 scan_root(root, fresh, !seen[i] && !first);
+                titles_file_save(root);
+            }
             seen[i] = present;
         }
     } else {
@@ -2856,8 +3064,11 @@ static void scan_all(void) {
         for (int i = 0; i < NROOTS; i++) {
             root_path(i, root, sizeof(root));
             int present = root_present(root);
-            if (present)
+            if (present) {
+                titles_file_load(i, root);
                 scan_root(root, !seen[i] || g_manual_scan, !seen[i] && !first);
+                titles_file_save(root);
+            }
             seen[i] = present;
         }
     }
@@ -3240,6 +3451,13 @@ void app_rescan(void) {
     g_next_scan = 0;
     g_manual_scan = 1;
 }
+
+/* The panel's own "scan for games": every pkg is read again, even when its file kept the
+ * same size and time (a share that replaces a pkg in place looks unchanged otherwise). */
+void app_rescan_hard(void) {
+    title_cache_forget();
+    app_rescan();
+}
 void app_stop(void) { g_stop = 1; }
 
 static void json_str(buf_t *b, const char *s) {
@@ -3293,8 +3511,8 @@ void app_games_json(buf_t *out) {
         int nt = titles_on_root(root, tids, MAX_TITLES);
         for (int k = 0; k < nt; k++) {
             const char *tid = tids[k];
-            title_src_t t;
-            if (src_open(&t, root, tid))
+            const title_info_t *t = title_info(root, tid);
+            if (!t)
                 continue;
             const char *state, *mount = "";
             char target[64], from[PATH_MAX];
@@ -3308,7 +3526,7 @@ void app_games_json(buf_t *out) {
             managed_t *m = managed_by(tid, NULL);
             if (installed_internally(tid))
                 state = "internal";
-            else if (served_elsewhere(&t))
+            else if (served_elsewhere(t))
                 state = "duplicate";
             else if (removed(tid))
                 state = "removed";
@@ -3321,35 +3539,32 @@ void app_games_json(buf_t *out) {
             if (nlisted < MAX_TITLES)
                 snprintf(listed[nlisted++], 10, "%s", tid);
             buf_printf(out, "%s{\"title_id\":\"%s\",\"name\":", first ? "" : ",", tid);
-            json_str(out, t.name);
+            json_str(out, t->name);
             buf_printf(out, ",\"version\":");
-            json_str(out, t.ver);
+            json_str(out, t->ver);
             buf_printf(out, ",\"has_patch\":%s,\"size\":%llu,\"state\":\"%s\",\"mount\":\"%s\",\"source\":",
-                       t.has_patch ? "true" : "false",
-                       (unsigned long long)(t.app.pkg_size + (t.has_patch ? t.patch.pkg_size : 0)), state, mount);
-            json_str(out, t.dir);
-            buf_printf(out, ",\"dlc\":%d,\"update_issue\":", t.ndlc);
-            json_str(out, t.update_issue);
+                       t->has_patch ? "true" : "false",
+                       (unsigned long long)(t->app_size + (t->has_patch ? t->patch_size : 0)), state, mount);
+            json_str(out, t->dir);
+            buf_printf(out, ",\"dlc\":%d,\"update_issue\":", t->ndlc);
+            json_str(out, t->update_issue);
             /* used where they are: nothing was moved or renamed, so there are no original
              * files to move back (also for games found in the old ps4/<TID> folders) */
             int in_place = !g_cfg.organize;
             buf_printf(out, ",\"in_place\":%s", in_place ? "true" : "false");
-            const sfo_item_t *av = sfo_get(&t.app_sfo, "APP_VER"), *sv = sfo_get(t.has_patch ? &t.patch_sfo : &t.app_sfo,
-                                                                                    "SYSTEM_VER");
             char svt[16] = "";
-            if (sv && sv->is_int)
-                ver_text(sv->ival, svt, sizeof(svt));
+            if (t->system_ver)
+                ver_text(t->system_ver, svt, sizeof(svt));
             buf_printf(out, ",\"content_id\":");
-            json_str(out, t.app.content_id);
+            json_str(out, t->content_id);
             buf_printf(out, ",\"game_version\":");
-            json_str(out, av && !av->is_int ? av->sval : "");
+            json_str(out, t->game_ver);
             buf_printf(out, ",\"system_ver\":");
             json_str(out, svt);
             buf_printf(out, ",\"storage\":");
             json_str(out, root_label(root));
             buf_printf(out, "}");
             first = 0;
-            src_close(&t);
         }
     }
     /* games of drives that are not connected: still on the home screen, not playable */
