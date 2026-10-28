@@ -35,7 +35,7 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 | --- | --- |
 | Juegos desde un **USB exFAT** (también pkgs de más de 4 GB) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
 | Juegos desde la **memoria interna** (`/data/PS4Mount`) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
-| Juegos desde una **NAS** por **SMB o NFS**, solo lectura, con búsqueda en la red | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado (solo firmware 13.52) |
+| Juegos desde una **NAS** por **SMB o NFS**, solo lectura, con búsqueda en la red | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado (firmware 13.52 y 6.72) |
 | **Actualizaciones** | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
 | Juegos **donde están**, sin mover ni renombrar los pkgs (cualquier carpeta de la unidad) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
 | **DLC** de hasta 256 MB (casi todos: trajes, packs, licencias) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: PS4Mount los instala con el instalador del sistema en segundos, y aparecen en la información del juego |
@@ -271,14 +271,14 @@ Ya está: el panel muestra tu correo y tu espacio. La conexión se guarda en la 
 | Instalar también los DLC grandes | Sí | Los DLC de más de 256 MB también se instalan, en segundo plano: un juego solo ve un DLC instalado por el sistema. Ocupan memoria interna; antes se comprueba que haya sitio. Apagado, no se usan. |
 | Organizar los pkgs en la carpeta ps4 | No | Mueve los pkgs a `ps4/<TITLE_ID>/` para tenerlos ordenados. Apagado (por defecto), los pkgs se usan donde están, con su nombre, sin mover ni renombrar nada; los que PS4Mount ya había organizado vuelven solos a su sitio original (los organizados a mano se quedan en `ps4/`). En la memoria interna se buscan solo `/data/PS4Mount` y `ps4`. |
 | Usar también los pkgs de /data/PS4Mount | Sí | Usa también los pkgs de la memoria interna. |
-| NAS (NFS o SMB) | No | Usa los pkgs de una carpeta compartida en red, **solo lectura** y sin mover ni renombrar nada (con Organizar activado no aparece). Solo firmware 13.52 (ver abajo). |
+| NAS (NFS o SMB) | No | Usa los pkgs de una carpeta compartida en red, **solo lectura** y sin mover ni renombrar nada (con Organizar activado no aparece). Firmware 13.52 y 6.72 (ver abajo). |
 | Idioma | El de la consola | El idioma del panel y de las notificaciones: el de la consola, inglés o español. |
 
 Se guardan en `/data/ps4mount/config.txt`. Los ajustes también tienen **Restaurar los archivos de todos los juegos** (o de los elegidos) y **Volver a usar los pkgs restaurados**.
 
 ### Juegos desde una NAS (SMB o NFS)
 
-Los juegos de una **carpeta compartida en la red** (un PC con Windows, Linux o macOS, o una caja NAS como Synology, QNAP o un router con USB) se juegan **desde ahí**, con su actualización y sus DLC, **sin copiarlos ni instalarlos** en la consola. Es **solo lectura**: PS4Mount nunca escribe, renombra ni mueve nada en el recurso. Solo firmware **13.52**.
+Los juegos de una **carpeta compartida en la red** (un PC con Windows, Linux o macOS, o una caja NAS como Synology, QNAP o un router con USB) se juegan **desde ahí**, con su actualización y sus DLC, **sin copiarlos ni instalarlos** en la consola. Es **solo lectura**: PS4Mount nunca escribe, renombra ni mueve nada en el recurso. Solo firmware **13.52 y 6.72**.
 
 **1. Comparte la carpeta de los juegos** en el ordenador o el NAS:
 
@@ -309,7 +309,7 @@ Los campos se pueden rellenar también a mano:
 | Usuario y contraseña (SMB) | Vacíos, entra como invitado. La contraseña se guarda en claro en `config.txt`. |
 
 - **Mejor por cable.** PS4Mount pide los datos por adelantado y varios a la vez, así que aprovecha casi toda la red, pero por Wi-Fi las cargas son lentas y alguna textura tarda en aparecer. **Con cable** se juega como desde el disco interno. Si no tienes switch ni un puerto libre en el router, sirve un **cable directo del PC a la consola**: en el PC, comparte su conexión por ese cable (en Linux con NetworkManager: `nmcli connection add type ethernet ifname <interfaz> con-name ps4 ipv4.method shared`; en Windows, "Conexión compartida a Internet" del adaptador Wi-Fi), y en la PS4 configura la red por cable en modo **Fácil**.
-- **Solo firmware 13.52**: en otros el ajuste sale desactivado (la consola no trae NFS y el sistema de ficheros en modo usuario, FUSE, no se puede activar).
+- **Solo firmware 13.52 y 6.72**: en otros el ajuste sale desactivado (la consola no trae NFS y el sistema de ficheros en modo usuario, FUSE, no se puede activar).
 - **Solo con Organizar apagado** (el valor por defecto): el recurso nunca se organiza.
 - **SMB** usa SMB2/3. **NFS** prueba NFSv4.2, NFSv4.0 y NFSv3; para que el panel liste las exportaciones, el servidor tiene que tener `rpcbind` (si no, escríbela a mano).
 - Un servidor que **no contesta** (apagado, dirección mal escrita, cortafuegos) se avisa en 3 segundos.
@@ -424,7 +424,7 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 | --- | --- |
 | Games from an **exFAT USB drive** (pkgs over 4 GB too) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
 | Games from the **console's storage** (`/data/PS4Mount`) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
-| Games from a **NAS** over **SMB or NFS**, read only, found on the network | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested (firmware 13.52 only) |
+| Games from a **NAS** over **SMB or NFS**, read only, found on the network | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested (firmware 13.52 and 6.72) |
 | **Updates** | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
 | Games **where they are**, without moving or renaming their pkgs (any folder of the drive) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
 | **Add-ons (DLC)** up to 256 MB (almost all: costumes, packs, licenses) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: PS4Mount installs them with the system's installer in seconds, and they show in the game's information |
@@ -660,14 +660,14 @@ That is all: the panel shows your email and your space. The connection is kept o
 | Also install big add-ons | On | Add-ons over 256 MB are installed too, in the background: a game only sees an add-on the system has installed. They take internal space; there has to be room first. Off, they are not used. |
 | Organize pkgs into the ps4 folder | Off | Moves the pkgs to `ps4/<TITLE_ID>/` to keep them in order. Off (the default), the pkgs are used where they are, with their own names, without moving or renaming anything; the ones PS4Mount had organized go back on their own to where they were (the ones you organized by hand stay in `ps4/`). On the console's storage, only `/data/PS4Mount` and `ps4` are searched. |
 | Also use pkgs in the console's /data/PS4Mount | On | Uses the pkgs in the console's storage too. |
-| NAS (NFS or SMB) | Off | Uses the pkgs in a shared network folder, **read only** and without moving or renaming anything (it does not show with Organize on). Firmware 13.52 only (see below). |
+| NAS (NFS or SMB) | Off | Uses the pkgs in a shared network folder, **read only** and without moving or renaming anything (it does not show with Organize on). Firmware 13.52 and 6.72 (see below). |
 | Language | The console's | The language of the panel and the notifications: the console's, English or Spanish. |
 
 They are saved in `/data/ps4mount/config.txt`. The settings also have **Restore the files of all games** (or of chosen ones) and **Use restored pkgs again**.
 
 ### Games from a NAS (SMB or NFS)
 
-The games in a **shared folder on the network** (a Windows, Linux or macOS computer, or a NAS box such as Synology, QNAP or a router with USB) are played **from there**, with their update and add-ons, **without copying or installing them** on the console. It is **read only**: PS4Mount never writes to, renames or moves anything in the share. Firmware **13.52** only.
+The games in a **shared folder on the network** (a Windows, Linux or macOS computer, or a NAS box such as Synology, QNAP or a router with USB) are played **from there**, with their update and add-ons, **without copying or installing them** on the console. It is **read only**: PS4Mount never writes to, renames or moves anything in the share. Firmware **13.52 and 6.72** only.
 
 **1. Share the games folder** on the computer or NAS:
 
@@ -698,7 +698,7 @@ The fields can be filled in by hand too:
 | User and password (SMB) | Empty, it goes in as a guest. The password is saved in plain text in `config.txt`. |
 
 - **Wired is best.** PS4Mount asks for the data ahead of time, several pieces at once, so it uses almost all of the network, but over Wi-Fi loading is slow and some textures take a moment. **Over a cable** games play as from the internal drive. With no switch or free router port, a **cable straight from the computer to the console** works too: share the computer's connection on that cable (on Linux with NetworkManager: `nmcli connection add type ethernet ifname <interface> con-name ps4 ipv4.method shared`; on Windows, "Internet Connection Sharing" on the Wi-Fi adapter), and set the PS4's wired network to **Easy**.
-- **Firmware 13.52 only**: on others the setting is disabled (the console has no NFS, and the user-space file system, FUSE, cannot be switched on).
+- **Firmware 13.52 and 6.72**: on others the setting is disabled (the console has no NFS, and the user-space file system, FUSE, cannot be switched on).
 - **Only with Organize off** (the default): the share is never organized.
 - **SMB** uses SMB2/3. **NFS** tries NFSv4.2, NFSv4.0 and NFSv3; for the panel to list the exports, the server needs `rpcbind` (otherwise type the export by hand).
 - A server that **does not answer** (off, a mistyped address, a firewall) is reported in 3 seconds.

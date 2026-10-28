@@ -63,7 +63,7 @@
 #include "web.h"
 #include "icon_data.h"
 
-#define VERSION "PS4Mount 0.6.2-beta"
+#define VERSION "PS4Mount 0.6.3-beta"
 #define LOCK_PORT 9032
 #define SCAN_SECONDS 10
 /* A full walk of the drive is slower on drives with many files: the catalog is brought
@@ -4454,7 +4454,7 @@ static int clean_scan_path(const char *in, char *out, size_t n, char *why, size_
 
 /* --- the network share --- */
 
-/* The FUSE mount needs a firmware whose fusefs patch is known (13.52; 6.72 untried). */
+/* The FUSE mount needs a firmware whose fusefs patch is known (13.52, 6.72). */
 static int nas_supported(void) { return nas_fw_ok(g_fw); }
 
 static void nas_cfg_from(nas_cfg_t *n) {

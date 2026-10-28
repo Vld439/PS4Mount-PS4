@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 gasb07
- * The FUSE side of the NAS support: the kernel patch that enables fusefs on
- * 13.52, the mount (one per process: this kernel refuses to unmount a FUSE
- * filesystem from its own jail) and the read-only operations that forward to
- * whichever client is connected. */
+ * The FUSE side of the NAS support: the kernel patch that enables fusefs (one
+ * row per firmware), the mount (one per process: this kernel refuses to unmount
+ * a FUSE filesystem from its own jail) and the read-only operations that
+ * forward to whichever client is connected. */
 #define FUSE_USE_VERSION 26
 
 #include "netfs.h"
@@ -36,7 +36,8 @@
 #define NAS_PARENT "/mnt/usb0/ps4mount"
 #define NAS_TRIES 8
 
-/* Offsets of the fusefs patch, per firmware (from itemzflow). 6.72 is untried here. */
+/* Offsets of the fusefs patch, per firmware (from itemzflow). 13.52 and 6.72 are
+ * the ones tested on a console. */
 #define KBASE_OFF 0x1C0
 #define NPOKE 16
 

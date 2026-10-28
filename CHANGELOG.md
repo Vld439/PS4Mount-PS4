@@ -2,6 +2,28 @@
 
 PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount) by gasb07 (PS5); its versions start again at 0.1.0. The history of the original is in its project and in this repository's git history.
 
+## 0.6.3-beta
+
+The network share works on **firmware 6.72** too, and adding a NAS library no longer reads it once and again: each game is read once and kept, while the console is on and between restarts, and only new or changed pkgs are opened. The panel stays usable while a drive is walked or a game is read, long pkg paths no longer leave a game half registered, and a game whose update the system refuses (Bloodborne) is added without it.
+
+**Español**
+
+- **NAS en el firmware 6.72**, además del 13.52: el parche que enciende FUSE va por firmware, y el de 6.72 (el de itemzflow) ya está probado en consola.
+- **Añadir juegos ya no relee la biblioteca entera**: cada juego se lee una vez y se guarda por unidad (`/data/ps4mount/titles-<unidad>.txt`), y solo se abren los pkgs nuevos o cambiados y los del grupo que se está registrando. Al añadir, un pkg por juego en vez de la biblioteca otra vez.
+- El **panel** pide la lista de una en una, no pide nada con la pestaña en segundo plano, y sigue contestando mientras se recorre una unidad o se lee un juego, también **Parar**.
+- **Rutas largas**: el sistema corta la ruta de un pkg a 95 caracteres y el juego quedaba a medias. PS4Mount le da un enlace corto (`/data/ps4mount/l/<TITLE_ID>.pkg`) cuando la ruta no cabe; sirve igual para USB y NAS.
+- El **log** dice qué está haciendo el análisis (`checking N pkg(s), M new or changed`, `M read in X s`) y solo cuenta las lecturas de verdad: una línea por MB ya no llena el log.
+- **Actualizaciones que el sistema rechaza** (Bloodborne 01.09): el juego se añade **sin la actualización**, y esa actualización no se vuelve a usar; si el pkg cambia (otra actualización) se prueba de nuevo. **Buscar juegos** y quitar el juego también lo reintentan.
+
+**English**
+
+- **NAS on firmware 6.72**, as well as 13.52: the patch that enables FUSE is per firmware, and the 6.72 one (itemzflow's) is tested on a console.
+- **Adding games no longer reads the whole library again**: each game is read once and kept per drive (`/data/ps4mount/titles-<drive>.txt`), and only new or changed pkgs and those of the group being registered are opened. Adding a game costs one pkg; the library is not read again.
+- The **panel** asks for the list one request at a time, asks for nothing in a background tab, and answers while a drive is walked or a game is read, **Stop** included.
+- **Long paths**: the system cuts a pkg path at 95 characters, which left a game half registered. PS4Mount hands it a short link (`/data/ps4mount/l/<TITLE_ID>.pkg`) when the path does not fit; it works for USB drives and NAS alike.
+- The **log** says what the scan is doing (`checking N pkg(s), M new or changed`, `M read in X s`) and only counts real reads: a line per MB no longer fills it.
+- **Updates the system refuses** (Bloodborne 01.09): the game is added **without the update**, and that update is not used again; when the pkg changes (another update) it is tried again. **Scan for games** and removing the game retry it too.
+
 ## 0.6.2-beta
 
 Homebrew **ports** (games with a title ID of their own instead of CUSA, such as SMW or Smash Ultimate) are played from the pkg like any game; **big add-ons** are installed on their own, so games see them; and small **homebrew apps** can be sent from the panel and installed. Tested on a PS4 on firmware 13.52 with GoldHEN: SMW (`SMWR00001`, 5.5 GB) from a NAS over SMB without installing it; Marvel's Spider-Man's three story add-ons (7.3 GB) installed from the NAS in about a minute and a half, all of them showing in the game; PS4SX2 (a 50 MB emulator) sent from the panel and installed.
