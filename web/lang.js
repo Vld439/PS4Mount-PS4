@@ -39,10 +39,10 @@ var LANGS = {
     "Pkgs sent to the console's storage are added from there, with no install to wait for. They still take internal space.":
       'Los pkgs enviados a la memoria de la consola se añaden desde ahí, sin esperar una instalación. Ocupan espacio interno.',
     'NAS (NFS or SMB)': 'NAS (NFS o SMB)',
-    'Not available on this firmware: the NAS needs 13.52.': 'No disponible en este firmware: el NAS necesita 13.52.',
+    'Not available on this firmware: the NAS needs 13.52 or 6.72.': 'No disponible en este firmware: el NAS necesita 13.52 o 6.72.',
     'Use a network share (read only)': 'Usar un recurso de red (solo lectura)',
-    'Only firmware 13.52, and only with pkgs used where they are: the share is never renamed or moved. It needs a wired console or a good Wi-Fi: games read at the speed of the network.':
-      'Solo firmware 13.52, y solo con los pkgs usados donde están: el recurso nunca se renombra ni se mueve. Hace falta la consola por cable o un buen Wi-Fi: los juegos leen a la velocidad de la red.',
+    'Only firmware 13.52 or 6.72, and only with pkgs used where they are: the share is never renamed or moved. It needs a wired console or a good Wi-Fi: games read at the speed of the network.':
+      'Solo firmware 13.52 o 6.72, y solo con los pkgs usados donde están: el recurso nunca se renombra ni se mueve. Hace falta la consola por cable o un buen Wi-Fi: los juegos leen a la velocidad de la red.',
     'Protocol': 'Protocolo',
     'Server': 'Servidor',
     'Export (NFS) or share (SMB)': 'Exportación (NFS) o recurso (SMB)',

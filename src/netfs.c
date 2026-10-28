@@ -36,11 +36,40 @@
 #define NAS_PARENT "/mnt/usb0/ps4mount"
 #define NAS_TRIES 8
 
-/* 13.52 offsets (the only firmware with the fusefs module compiled in). */
+/* Offsets of the fusefs patch, per firmware (from itemzflow). 6.72 is untried here. */
 #define KBASE_OFF 0x1C0
-#define KSUSER 0x21AD2AC
-#define VFSCONF 0x1A7FA48
-#define FUSE_LOADER 0x495C10
+#define NPOKE 16
+
+typedef struct {
+    uint32_t fw; /* major.minor, as 0x1352 */
+    uint32_t ksuser, vfsconf, loader;
+    int n;
+    struct { uint32_t off; uint8_t v; } poke[NPOKE];
+} fuse_kp_t;
+
+static const fuse_kp_t g_kps[] = {
+    {0x672, 0x1BE9498, 0x1AA0A68, 0x4AF2D0, 16,
+     {{0x270E8E, 0}, {0x4B0C74, 0x0F}, {0x4B0C75, 0x84}, {0x4AF2FE, 0xEB}, {0x4AF2FF, 0x1B},
+      {0x4AEB14, 0xEB}, {0x4AEB15, 0x0}, {0x4AEC12, 0xEB}, {0x4AF174, 0xEB}, {0x4AC086, 0xEB},
+      {0x4AC087, 0x04}, {0x4AC7DC, 0xEB}, {0x4AC7DD, 0x00}, {0x4ACB8D, 0xEB}, {0x4ACB8E, 0x04},
+      {0x4AEA2C, 0xB6}}},
+    {0x1352, 0x21AD2AC, 0x1A7FA48, 0x495C10, 13,
+     {{0x317FE6, 0}, {0x491C65, 0x84}, {0x495C3E, 0xEB}, {0x495C3F, 0x1B}, {0x490674, 0x0},
+      {0x490675, 0xEB}, {0x490772, 0xEB}, {0x490CC2, 0x84}, {0x494C27, 0x85}, {0x49537A, 0x84},
+      {0x49572D, 0xEB}, {0x49572E, 0x04}, {0x49057E, 0xB6}}},
+};
+
+/* The table of this console, set before the kernel runs fuse_patch. */
+static const fuse_kp_t *g_kp;
+
+static const fuse_kp_t *kp_for(uint32_t fw) {
+    for (size_t i = 0; i < sizeof(g_kps) / sizeof(g_kps[0]); i++)
+        if (g_kps[i].fw == fw >> 16)
+            return &g_kps[i];
+    return NULL;
+}
+
+int nas_fw_ok(uint32_t fw) { return kp_for(fw) != NULL; }
 
 static struct fuse *g_fuse;
 static char g_mnt[PATH_MAX];
@@ -88,7 +117,7 @@ typedef struct {
     long long ms;
 } nas_fh_t;
 
-/* ---- enabling fusefs on 13.52 (same patch as itemzflow) ---- */
+/* ---- enabling fusefs (same patch as itemzflow) ---- */
 
 __attribute__((no_stack_protector)) static uint64_t kbase(void) {
     uint32_t lo, hi;
@@ -108,33 +137,21 @@ __attribute__((no_stack_protector)) static void wp_write(int enable) {
 
 __attribute__((no_stack_protector)) static int fuse_patch(void *td) {
     (void)td;
+    const fuse_kp_t *kp = g_kp;
     uint8_t *k = (uint8_t *)kbase();
-    int *ksuser = (int *)(k + KSUSER);
+    int *ksuser = (int *)(k + kp->ksuser);
     if (*ksuser == 1)
         return 1; /* already done (another payload, or a previous start) */
 
     wp_write(0);
-    struct vfsconf *p = (struct vfsconf *)(k + VFSCONF);
+    struct vfsconf *p = (struct vfsconf *)(k + kp->vfsconf);
     *ksuser = 1;
     p->vfc_flags = 0x00400000 | 0x00080000; /* VFCF_JAIL | VFCF_SYNTHETIC */
-
-    k[0x317FE6] = 0;
-    k[0x491C65] = 0x84;
-    k[0x495C3E] = 0xEB;
-    k[0x495C3F] = 0x1B;
-    k[0x490674] = 0x0;
-    k[0x490675] = 0xEB;
-    k[0x490772] = 0xEB;
-    k[0x490CC2] = 0x84;
-    k[0x494C27] = 0x85;
-    k[0x49537A] = 0x84;
-    k[0x49572D] = 0xEB;
-    k[0x49572E] = 0x04;
-    k[0x49057E] = 0xB6;
-
+    for (int i = 0; i < kp->n; i++)
+        k[kp->poke[i].off] = kp->poke[i].v;
     wp_write(1);
 
-    int (*loader)(void *, int, void *) = (void *)(k + FUSE_LOADER);
+    int (*loader)(void *, int, void *) = (void *)(k + kp->loader);
     return loader(NULL, 0, NULL);
 }
 
@@ -678,8 +695,9 @@ int nas_start(const nas_cfg_t *cfg, char *err, size_t n) {
 
     snprintf(g_status, sizeof(g_status), "%s", TR("starting", "arrancando"));
     if (access("/dev/fuse0", F_OK)) {
+        g_kp = kp_for(kernel_get_fw_version());
         errno = 0;
-        long pr = syscall(11, fuse_patch);
+        long pr = g_kp ? syscall(11, fuse_patch) : -1;
         printf("[nas] fusefs patch: %ld (errno %d)\n", pr, errno);
         if (access("/dev/fuse0", F_OK)) {
             snprintf(err, n, "%s", TR("the kernel has no fusefs (patch failed)", "el kernel no tiene fusefs (falló el parche)"));

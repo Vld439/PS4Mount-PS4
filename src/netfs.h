@@ -74,6 +74,8 @@ extern const nas_be_t nas_be_nfs, nas_be_smb;
 /* Mounts the filesystem once per process (it cannot be unmounted) and connects
  * the backend. The mountpoint is a new /mnt/ps4mount/nas-<n>, never a previous
  * mount: a mount whose owner is gone would fail every request. 0 on success. */
+/* The kernel of this firmware (kernel_get_fw_version) has a known fusefs patch. */
+int nas_fw_ok(uint32_t fw);
 int nas_start(const nas_cfg_t *cfg, char *err, size_t n);
 /* Replaces the backend of the mount that is already up (switching protocol,
  * server or folder). 0 on success; the old backend is closed either way. */

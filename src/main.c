@@ -99,7 +99,7 @@ typedef struct {
     int internal;      /* pkgs in the console's /data/PS4Mount are used too */
     int organize;      /* pkgs are moved into <root>/ps4/<TID>/; off (default): used where they are */
     int lang;          /* LANG_* of notifications and the panel, -1: the console's */
-    int nas;           /* a network share is used too (13.52 only, read only) */
+    int nas;           /* a network share is used too (13.52 and 6.72, read only) */
     int nas_proto;     /* NAS_NFS or NAS_SMB */
     int nas_port;      /* 0: the protocol's port */
     char nas_server[64];
@@ -264,8 +264,6 @@ static int is_mountpoint(const char *path) {
 #define NAS_ROOT 11
 #define NAS_ROOT_PATH "/mnt/usb0/ps4mount/nas"
 #define INTERNAL_ROOT "/data"
-/* Only 13.52 has the fusefs module the FUSE mount needs. */
-#define NAS_FIRMWARE 0x13520001u
 
 static void root_path(int i, char *out, size_t n) {
     if (i < 8)
@@ -4456,8 +4454,8 @@ static int clean_scan_path(const char *in, char *out, size_t n, char *why, size_
 
 /* --- the network share --- */
 
-/* The FUSE mount of 13.52 only: no other firmware has the fusefs module it needs. */
-static int nas_supported(void) { return g_fw == NAS_FIRMWARE; }
+/* The FUSE mount needs a firmware whose fusefs patch is known (13.52; 6.72 untried). */
+static int nas_supported(void) { return nas_fw_ok(g_fw); }
 
 static void nas_cfg_from(nas_cfg_t *n) {
     memset(n, 0, sizeof(*n));
@@ -4790,14 +4788,14 @@ int app_config_set(const char *body, char *msg, size_t cap) {
         snprintf(msg, cap, "%s", TR("Not saved: add at least one folder (/ is the drive root)", "No se guardó: añade al menos una carpeta (/ es la raíz de la unidad)"));
         return -1;
     }
-    /* NAS: only 13.52, read only, and never with the organizer. */
+    /* NAS: only 13.52 and 6.72, read only, and never with the organizer. */
     char *sub = c.nas_sub;
     while (sub[0] == '/' || sub[0] == '\\')
         memmove(sub, sub + 1, strlen(sub));
     for (size_t l = strlen(sub); l && (sub[l - 1] == '/' || sub[l - 1] == '\\'); l--)
         sub[l - 1] = 0;
     if (c.nas && !nas_supported()) {
-        snprintf(msg, cap, "%s", TR("Not saved: the NAS needs firmware 13.52", "No se guardó: el NAS necesita el firmware 13.52"));
+        snprintf(msg, cap, "%s", TR("Not saved: the NAS needs firmware 13.52 or 6.72", "No se guardó: el NAS necesita el firmware 13.52 o 6.72"));
         return -1;
     }
     if (c.nas && c.organize) {
