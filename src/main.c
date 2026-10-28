@@ -799,7 +799,7 @@ static void info_from_src(const title_src_t *t, title_info_t *e) {
                 snprintf(d[i].content_id, sizeof(d[i].content_id), "%s", t->dlc[i].pkg.content_id);
                 d[i].install = t->dlc[i].install;
             }
-        e->ndlc = t->ndlc;
+        e->ndlc = d ? t->ndlc : 0; /* no room: the game goes without them */
     }
 }
 
@@ -809,13 +809,17 @@ static const title_info_t *title_info(const char *root, const char *tid) {
     uint64_t fp = title_files_fp(root, tid);
     if (!fp)
         return NULL;
-    const title_info_t *hit = title_cache_find(root, tid, fp);
+    /* the games are kept per drive, not per path: a share mounted under another name in
+     * the same boot must not be read again (its games are registered again, though) */
+    char key[64];
+    root_id(root, key, sizeof(key));
+    const title_info_t *hit = title_cache_find(key, tid, fp);
     if (hit)
         return hit;
     title_src_t src;
     if (src_open(&src, root, tid))
         return NULL;
-    title_info_t *e = title_cache_add(root, tid, fp);
+    title_info_t *e = title_cache_add(key, tid, fp);
     if (e)
         info_from_src(&src, e);
     src_close(&src);
@@ -3040,9 +3044,9 @@ static void titles_file_load(int i, const char *root) {
 }
 
 static void titles_file_save(const char *root) {
-    char p[PATH_MAX];
+    char p[PATH_MAX], key[64];
     titles_file_name(root, p, sizeof(p));
-    title_cache_save(p, root);
+    title_cache_save(p, root_id(root, key, sizeof(key)));
 }
 
 static void scan_all(void) {
