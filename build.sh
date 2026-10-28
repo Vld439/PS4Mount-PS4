@@ -87,7 +87,7 @@ if [ ! -f "$FF/libfuse.a" ]; then
 fi
 $B/orbis-clang -O2 -Wall -Wextra -DFUSE_USE_VERSION=26 -D_FILE_OFFSET_BITS=64 -Ibuild -Ithird_party/sqlite -Ithird_party/bearssl/inc -Ithird_party/libarchive -Ithird_party/libfuse/include -Ithird_party/libnfs/include -Ithird_party/libnfs/mount -Ithird_party/libsmb2/include -o build/ps4mount-ps4.elf \
     src/main.c src/fw.c src/logts.c src/web.c src/pkg.c src/build.c src/check.c src/upload.c src/install.c src/lang.c src/mem.c src/db.c src/origin.c src/crypto.c \
-    src/catalog.c src/titlecache.c src/drive.c src/https.c src/json.c src/links.c src/rar5dec.c src/la_alloc.c src/netfs.c src/netfs_nfs.c src/netfs_smb.c "$SQ" "$BR/libbearssl.a" "$LA/libarchive.a" "$FN/libnfs.a" "$FS/libsmb2.a" "$FF/libfuse.a" \
+    src/catalog.c src/shortpath.c src/titlecache.c src/drive.c src/https.c src/json.c src/links.c src/rar5dec.c src/la_alloc.c src/netfs.c src/netfs_nfs.c src/netfs_smb.c "$SQ" "$BR/libbearssl.a" "$LA/libarchive.a" "$FN/libnfs.a" "$FS/libsmb2.a" "$FF/libfuse.a" \
     -lSceUserService -lSceAppInstUtil -lSceSystemService -lkernel_sys
 # The .bin (what Payload Guest lists) is raw code that loads the ELF appended to it:
 # older BinLoaders (GoldHEN 2.4b18) jump to the first byte and crash on an ELF header.

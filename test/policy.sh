@@ -78,5 +78,11 @@ PY
 # (a bare "%s" passes a text made with TR elsewhere).
 grep -nE '\bnotify\("' src/main.c | grep -vE 'notify\("%s(: %s)?"' && rule "a notification without TR(): it would show in English on a Spanish console"
 
+# The system cuts a pkg path at 95 bytes (96-byte buffers in app.json, the playgo records
+# and the BGFT task): every path handed to it goes through pkg_url(), which hands a short
+# link instead when the pkg's own path does not fit (shortpath.h).
+awk '/^static const char \*pkg_url\(/ {inside=1} inside && /^\}/ {inside=0; next} /sys_path\(/ && !inside && !/^static const char \*sys_path\(/ {print FILENAME":"NR": "$0; bad=1} END {exit bad}' src/main.c ||
+    rule "a pkg path handed to the system without pkg_url(): over 95 bytes it is cut"
+
 [ $fail = 0 ] && echo "policy: all rules hold"
 exit $fail

@@ -57,6 +57,7 @@
 #include "netfs.h"
 #include "origin.h"
 #include "pkg.h"
+#include "shortpath.h"
 #include "titlecache.h"
 #include "web.h"
 #include "icon_data.h"
@@ -287,6 +288,23 @@ static const char *sys_path(const char *path, char *out, size_t n) {
     else
         snprintf(out, n, "%s", path);
     return out;
+}
+
+/* The path handed to the system for a pkg: its own when it is short, and otherwise
+ * STATE_DIR/l/<TID>-<kind>.pkg, a short link to it (shortpath.h), made or fixed here. */
+static const char *pkg_url(const char *tid, const char *kind, const char *path, char *out, size_t n) {
+    char link[PATH_MAX];
+    struct stat a, b;
+    if (!short_pkg_link(STATE_DIR "/l", tid, kind, path, link, sizeof(link)))
+        return sys_path(path, out, n);
+    /* a share is mounted anew on every start: the link may name the old mount */
+    if (stat(link, &a) || stat(path, &b) || a.st_dev != b.st_dev || a.st_ino != b.st_ino) {
+        mkdirs(STATE_DIR "/l", 0777);
+        unlink(link);
+        if (symlink(path, link))
+            printf("[reg] %s: short link %s: %s\n", tid, link, strerror(errno));
+    }
+    return sys_path(link, out, n);
 }
 
 /* The mountpoint of the NAS changes on every start (an old mount cannot be
@@ -942,16 +960,16 @@ static int place_dlc(dlc_src_t *a) {
     char dir[PATH_MAX], p[PATH_MAX], q[PATH_MAX];
     snprintf(dir, sizeof(dir), HOLD_DIR "/addcont/%s/%s", pkg->title_id, label);
     mkdirs(dir, 0777);
+    buf_t json = {0}, pbm = {0}, pdb = {0};
+    char url[PATH_MAX + 8];
+    pkg_url(pkg->title_id, "ac", a->path, url, sizeof(url));
     snprintf(q, sizeof(q), "%s/ac.pkg", dir);
     unlink(q);
     int rc = 0;
-    if (symlink(a->path, q)) {
+    if (symlink(url, q)) {
         printf("[reg] symlink %s: %s\n", q, strerror(errno));
         rc = -1;
     }
-    buf_t json = {0}, pbm = {0}, pdb = {0};
-    char url[PATH_MAX + 8];
-    sys_path(a->path, url, sizeof(url));
     build_app_json(&json, pkg, url);
     build_app_pbm(&pbm, pkg, ver, a->data ? PBM_ADDCONT : PBM_LICENSE);
     build_ac_pdb(&pdb, pkg, url, &json);
@@ -1155,13 +1173,13 @@ static uint32_t bgft_find(const char *tid) {
 
 /* 1 when the game task of tid names the pkg at path (as the system writes it): tasks
  * written before /data paths were turned into /user/data ones are written again. */
-static int bgft_names(const char *tid, const char *path) {
+static int bgft_names(const char *tid, const char *url) {
     uint32_t id = bgft_find(tid);
-    char p[64], url[PATH_MAX + 8];
+    char p[64];
     size_t len;
     snprintf(p, sizeof(p), BGFT_DIR "/%08x/d0.pdb", id);
     uint8_t *data = id ? read_all(p, &len) : NULL;
-    int ok = data && contains(data, len, sys_path(path, url, sizeof(url)));
+    int ok = data && contains(data, len, url);
     mem_free(data);
     return ok;
 }
@@ -1256,7 +1274,7 @@ static int place_bgft(title_src_t *t, const buf_t *json, const patch_ref_t *pr) 
     const char *name = strrchr(t->app_path, '/');
     name = name ? name + 1 : t->app_path;
     char url[PATH_MAX + 8];
-    sys_path(t->app_path, url, sizeof(url));
+    pkg_url(tid, "app", t->app_path, url, sizeof(url));
     for (int d1 = 0; d1 < 2; d1++) {
         bgft_task_t bt = {d1, g_fw, now, id - 1, &t->app, name, url, json, pr};
         buf_t b = {0};
@@ -1310,8 +1328,8 @@ static int dlc_install(dlc_src_t *a) {
     const sfo_item_t *n = sfo_get(&a->sfo, "TITLE");
     int32_t user = 0;
     sceUserServiceGetForegroundUser(&user);
-    int task = install_pkg(sys_path(a->path, url, sizeof(url)), n && !n->is_int ? n->sval : a->pkg.content_id,
-                           user, msg, sizeof(msg));
+    int task = install_pkg(pkg_url(a->pkg.title_id, "ac", a->path, url, sizeof(url)),
+                           n && !n->is_int ? n->sval : a->pkg.content_id, user, msg, sizeof(msg));
     printf("[dlc] %s: %s\n", a->pkg.content_id, msg);
     if (big && task >= 0) { /* minutes: followed by dlc_pending_check() */
         dlc_pending_t *p = &g_dlc_pending[g_ndlc_pending++];
@@ -1414,13 +1432,13 @@ static int place_files(title_src_t *t) {
     uint8_t *pg = pkg_entry(app, 0x1001, &pl), *ppg = pat ? pkg_entry(pat, 0x1001, &ppl) : NULL;
     buf_t json = {0}, pbm = {0}, xml = {0}, pjson = {0}, ppbm_patch = {0}, pxml = {0}, ppbm = {0};
     char app_url[PATH_MAX + 8], patch_url[PATH_MAX + 8];
-    build_app_json(&json, app, sys_path(t->app_path, app_url, sizeof(app_url)));
+    build_app_json(&json, app, pkg_url(tid, "app", t->app_path, app_url, sizeof(app_url)));
     /* the PS4 leaves no version and type 0 in app.pbm and patch.pbm (as every install
      * does on 13.52) */
     build_app_pbm(&pbm, app, "", 0);
     patch_ref_t pr = {0}, *prp = NULL;
     if (pat) {
-        build_app_json(&pjson, pat, sys_path(t->patch_path, patch_url, sizeof(patch_url)));
+        build_app_json(&pjson, pat, pkg_url(tid, "patch", t->patch_path, patch_url, sizeof(patch_url)));
         build_app_pbm(&ppbm_patch, pat, "", 0);
         pr = (patch_ref_t){pat, ppg, ppl, t->ver, patch_url, &pjson};
         prp = &pr;
@@ -1431,7 +1449,7 @@ static int place_files(title_src_t *t) {
         rc = -1;
         goto out;
     }
-    rc |= hold_prepare("app", tid, "app.pkg", t->app_path);
+    rc |= hold_prepare("app", tid, "app.pkg", app_url);
     hold_path(hold, sizeof(hold), "app", tid);
     snprintf(q, sizeof(q), "%s/app.json", hold);
     rc |= write_buf(q, &json);
@@ -1449,7 +1467,7 @@ static int place_files(title_src_t *t) {
     rc |= write_buf(q, &ppbm);
     rc |= place_bgft(t, &json, prp);
     if (pat) {
-        rc |= hold_prepare("patch", tid, "patch.pkg", t->patch_path);
+        rc |= hold_prepare("patch", tid, "patch.pkg", patch_url);
         hold_path(hold, sizeof(hold), "patch", tid);
         snprintf(q, sizeof(q), "%s/patch.json", hold);
         rc |= write_buf(q, &pjson);
@@ -1778,9 +1796,11 @@ static int title_state(const title_info_t *t) {
             printf("[scan] %s: %s is already served from another drive, this copy is not used\n", t->dir, tid);
         return -1;
     }
+    char app_url[PATH_MAX + 8];
+    pkg_url(tid, "app", t->app_path, app_url, sizeof(app_url));
     /* folders set up by 0.3.1 and older lack the internal folder: registered again */
     const char *why = !db_is_registered(tid)                ? "not registered"
-                      : !bgft_names(tid, t->app_path)       ? "no game task naming its pkg"
+                      : !bgft_names(tid, app_url)           ? "no game task naming its pkg"
                       : bgft_task_error(tid)                ? "its game task holds an error"
                       : !marker_matches(tid, t->marker)     ? "its pkgs changed"
                       : !hold_ready("app", tid, "app.pkg", t->app_path) ? "game link"
@@ -3278,7 +3298,15 @@ static void disagree_seen(const char *tid) {
 
 /* PS4Mount's own folders of a game that left the library (the pkgs are not in them). */
 static void clean_holds(const char *tid, char (*dtids)[10], int ndtids) {
-    char hold[PATH_MAX];
+    char hold[PATH_MAX], link[PATH_MAX];
+    snprintf(link, sizeof(link), STATE_DIR "/l/%s-app.pkg", tid);
+    unlink(link);
+    snprintf(link, sizeof(link), STATE_DIR "/l/%s-patch.pkg", tid);
+    unlink(link);
+    for (int i = 0; i < ndtids; i++) {
+        snprintf(link, sizeof(link), STATE_DIR "/l/%s-ac.pkg", dtids[i]);
+        unlink(link);
+    }
     hold_path(hold, sizeof(hold), "app", tid);
     rm_tree(hold);
     hold_path(hold, sizeof(hold), "patch", tid);
@@ -4853,7 +4881,8 @@ static void install_received(void) {
         snprintf(title, sizeof(title), "%s", path);
     int32_t user = 0;
     sceUserServiceGetForegroundUser(&user);
-    int task = install_pkg(sys_path(path, url, sizeof(url)), title, user, msg, sizeof(msg));
+    int task = install_pkg(pkg_url(tid[0] ? tid : "install", "up", path, url, sizeof(url)), title, user, msg,
+                           sizeof(msg));
     printf("[install] %s: %s\n", path, msg);
     if (task < 0)
         notify(TR("%s could not be installed: the system's installer turned it down (see the log)",

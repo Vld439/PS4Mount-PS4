@@ -63,6 +63,10 @@ echo "== pkg catalog"
 $CC $FLAGS -o "$B/catalog_test" test/catalog_test.c src/catalog.c src/pkg.c src/mem.c src/crypto.c
 "$B/catalog_test"
 
+echo "== short path"
+$CC $FLAGS -o "$B/shortpath_test" test/shortpath_test.c src/shortpath.c
+"$B/shortpath_test"
+
 echo "== title cache"
 $CC $FLAGS -o "$B/titlecache_test" test/titlecache_test.c src/titlecache.c src/mem.c
 "$B/titlecache_test"
