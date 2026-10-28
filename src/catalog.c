@@ -69,6 +69,18 @@ static int found(catalog_t *c, int sorted, const char *path, const struct stat *
     return 0;
 }
 
+void (*cat_pump)(void);
+
+/* Asks the daemon to serve a request or two, once every so many entries of a walk (or
+ * pkgs read): over a share a walk of a library is minutes long. */
+static void pump_sometime(void) {
+    static int n;
+    if (cat_pump && ++n >= 16) {
+        n = 0;
+        cat_pump();
+    }
+}
+
 typedef struct {
     catalog_t *c;
     int sorted; /* the first entries of c, known before this walk */
@@ -115,6 +127,7 @@ static void walk(const walk_t *w, const char *dir, int depth) {
                    !(w->skip && w->skip(path, (uint64_t)st.st_size))) {
             if (found(w->c, w->sorted, path, &st))
                 break;
+            pump_sometime();
         }
     }
     closedir(d);
@@ -245,6 +258,7 @@ int catalog_read(catalog_t *c) {
             int rc = read_one(p, pkg, sfo);
             p->state = rc > 0 ? CAT_SHORT : rc ? CAT_BAD : CAT_OK;
             n++;
+            pump_sometime();
         }
     mem_free(pkg);
     mem_free(sfo);

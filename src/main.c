@@ -1793,6 +1793,7 @@ static int title_state(const title_info_t *t) {
 }
 
 static void pump_events(int ms);
+static void pump_now(void);
 
 /* The launch check compares /system_data/priv/appmeta/<TID>/param.sfo with the
  * update's param.sfo byte for byte; AppInstallAll writes the game's one there. */
@@ -2766,6 +2767,8 @@ static void clear_removed_dlc(void) {
 
 static int readd_queue(const char *tid, const char *why);
 
+static int g_stop; /* the panel asked to stop: the long loops end before the daemon does */
+
 static void scan_root(const char *root, int fresh, int reconnected) {
     const char *label = root_label(root);
     int have = g_cfg.organize ? has_candidates(root) : catalog_has_games(root);
@@ -2786,6 +2789,10 @@ static void scan_root(const char *root, int fresh, int reconnected) {
     int count = 0, pending = 0;
     int nt = titles_on_root(root, tids, MAX_TITLES);
     for (int k = 0; k < nt && count < MAX_TITLES; k++) {
+        if (g_stop)
+            break; /* the panel asked to stop */
+        if (!(k % 8))
+            pump_now(); /* the panel answers while a library is walked */
         const char *tid = tids[k];
         const title_info_t *info = title_info(root, tid);
         if (!info)
@@ -2815,6 +2822,10 @@ static void scan_root(const char *root, int fresh, int reconnected) {
         notify(TR("%s: %d new or updated PS4 game(s)", "%s: %d juego(s) de PS4 nuevo(s) o actualizado(s)"), label, pending);
     /* games already in the library: keep them mounted */
     for (int i = 0; i < count; i++) {
+        if (g_stop)
+            break;
+        if (!(i % 8))
+            pump_now();
         title_t *t = &titles[i];
         const title_info_t *info;
         if (t->state != 0 || !(info = title_info(root, t->tid)))
@@ -2859,7 +2870,10 @@ static void scan_root(const char *root, int fresh, int reconnected) {
         free(prepared);
         return;
     }
+    memset(prepared, 0, sizeof(int) * (size_t)size);
     for (int i = 0; i < count;) {
+        if (g_stop)
+            break;
         int n = 0;
         for (; i < count && n < size; i++)
             if (titles[i].state == 1)
@@ -2879,6 +2893,10 @@ static void scan_root(const char *root, int fresh, int reconnected) {
         }
         int np = 0;
         for (int k = 0; k < n; k++) {
+            if (g_stop)
+                break;
+            if (!(k % 4))
+                pump_now(); /* the panel answers while the files of a group are prepared */
             title_t *t = &titles[members[k]];
             title_src_t src;
             prepared[k] = 0;
@@ -3445,7 +3463,6 @@ static void handle_klog_line(const char *line) {
 /* --- web panel --- */
 
 static time_t g_next_scan;
-static int g_stop;
 
 void app_rescan(void) {
     g_next_scan = 0;
@@ -5647,6 +5664,10 @@ static void pump_events(int ms) {
     }
 }
 
+/* Serves the panel and the klog for a moment, from inside a long scan: the daemon has no
+ * thread of its own for them (catalog.h cat_pump and the scan loops call this). */
+static void pump_now(void) { pump_events(1); }
+
 /* The start, as the console shows it. */
 static void notify_running(void) {
     if (g_reg_mode == REG_ALL)
@@ -5687,6 +5708,7 @@ int main(void) {
      * goes back to it: no exit, no atexit. What the payload opened is closed by
      * shutdown() before main returns */
     printf("[main] start (lock %d, pid %d)\n", lock, (int)getpid());
+    cat_pump = pump_now; /* the panel answers during a walk of a share */
     config_load();
     apply_lang();
     signal(SIGPIPE, SIG_IGN);

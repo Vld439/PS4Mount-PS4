@@ -89,6 +89,10 @@ typedef int (*cat_skip_fn)(const char *path, uint64_t size);
 /* Returns 1 for a folder the walk must not enter (path absolute, rel below root). */
 typedef int (*cat_skip_dir_fn)(const char *path, const char *rel);
 
+/* Called every so often by catalog_walk and catalog_read (the daemon points it at its
+ * event loop, so the panel answers during a long walk of a share). NULL: never called. */
+extern void (*cat_pump)(void);
+
 /* Finds every .pkg under root (any depth up to CAT_MAX_DEPTH), skipping hidden and system
  * folders, the old updates PS4Mount keeps in ps4/<TID>/replaced, the folders skip_dir
  * rejects and the folders of ignore (paths below root, any case). Pkgs that are gone are
