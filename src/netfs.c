@@ -447,7 +447,7 @@ static int ctl_read(char *buf, size_t size, off_t off) {
 }
 
 static int ctl_write(const char *buf, size_t size) {
-    char t[1024], *f[8];
+    char t[1024], *f[8] = {0};
     int nf = 0;
     if (size >= sizeof(t))
         return -EINVAL;
