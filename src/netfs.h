@@ -85,6 +85,8 @@ int nas_start(const nas_cfg_t *cfg, char *err, size_t n);
 int nas_reconnect(const nas_cfg_t *cfg, char *err, size_t n);
 /* Closes the backend; the mount stays, answering ENOTCONN. */
 void nas_stop(void);
+/* This load ends: the mount and its client stay for the next load (nas_start adopts it). */
+void nas_release(void);
 int nas_active(void);
 int nas_mounted(void);
 const char *nas_mountpoint(void);

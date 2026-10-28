@@ -90,7 +90,9 @@ if [ ! -f "$FF/libfuse.a" ]; then
     done | xargs -P "$(nproc)" -I{} sh -c '{}'
     $B/orbis-ar rcs "$FF/libfuse.a" "$FF"/*.o
 fi
-$B/orbis-clang -O2 -Wall -Wextra -DFUSE_USE_VERSION=26 -D_FILE_OFFSET_BITS=64 -Ibuild -Ithird_party/sqlite -Ithird_party/bearssl/inc -Ithird_party/libarchive -Ithird_party/libfuse/include -Ithird_party/libnfs/include -Ithird_party/libnfs/mount -Ithird_party/libsmb2/include -o build/ps4mount-ps4.elf \
+# A later load adopts the NAS mount of an earlier one only with the same NAS code.
+NETFS_ID=$(cat src/netfs.c src/netfs.h src/netfs_nfs.c src/netfs_smb.c | sha256sum | cut -c1-12)
+$B/orbis-clang -O2 -Wall -Wextra -DFUSE_USE_VERSION=26 -D_FILE_OFFSET_BITS=64 -DNETFS_ID="\"$NETFS_ID\"" -Ibuild -Ithird_party/sqlite -Ithird_party/bearssl/inc -Ithird_party/libarchive -Ithird_party/libfuse/include -Ithird_party/libnfs/include -Ithird_party/libnfs/mount -Ithird_party/libsmb2/include -o build/ps4mount-ps4.elf \
     src/main.c src/fw.c src/logts.c src/web.c src/pkg.c src/build.c src/check.c src/upload.c src/install.c src/lang.c src/mem.c src/db.c src/origin.c src/crypto.c \
     src/badpatch.c src/catalog.c src/shortpath.c src/titlecache.c src/drive.c src/https.c src/json.c src/links.c src/rar5dec.c src/la_alloc.c src/netfs.c src/netfs_nfs.c src/netfs_smb.c "$SQ" "$BR/libbearssl.a" "$LA/libarchive.a" "$FN/libnfs.a" "$FS/libsmb2.a" "$FF/libfuse.a" \
     -lSceUserService -lSceAppInstUtil -lSceSystemService -lkernel_sys

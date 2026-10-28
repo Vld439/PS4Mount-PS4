@@ -402,9 +402,103 @@ static int fh_live(nas_fh_t *f) {
     return 1;
 }
 
+/* ---- one mount for the whole boot ---- */
+
+/* A mount outlives the load that made it (the kernel will not unmount it) and the console
+ * has 8 fuse devices: a later load with the same NAS code adopts the mount instead of using
+ * one more. The load serving it keeps its client when it ends, and takes orders through
+ * CTL_PATH, a file inside the mount that is not on the share: reading it gives CTL_MAGIC,
+ * whether the client is connected and the status; writing "connect" and the settings, one
+ * per line, or "off", changes the client. */
+#ifndef NETFS_ID
+#define NETFS_ID "dev" /* build.sh: a hash of the NAS code */
+#endif
+#define CTL_PATH "/.ps4mount"
+#define CTL_MAGIC "ps4mount-nas 1 " NETFS_ID "\n"
+#define CTL_SIZE 4096
+static nas_fh_t g_ctl_fh; /* the handle of CTL_PATH: no file of the share behind it */
+static int g_adopted;     /* the mount is served by an earlier load */
+static int g_adopt_on;    /* that load's client is connected (adopted: nas_active) */
+
+static void drop_client(void) {
+    g_active = 0;
+    if (g_be) {
+        g_be->disconnect();
+        g_be = NULL;
+    }
+    g_gen++;
+}
+
+static int cfg_same(const nas_cfg_t *a, const nas_cfg_t *b) {
+    return a->proto == b->proto && a->port == b->port && !strcmp(a->server, b->server) && !strcmp(a->share, b->share) &&
+           !strcmp(a->sub, b->sub) && !strcmp(a->user, b->user) && !strcmp(a->pass, b->pass);
+}
+
+static int ctl_read(char *buf, size_t size, off_t off) {
+    char t[sizeof(g_status) + 64];
+    pthread_mutex_lock(&g_lock);
+    int n = snprintf(t, sizeof(t), CTL_MAGIC "%d\n%s\n", g_active && g_be, g_status);
+    pthread_mutex_unlock(&g_lock);
+    if (n < 0 || off >= n)
+        return 0;
+    size_t k = (size_t)(n - off) < size ? (size_t)(n - off) : size;
+    memcpy(buf, t + off, k);
+    return (int)k;
+}
+
+static int ctl_write(const char *buf, size_t size) {
+    char t[1024], *f[8];
+    int nf = 0;
+    if (size >= sizeof(t))
+        return -EINVAL;
+    memcpy(t, buf, size);
+    t[size] = 0;
+    for (char *a = t, *e; nf < 8 && (e = strchr(a, '\n')); a = e + 1) {
+        *e = 0;
+        f[nf++] = a;
+    }
+    pthread_mutex_lock(&g_lock);
+    if (nf == 1 && !strcmp(f[0], "off")) {
+        g_have_last = 0; /* off on purpose: not connected again */
+        drop_client();
+        snprintf(g_status, sizeof(g_status), "%s", TR("off", "apagado"));
+        printf("[nas] off, asked by a later load\n");
+    } else if (nf == 8 && !strcmp(f[0], "connect")) {
+        nas_cfg_t c;
+        char err[192];
+        memset(&c, 0, sizeof(c));
+        c.proto = atoi(f[1]);
+        snprintf(c.server, sizeof(c.server), "%s", f[2]);
+        c.port = atoi(f[3]);
+        snprintf(c.share, sizeof(c.share), "%s", f[4]);
+        snprintf(c.sub, sizeof(c.sub), "%s", f[5]);
+        snprintf(c.user, sizeof(c.user), "%s", f[6]);
+        snprintf(c.pass, sizeof(c.pass), "%s", f[7]);
+        /* the same settings, connected: nothing to do (a reload of the same PS4Mount) */
+        if (!(g_active && g_be && g_have_last && cfg_same(&c, &g_last))) {
+            drop_client();
+            int r = connect_any(&c, err, sizeof(err));
+            status_set(&c, r ? err : TR("ready", "listo"));
+            printf("[nas] connected for a later load: %s\n", g_status);
+        }
+    } else {
+        pthread_mutex_unlock(&g_lock);
+        return -EINVAL;
+    }
+    pthread_mutex_unlock(&g_lock);
+    return (int)size;
+}
+
 /* ---- the read-only filesystem ---- */
 
 static int fs_getattr(const char *path, struct stat *st) {
+    if (!strcmp(path, CTL_PATH)) {
+        memset(st, 0, sizeof(*st));
+        st->st_mode = S_IFREG | 0666;
+        st->st_nlink = 1;
+        st->st_size = CTL_SIZE;
+        return 0;
+    }
     pthread_mutex_lock(&g_lock);
     if (!ready()) {
         pthread_mutex_unlock(&g_lock);
@@ -443,6 +537,11 @@ static int fs_readdir(const char *path, void *buf, fuse_fill_dir_t fill, off_t o
 }
 
 static int fs_open(const char *path, struct fuse_file_info *fi) {
+    if (!strcmp(path, CTL_PATH)) {
+        fi->direct_io = 1; /* every read asks again */
+        fi->fh = (uint64_t)(uintptr_t)&g_ctl_fh;
+        return 0;
+    }
     /* Not refused: BGFT opens a game's pkg for writing when it starts it, and an EROFS
      * there is recorded in the game task and the game is refused. There is no write
      * operation: a write still fails, as it should in a read-only share. */
@@ -593,6 +692,8 @@ static int ra_read(nas_fh_t *f, char *buf, size_t size, off_t off) {
 static int fs_read(const char *path, char *buf, size_t size, off_t off,
                    struct fuse_file_info *fi) {
     nas_fh_t *f = (nas_fh_t *)(uintptr_t)fi->fh;
+    if (f == &g_ctl_fh)
+        return ctl_read(buf, size, off);
     pthread_mutex_lock(&g_lock);
     int r;
     if (!ready() || !fh_live(f)) {
@@ -628,6 +729,8 @@ static int fs_read(const char *path, char *buf, size_t size, off_t off,
 static int fs_release(const char *path, struct fuse_file_info *fi) {
     (void)path;
     nas_fh_t *f = (nas_fh_t *)(uintptr_t)fi->fh;
+    if (f == &g_ctl_fh)
+        return 0;
     pthread_mutex_lock(&g_lock);
     if (f->gen == g_gen && g_be) {
         for (int i = 0; i < 2; i++) /* a window on its way writes into f until it comes */
@@ -647,6 +750,13 @@ static int fs_release(const char *path, struct fuse_file_info *fi) {
         mem_free(f->w[i].buf);
     free(f);
     return 0;
+}
+
+/* Only the control file is written: the share is read-only. */
+static int fs_write(const char *path, const char *buf, size_t size, off_t off, struct fuse_file_info *fi) {
+    (void)path;
+    (void)off;
+    return (nas_fh_t *)(uintptr_t)fi->fh == &g_ctl_fh ? ctl_write(buf, size) : -ENOSYS;
 }
 
 static int fs_statfs(const char *path, struct statvfs *st) {
@@ -670,6 +780,8 @@ static int fs_flush(const char *path, struct fuse_file_info *fi) {
 static int fs_access(const char *path, int mode) {
     struct stat st;
     (void)mode;
+    if (!strcmp(path, CTL_PATH))
+        return 0;
     pthread_mutex_lock(&g_lock);
     int r = ready() ? g_be->stat(path, &st) : -ENOTCONN;
     if (r < 0 && redial(r))
@@ -696,6 +808,7 @@ static struct fuse_operations fs_ops = {
     .readdir = fs_readdir,
     .open = fs_open,
     .read = fs_read,
+    .write = fs_write,
     .release = fs_release,
     .statfs = fs_statfs,
     .flush = fs_flush,
@@ -773,18 +886,149 @@ static void status_set(const nas_cfg_t *cfg, const char *state) {
                  cfg->sub[0] ? "/" : "", cfg->sub, state);
 }
 
+/* ---- adopting the mount of an earlier load ---- */
+
+#define CTL_WAIT_MS 3000 /* a mount whose loop is gone never answers */
+
+static struct {
+    char path[PATH_MAX], cmd[1024], ans[512];
+    int r, done;
+} g_talk;
+static int g_talk_hung; /* a talk never came back: no other is tried in this load */
+
+static void *talk_thread(void *arg) {
+    (void)arg;
+    int r = -1, fd, sent = 1;
+    size_t len = strlen(g_talk.cmd);
+    if (len) {
+        sent = (fd = open(g_talk.path, O_WRONLY)) >= 0 && write(fd, g_talk.cmd, len) == (ssize_t)len;
+        if (fd >= 0)
+            close(fd);
+    }
+    if (sent && (fd = open(g_talk.path, O_RDONLY)) >= 0) {
+        ssize_t n = read(fd, g_talk.ans, sizeof(g_talk.ans) - 1);
+        close(fd);
+        if (n > 0) {
+            g_talk.ans[n] = 0;
+            r = strncmp(g_talk.ans, CTL_MAGIC, strlen(CTL_MAGIC)) ? -1 : 0;
+        }
+    }
+    g_talk.r = r;
+    __atomic_store_n(&g_talk.done, 1, __ATOMIC_RELEASE);
+    return NULL;
+}
+
+/* Sends cmd ("" for none) to the control file of the mount at mnt and takes its answer:
+ * 0 when a load with this NAS code serves it. On another thread, so a mount nobody serves
+ * any more cannot stop the panel. */
+static int ctl_talk(const char *mnt, const char *cmd) {
+    if (g_talk_hung)
+        return -1;
+    snprintf(g_talk.path, sizeof(g_talk.path), "%s%s", mnt, CTL_PATH);
+    snprintf(g_talk.cmd, sizeof(g_talk.cmd), "%s", cmd);
+    g_talk.ans[0] = 0;
+    g_talk.done = 0;
+    pthread_t th;
+    if (pthread_create(&th, NULL, talk_thread, NULL))
+        return -1;
+    pthread_detach(th);
+    for (int ms = 0; !__atomic_load_n(&g_talk.done, __ATOMIC_ACQUIRE); ms += 10) {
+        if (ms >= CTL_WAIT_MS) {
+            g_talk_hung = 1;
+            printf("[nas] %s does not answer\n", mnt);
+            return -1;
+        }
+        usleep(10000);
+    }
+    if (g_talk.r)
+        return -1;
+    const char *a = g_talk.ans + strlen(CTL_MAGIC), *e = strchr(a, '\n');
+    g_adopt_on = *a == '1';
+    if (e)
+        snprintf(g_status, sizeof(g_status), "%.*s", (int)strcspn(e + 1, "\n"), e + 1);
+    return 0;
+}
+
+static void ctl_connect(const nas_cfg_t *cfg, char *cmd, size_t n) {
+    snprintf(cmd, n, "connect\n%d\n%s\n%d\n%s\n%s\n%s\n%s\n", cfg->proto, cfg->server, cfg->port, cfg->share, cfg->sub,
+             cfg->user, cfg->pass);
+}
+
+/* The client of the adopted mount changes: 0 once it is connected. */
+static int adopted_connect(const nas_cfg_t *cfg, char *err, size_t n) {
+    char cmd[1024];
+    ctl_connect(cfg, cmd, sizeof(cmd));
+    if (ctl_talk(g_mnt, cmd)) {
+        snprintf(err, n, "%s", TR("the load serving the share stopped answering: restart the console",
+                                  "la carga que sirve el recurso dejó de contestar: reinicia la consola"));
+        return -1;
+    }
+    const char *state = strrchr(g_status, ':');
+    snprintf(err, n, "%s", state ? state + 2 : g_status);
+    return g_adopt_on ? 0 : -1;
+}
+
+/* An earlier load of this boot mounted the share with the same NAS code: it is used. */
+static int adopt(const nas_cfg_t *cfg, char *err, size_t n) {
+    char name[48], mnt[PATH_MAX], cmd[1024];
+    if (saved_name(name, sizeof(name)))
+        return -1;
+    snprintf(mnt, sizeof(mnt), "%s/%s", NAS_PARENT, name);
+    if (!mounted_at(mnt))
+        return -1;
+    ctl_connect(cfg, cmd, sizeof(cmd));
+    if (ctl_talk(mnt, cmd)) {
+        printf("[nas] %s: from an earlier load with other NAS code, not used\n", mnt);
+        return -1;
+    }
+    snprintf(g_mnt, sizeof(g_mnt), "%s", mnt);
+    g_mounted = 1;
+    g_adopted = 1;
+    printf("[nas] %s: mounted by an earlier load, used as it is (%s)\n", mnt, g_status);
+    const char *state = strrchr(g_status, ':');
+    snprintf(err, n, "%s", state ? state + 2 : g_status);
+    return g_adopt_on ? 0 : 1;
+}
+
+/* The adopted mount's state, asked again now and then. */
+static void adopt_refresh(void) {
+    static time_t at;
+    if (!g_adopted || time(NULL) - at < 5)
+        return;
+    at = time(NULL);
+    ctl_talk(g_mnt, "");
+}
+
+void nas_release(void) {
+    /* The mount stays and so does its client: a load serving it goes on serving it for the
+     * next load to adopt, and an adopted one is left to the load serving it. */
+    if (g_mounted)
+        printf("[nas] %s stays for the next load (%s)\n", g_mnt, g_adopted ? "adopted" : "served here");
+}
+
 int nas_mounted(void) { return g_mounted; }
 
 const char *nas_mountpoint(void) { return g_mnt; }
 
-int nas_active(void) { return g_mounted && g_active && g_be; }
+int nas_active(void) {
+    adopt_refresh();
+    return g_adopted ? g_adopt_on : g_mounted && g_active && g_be;
+}
 
-const char *nas_status(void) { return g_status; }
+const char *nas_status(void) {
+    adopt_refresh();
+    return g_status;
+}
 
 int nas_need_reload(void) { return g_reload; }
 
 int nas_start(const nas_cfg_t *cfg, char *err, size_t n) {
     pthread_mutex_lock(&g_lock);
+    if (g_adopted) {
+        int r = adopted_connect(cfg, err, n);
+        pthread_mutex_unlock(&g_lock);
+        return r;
+    }
     if (g_mounted) {
         /* The mount is not going away; only its client changes. */
         g_active = 0;
@@ -797,6 +1041,12 @@ int nas_start(const nas_cfg_t *cfg, char *err, size_t n) {
         status_set(cfg, r ? err : TR("ready", "listo"));
         pthread_mutex_unlock(&g_lock);
         return r;
+    }
+
+    int a = adopt(cfg, err, n);
+    if (a >= 0) {
+        pthread_mutex_unlock(&g_lock);
+        return a ? -1 : 0;
     }
 
     snprintf(g_status, sizeof(g_status), "%s", TR("starting", "arrancando"));
@@ -817,7 +1067,7 @@ int nas_start(const nas_cfg_t *cfg, char *err, size_t n) {
      * GoldHEN's own process, where they all answer ENXIO (6). One loaded by BinLoader has
      * a process of its own and can; main asks for that load when this flag is set. */
     {
-        int ok = 0, enxio = 1;
+        int ok = 0, enxio = 1, busy = 1;
         for (int i = 0; i < 8 && !ok; i++) {
             char dev[32];
             snprintf(dev, sizeof(dev), "/dev/fuse%d", i);
@@ -831,12 +1081,18 @@ int nas_start(const nas_cfg_t *cfg, char *err, size_t n) {
                 printf("[nas] open %s: %d\n", dev, errno);
             if (errno != ENXIO)
                 enxio = 0;
+            if (errno != EBUSY)
+                busy = 0; /* each load in this boot keeps its own: they cannot be unmounted */
         }
         g_probe_said = 1;
         if (!ok) {
             g_reload = enxio;
-            snprintf(err, n, "%s", g_reload ? TR("this start cannot use fusefs: the payload has to be loaded again", "este arranque no puede usar fusefs: hay que volver a cargar el payload")
-                                            : TR("the fuse devices cannot be opened", "no se pueden abrir los dispositivos fuse"));
+            snprintf(err, n, "%s",
+                     g_reload ? TR("this start cannot use fusefs: the payload has to be loaded again",
+                                   "este arranque no puede usar fusefs: hay que volver a cargar el payload")
+                     : busy   ? TR("the fuse devices are all taken by earlier loads of PS4Mount: restart the console",
+                                   "los dispositivos fuse están todos ocupados por cargas anteriores de PS4Mount: reinicia la consola")
+                              : TR("the fuse devices cannot be opened", "no se pueden abrir los dispositivos fuse"));
             status_set(cfg, err);
             pthread_mutex_unlock(&g_lock);
             return -1;
@@ -909,6 +1165,11 @@ int nas_start(const nas_cfg_t *cfg, char *err, size_t n) {
 
 int nas_reconnect(const nas_cfg_t *cfg, char *err, size_t n) {
     pthread_mutex_lock(&g_lock);
+    if (g_adopted) {
+        int r = adopted_connect(cfg, err, n);
+        pthread_mutex_unlock(&g_lock);
+        return r;
+    }
     g_active = 0;
     if (g_be) {
         g_be->disconnect();
@@ -923,6 +1184,12 @@ int nas_reconnect(const nas_cfg_t *cfg, char *err, size_t n) {
 
 void nas_stop(void) {
     pthread_mutex_lock(&g_lock);
+    if (g_adopted) {
+        if (g_adopt_on) /* the main loop asks on every turn while the share is off */
+            ctl_talk(g_mnt, "off\n");
+        pthread_mutex_unlock(&g_lock);
+        return;
+    }
     g_have_last = 0; /* off on purpose: not connected again */
     g_active = 0;
     if (g_be) {

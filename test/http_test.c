@@ -89,6 +89,10 @@ int main(void) {
     r = ask("GET / HTTP/1.1\r\n\r\n");
     CHECK(status(r, "200") && strstr(r, "text/html") && strstr(r, "<title>PS4Mount</title>"));
     CHECK(strstr(r, "location.replace('/legacy')") != NULL);
+    r = ask("GET /?app=1 HTTP/1.1\r\n\r\n"); /* the panel app */
+    CHECK(status(r, "200") && strstr(r, "<title>PS4Mount</title>"));
+    r = ask("POST /api/app/close HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 0\r\n\r\n");
+    CHECK(status(r, "200") && strstr(r, "\"ok\":true"));
     r = ask("GET /legacy HTTP/1.1\r\n\r\n");
     CHECK(status(r, "200") && strstr(r, "id=\"v-pick\"") && !strstr(r, "</dialog>"));
     r = ask("GET /nothing HTTP/1.1\r\n\r\n");

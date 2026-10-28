@@ -2,7 +2,7 @@
 
 PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount) by gasb07 (PS5); its versions start again at 0.1.0. The history of the original is in its project and in this repository's git history.
 
-## 0.6.3-beta
+## 0.7.4-beta
 
 The network share works on **firmware 6.72** too (and, experimental, on every firmware itemzflow has a FUSE patch for, 5.05 to 13.50), and adding a NAS library no longer reads it once and again: each game is read once and kept, while the console is on and between restarts, and only new or changed pkgs are opened. The panel stays usable while a drive is walked or a game is read, long pkg paths no longer leave a game half registered, and a game whose update the system refuses (Bloodborne) is added without it. Also from the 6.72 tester's report: the notice shows the panel's real address and says when the games are ready, a first start waits for the settings, the share can be checked less often or only by hand, and several games can be removed at once.
 
@@ -16,6 +16,7 @@ The network share works on **firmware 6.72** too (and, experimental, on every fi
 - El **panel** pide la lista de una en una, no pide nada con la pestaña en segundo plano, y sigue contestando mientras se recorre una unidad o se lee un juego, también **Parar**.
 - **Rutas largas**: el sistema corta la ruta de un pkg a 95 caracteres y el juego quedaba a medias. PS4Mount le da un enlace corto (`/data/ps4mount/l/<TITLE_ID>-app.pkg`, `-patch.pkg`, `-ac-<DLC>.pkg`, uno por DLC) cuando la ruta no cabe; sirve igual para USB y NAS.
 - **El NAS tiene siempre la misma ruta** (`/data/ps4mount/nas`, un enlace al montaje): volver a cargar PS4Mount en el mismo arranque lo montaba en otra carpeta (`nas-2`, `nas-3`…), y eso releía la biblioteca entera y volvía a añadir todos sus juegos pidiendo reiniciar. Ahora no se lee nada ni se añade nada.
+- **Un solo montaje del NAS por arranque**: la consola tiene 8 dispositivos FUSE y cada carga de PS4Mount ocupaba uno (no se puede desmontar), así que tras unas cuantas recargas el NAS dejaba de montarse. Ahora una carga nueva usa el montaje de la anterior; solo una versión con otro código del NAS monta uno nuevo. Si aun así se llenan, el aviso dice que hay que reiniciar.
 - **Ajustes → NAS → Buscar juegos nuevos en él**: cada minuto (como antes), cada 10 minutos, cada hora o **solo con Buscar juegos**.
 - El aviso de arranque da la **dirección real del panel** (`http://192.168.1.50:8770`), y al terminar el primer análisis avisa de cuántos juegos están **listos para jugar** (abrir uno antes daba "datos dañados").
 - **Primera vez**: si en la consola no hay nada de PS4Mount, no se añade ningún juego hasta guardar los Ajustes una vez (antes, un USB ya conectado se añadía entero con los valores por defecto). Quien ya lo usaba no nota nada.
@@ -34,9 +35,10 @@ The network share works on **firmware 6.72** too (and, experimental, on every fi
 - The **panel** asks for the list one request at a time, asks for nothing in a background tab, and answers while a drive is walked or a game is read, **Stop** included.
 - **Long paths**: the system cuts a pkg path at 95 characters, which left a game half registered. PS4Mount hands it a short link (`/data/ps4mount/l/<TITLE_ID>-app.pkg`, `-patch.pkg`, `-ac-<ADD-ON>.pkg`, one per add-on) when the path does not fit; it works for USB drives and NAS alike.
 - **The NAS always has the same path** (`/data/ps4mount/nas`, a link to the mount): loading PS4Mount again in the same boot mounted it in another folder (`nas-2`, `nas-3`…), which read the whole library again and added all its games again, asking for a restart. Now nothing is read and nothing is added.
+- **One NAS mount per boot**: the console has 8 FUSE devices and each load of PS4Mount took one (it cannot be unmounted), so after a few reloads the share would not mount any more. A new load now uses the mount of the one before; only a version with other NAS code mounts a new one. If they fill up anyway, the notice says to restart.
 - **Settings → NAS → Look for new games on it**: every minute (as before), every 10 minutes, every hour or **only with Scan for games**.
 - The start notice gives the panel's **real address** (`http://192.168.1.50:8770`), and when the first scan ends it says how many games are **ready to play** (starting one earlier said its data was corrupted).
-- **First start**: when the console has nothing of PS4Mount yet, no game is added until the Settings are saved once (a USB drive plugged in already was added whole with the defaults). Existing users notice nothing.
+- **First start**: when the console has nothing of PS4Mount yet, games are added only once the Settings are saved, or with the defaults after 2 minutes with nobody at the panel (a USB drive plugged in already was added whole at once). Existing users notice nothing.
 - **Remove several**: a panel button removes the chosen games (or all) from the library at once.
 - **Send games** says how to turn on the console's storage as a destination when it is off.
 - The panel no longer shows games as running when the system never started them or they closed with an error; the log says when the system closes a game that did not suspend in time (which loses unsaved progress).

@@ -15,6 +15,7 @@ void app_rescan(void);
 /* Asks for a scan that reads every pkg again (the panel's "scan for games"). */
 void app_rescan_hard(void);
 void app_stop(void);
+void app_panel_close(void);
 /* Asks BinLoader (port 9090) for a load now, the way the retry does; 0 when it took it. */
 int app_nas_reload(char *msg, size_t cap);
 /* /api/nas/scan and /api/nas/shares: the servers on the network and what one shares. */

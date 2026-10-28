@@ -350,7 +350,7 @@ void web_handle(int fd) {
     sscanf(req, "%7s %1023s", method, path);
     int post = !strcmp(method, "POST");
 
-    if (!strcmp(path, "/") || !strcmp(path, "/index.html")) {
+    if (!strcmp(path, "/") || !strcmp(path, "/index.html") || !strncmp(path, "/?", 2)) { /* /?app=1: the panel app */
         reply(fd, "200 OK", "text/html; charset=utf-8", index_html, sizeof(index_html));
     } else if (!strcmp(path, "/legacy") || !strcmp(path, "/legacy.html")) {
         reply(fd, "200 OK", "text/html; charset=utf-8", legacy_html, sizeof(legacy_html));
@@ -494,6 +494,13 @@ void web_handle(int fd) {
     } else if (post && !strcmp(path, "/api/nas/reload")) {
         int rc = app_nas_reload(msg, sizeof(msg));
         json_msg(fd, !rc, msg);
+    } else if (post && !strcmp(path, "/api/app/close")) {
+        if (!may_write(fd, req))
+            reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
+        else {
+            json_msg(fd, 1, "closing");
+            app_panel_close();
+        }
     } else if (post && !strcmp(path, "/api/stop")) {
         json_msg(fd, 1, "PS4Mount is stopping");
         app_stop();

@@ -63,7 +63,7 @@
 #include "web.h"
 #include "icon_data.h"
 
-#define VERSION "PS4Mount 0.6.3-beta"
+#define VERSION "PS4Mount 0.7.4-beta"
 #define LOCK_PORT 9032
 #define SCAN_SECONDS 10
 /* A full walk of the drive is slower on drives with many files: the catalog is brought
@@ -120,6 +120,11 @@ typedef struct {
 static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, 0, -1, 0, NAS_NFS, 0, "", "", "", "", "", 1, 1};
 #define NAS_RESCAN_MAX 1440 /* minutes: once a day */
 static int g_setup; /* a first start: no game is added until the settings are saved (first_start) */
+/* A first start with nobody at the panel for this long goes on with the default settings:
+ * most never open the panel, and they would never get a game. */
+#define SETUP_WAIT 120
+static time_t g_setup_start;
+static time_t g_setup_seen; /* the panel's last look at the list during a first start */
 
 int sceSystemServiceParamGetInt(int param_id, int *value);
 int sceSystemServicePowerTick(void);
@@ -3465,7 +3470,7 @@ static void clean_holds(const char *tid, char (*dtids)[10], int ndtids) {
     unlink(link);
     snprintf(link, sizeof(link), STATE_DIR "/l/%s-patch.pkg", tid);
     unlink(link);
-    /* one link per add-on, <add-on TID>-ac-<label>.pkg (and -ac.pkg of 0.6.3 tests) */
+    /* one link per add-on, <add-on TID>-ac-<label>.pkg (and -ac.pkg of the 0.7.4 test builds) */
     DIR *ld = ndtids ? opendir(STATE_DIR "/l") : NULL;
     struct dirent *le;
     while (ld && (le = readdir(ld)))
@@ -3741,6 +3746,8 @@ static int find_root(const char *tid, char *root, size_t n) {
 }
 
 void app_games_json(buf_t *out) {
+    if (g_setup)
+        g_setup_seen = time(NULL); /* someone is at the panel: the defaults wait */
     buf_printf(out, "{\"lang\":\"%s\",\"setup\":%s,\"version\":", lang_tag(g_lang), g_setup ? "true" : "false");
     json_str(out, VERSION);
     buf_printf(out, ",\"games\":[");
@@ -4195,9 +4202,12 @@ typedef struct {
 int sceKernelGetAppInfo(pid_t pid, app_info_t *info);
 int sceSystemServiceKillApp(uint32_t app_id, int how, int reason, int core_dump);
 
-/* Open games: processes named eboot.bin (PS4 and PS5 games alike). Fills up to max
- * app ids and title ids, returns how many are open. */
-static int open_games(uint32_t *ids, char (*tids)[10], int max) {
+/* The panel app (panel-app/): a home screen tile that shows the panel. It is no game. */
+#define PANEL_APP_TID "PSMT00001"
+
+/* Open apps: processes named eboot.bin (PS4 and PS5 games alike), the games or only the
+ * panel app. Fills up to max app ids and title ids, returns how many are open. */
+static int open_apps(uint32_t *ids, char (*tids)[10], int max, int panel) {
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PROC, 0}, n = 0;
     size_t len = 0;
     if (sysctl(mib, 4, NULL, &len, NULL, 0) || !len)
@@ -4214,7 +4224,8 @@ static int open_games(uint32_t *ids, char (*tids)[10], int max) {
             break;
         app_info_t info;
         memset(&info, 0, sizeof(info));
-        if (!strcmp(ki->ki_comm, "eboot.bin") && !sceKernelGetAppInfo(ki->ki_pid, &info) && info.app_id) {
+        if (!strcmp(ki->ki_comm, "eboot.bin") && !sceKernelGetAppInfo(ki->ki_pid, &info) && info.app_id &&
+            (strncmp(info.title_id, PANEL_APP_TID, 9) == 0) == panel) {
             if (n < max) {
                 ids[n] = info.app_id;
                 snprintf(tids[n], 10, "%.9s", info.title_id);
@@ -4225,6 +4236,20 @@ static int open_games(uint32_t *ids, char (*tids)[10], int max) {
     }
     mem_free(buf);
     return n;
+}
+
+static int open_games(uint32_t *ids, char (*tids)[10], int max) {
+    return open_apps(ids, tids, max, 0);
+}
+
+/* Back on the panel's first page inside the panel app: the app cannot close itself while
+ * it shows the page. */
+void app_panel_close(void) {
+    uint32_t ids[2];
+    char tids[2][10];
+    int n = open_apps(ids, tids, 2, 1);
+    for (int i = 0; i < n && i < 2; i++)
+        printf("[main] panel app closed: 0x%x\n", (unsigned)sceSystemServiceKillApp(ids[i], -1, 0, 0));
 }
 
 /* Every pkg operation that takes games out of the library closes the open game first,
@@ -5438,7 +5463,7 @@ static int g_klog = -1, g_web = -1;
 /* Closes the ports and the log before main returns: the process stays (it is the
  * loader's) and anything left open in it would keep the next PS4Mount out. */
 static void shutdown_daemon(int lock) {
-    nas_stop();
+    nas_release();
     links_stop();
     drive_stop();
     install_close();
@@ -5952,9 +5977,10 @@ static const char *panel_url(char *out, size_t n) {
 static void notify_running(void) {
     char url[48];
     if (g_setup && g_reg_mode != REG_NONE && g_web >= 0)
-        notify(TR(VERSION ": first start. Choose the settings in the panel (%s) and press Save: no game is added until then.",
-                  VERSION ": primera vez. Elige los ajustes en el panel (%s) y pulsa Guardar: hasta entonces no se añade "
-                          "ningún juego."),
+        notify(TR(VERSION ": first start. Choose the settings in the panel (%s) and press Save. Without it, the games "
+                          "are added with the default settings in 2 minutes.",
+                  VERSION ": primera vez. Elige los ajustes en el panel (%s) y pulsa Guardar. Si no, en 2 minutos se "
+                          "añaden los juegos con los ajustes por defecto."),
                panel_url(url, sizeof(url)));
     else if (g_reg_mode == REG_ALL && g_web >= 0)
         notify(TR(VERSION " running. Panel at %s", VERSION " en marcha. Panel en %s"), panel_url(url, sizeof(url)));
@@ -5996,6 +6022,7 @@ int main(void) {
     printf("[main] start (lock %d, pid %d)\n", lock, (int)getpid());
     cat_pump = pump_now; /* the panel answers during a walk of a share */
     g_setup = first_start();
+    g_setup_start = time(NULL);
     config_load();
     apply_lang();
     if (g_setup)
@@ -6076,6 +6103,10 @@ int main(void) {
         nas_ask_reload(); /* the boot instance cannot open the fuse devices: ask for a load */
         install_received(); /* an app sent with "Send and install" */
         if (time(NULL) >= g_next_scan && !g_deleting) {
+            if (g_setup && time(NULL) >= (g_setup_seen > g_setup_start ? g_setup_seen : g_setup_start) + SETUP_WAIT) {
+                printf("[main] first start: nobody at the panel, the default settings are saved\n");
+                config_save();
+            }
             if (g_setup) {
                 if (g_manual_scan)
                     notify("%s", TR("Save the settings in the panel first: no game is added until then",

@@ -27,14 +27,17 @@ grep -nE '\b(system|popen|execl|execlp|execle|execv|execvp|execve)\s*\(' "${SRC[
 # Unbounded string functions on data from files or the network.
 grep -nE '\b(strcpy|strcat|sprintf|gets|vsprintf)\s*\(' "${SRC[@]}" && rule "unbounded string function (use snprintf/memcpy with a size)"
 
-# Closing apps is only for moving pkgs back (close_open_games): nowhere else.
+# Closing apps is only for moving pkgs back (close_open_games) and for the panel app on its
+# own Back button (app_panel_close, which lists the panel app alone): nowhere else.
 n=$(grep -c 'sceSystemServiceKillApp(' src/main.c)
-[ "$n" -le 2 ] || rule "sceSystemServiceKillApp used outside close_open_games ($n uses)"
+[ "$n" -le 3 ] || rule "sceSystemServiceKillApp used outside close_open_games and app_panel_close ($n uses)"
+awk '/^void app_panel_close/ {f=1} f && /open_apps\(/ && !/, 1\)/ {print FILENAME":"NR": "$0; bad=1} f && /^}/ {f=0} END {exit bad}' src/main.c ||
+    rule "app_panel_close must list only the panel app (open_apps(..., 1))"
 grep -nE 'sceSystemServiceKillApp|sceSystemServiceLaunchApp|sceLncUtil' "${OTHER[@]}" && rule "launching or closing apps outside main.c"
 
 # The web panel changes state only on POST: every app_* call that changes something sits in
 # a branch that checks for POST.
-awk '/strn?cmp\(path/ {cond=$0} /app_(add|remove|restore|restored_forget|config_set|rescan|stop)\(/ && cond !~ /post/ {print FILENAME":"NR": "$0; bad=1} END {exit bad}' src/web.c ||
+awk '/strn?cmp\(path/ {cond=$0} /app_(add|remove|restore|restored_forget|config_set|rescan|stop|panel_close)\(/ && cond !~ /post/ {print FILENAME":"NR": "$0; bad=1} END {exit bad}' src/web.c ||
     rule "a state change in the web panel reachable without POST"
 
 # The page for older firmwares must stay without <dialog> and modern JavaScript.

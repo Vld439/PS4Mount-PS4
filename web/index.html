@@ -12,6 +12,7 @@ if (typeof document.createElement('dialog').showModal !== 'function') location.r
 <style>
 :root{--bg:#0e1116;--panel:#171b22;--line:#262c36;--fg:#e8eaed;--muted:#97a0ab;--accent:#3d7bfd;--ok:#2f9e57;--warn:#c98b1f;--bad:#c2453b}
 *{box-sizing:border-box}
+html.tv{zoom:1.75}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 header{position:sticky;top:0;z-index:2;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:14px 20px;background:rgba(14,17,22,.95);border-bottom:1px solid var(--line)}
 h1{font-size:20px;margin:0}
@@ -124,7 +125,7 @@ button.small{padding:5px 10px;font-size:13px}
 <div id="linkbar"><span class="db-main" id="lb-text"></span><progress id="lb-prog" max="1" value="0"></progress><button class="small" id="lb-cancel">Cancel</button>
   <span class="db-sub" id="lb-sub"></span></div>
 <main>
-  <div class="warn" id="setupnote" hidden>First start: check the settings (which folders, games per group, add-ons) and press Save in Settings. No game is added until then.</div>
+  <div class="warn" id="setupnote" hidden>First start: check the settings (which folders, games per group, add-ons) and press Save in Settings. While this page is open no game is added; closed for 2 minutes without saving, the default settings are used.</div>
   <div class="summary" id="summary"></div>
   <div class="grid" id="grid"></div>
   <div class="empty" id="empty" hidden>No PS4 games found. Put the .pkg files (game, update and add-ons) in the PS4Mount folder of a USB drive, or send them with Send games.</div>
@@ -852,6 +853,16 @@ $('stop').onclick = function () {
 };
 load();
 poll(5000, load);
+
+/* Inside the panel app (panel-app/, opened on /?app=1): a TV a few metres away, so all of
+ * it larger. Its Back button comes as Escape: it closes the open window by itself, and on
+ * the first page it asks PS4Mount to close the app (the app shows no bar to leave it). */
+if (/[?&]app=1/.test(location.search)) {
+  document.documentElement.classList.add('tv');
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !document.querySelector('dialog[open]')) fetch('/api/app/close', {method: 'POST', headers: {'X-PS4Mount': '1'}});
+  });
+}
 
 /* --- Google Drive --- */
 var drive = {}, driveBusyBefore = false;

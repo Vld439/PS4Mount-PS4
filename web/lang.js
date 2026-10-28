@@ -64,8 +64,8 @@ var LANGS = {
     '{0} removed; not removed: {1}': '{0} quitado(s); sin quitar: {1}',
     '{0} game(s) removed from the library': '{0} juego(s) quitado(s) de la biblioteca',
     'Removing {0} of {1}…': 'Quitando {0} de {1}…',
-    'First start: check the settings (which folders, games per group, add-ons) and press Save in Settings. No game is added until then.':
-      'Primera vez: revisa los ajustes (qué carpetas, juegos por grupo, DLC) y pulsa Guardar en Ajustes. Hasta entonces no se añade ningún juego.',
+    'First start: check the settings (which folders, games per group, add-ons) and press Save in Settings. While this page is open no game is added; closed for 2 minutes without saving, the default settings are used.':
+      'Primera vez: revisa los ajustes (qué carpetas, juegos por grupo, DLC) y pulsa Guardar en Ajustes. Mientras esta página esté abierta no se añade ningún juego; si se cierra 2 minutos sin guardar, se usan los ajustes por defecto.',
     'Look for new games on it': 'Buscar juegos nuevos en él',
     'Every minute': 'Cada minuto',
     'Every 10 minutes': 'Cada 10 minutos',
