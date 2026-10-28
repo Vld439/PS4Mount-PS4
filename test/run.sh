@@ -63,6 +63,10 @@ echo "== pkg catalog"
 $CC $FLAGS -o "$B/catalog_test" test/catalog_test.c src/catalog.c src/pkg.c src/mem.c src/crypto.c
 "$B/catalog_test"
 
+echo "== refused updates"
+$CC $FLAGS -o "$B/badpatch_test" test/badpatch_test.c src/badpatch.c
+"$B/badpatch_test"
+
 echo "== short path"
 $CC $FLAGS -o "$B/shortpath_test" test/shortpath_test.c src/shortpath.c
 "$B/shortpath_test"

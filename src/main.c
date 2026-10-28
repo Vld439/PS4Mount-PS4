@@ -41,6 +41,7 @@
 
 #include <ps4/kernel.h>
 
+#include "badpatch.h"
 #include "build.h"
 #include "catalog.h"
 #include "check.h"
@@ -522,6 +523,7 @@ static void dlc_open(title_src_t *t) {
 }
 
 static int first_time(const char *path);
+static int find_root(const char *tid, char *root, size_t n);
 
 /* Where the game is. Older versions moved the app pkg to <root>/ps4/<TID>/app.pkg and kept
  * its update and add-ons next to it; an in-place game has no folder of its own, and is the
@@ -579,6 +581,78 @@ static void dlc_open_catalog(title_src_t *t, const catalog_t *c, const cat_game_
         qsort(t->dlc, (size_t)t->ndlc, sizeof(*t->dlc), dlc_cmp);
 }
 
+/* --- the updates the system turns down --- */
+
+/* STATE_DIR/<TID>.badpatch names the update pkg the system refused (its size and time), so
+ * a game the console will not start with it is served without it, and another update pkg
+ * is tried again. */
+static const char *badpatch_path(const char *tid, char *out, size_t n) {
+    snprintf(out, n, STATE_DIR "/%s.badpatch", tid);
+    return out;
+}
+
+/* 1 when the update at patch_path is the one the system turned down. */
+static int patch_refused(const char *tid, const char *patch_path) {
+    char p[64], text[64];
+    struct stat st;
+    badpatch_path(tid, p, sizeof(p));
+    int fd = open(p, O_RDONLY);
+    if (fd < 0)
+        return 0;
+    ssize_t n = read(fd, text, sizeof(text) - 1);
+    close(fd);
+    text[n > 0 ? n : 0] = 0;
+    if (stat(patch_path, &st))
+        return 0;
+    return badpatch_matches(text, (uint64_t)st.st_size, (int64_t)st.st_mtime);
+}
+
+/* Writes the mark of the update at patch_path. 0 when it is written. */
+static int write_badpatch(const char *tid, const char *patch_path) {
+    char p[64], text[64];
+    struct stat st;
+    if (!patch_path[0] || stat(patch_path, &st))
+        return -1;
+    badpatch_path(tid, p, sizeof(p));
+    badpatch_text(text, sizeof(text), (uint64_t)st.st_size, (int64_t)st.st_mtime);
+    if (write_file(p, text, strlen(text), 0666)) {
+        printf("[reg] %s: cannot keep the refused update: %s\n", tid, strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+/* Remembers that the system refused this update (CheckCumulativePatch: the console will
+ * not start the game with it). The game is served without the update from now on. */
+static void refuse_patch(const char *tid, const char *patch_path, const char *name) {
+    if (write_badpatch(tid, patch_path))
+        return;
+    printf("[reg] %s: the system refuses update %s: left out until the pkg changes\n", tid, patch_path);
+    notify(TR("%s: the update is left out, the system refuses it", "%s: se deja fuera la actualización, el sistema la rechaza"),
+           name && name[0] ? name : tid);
+}
+
+static void clear_badpatch(const char *tid) {
+    char p[64];
+    unlink(badpatch_path(tid, p, sizeof(p)));
+}
+
+/* The pkg of the update the drive has for tid (catalog or folder). 0 when there is none. */
+static int title_patch_path(const char *root, const char *tid, char *out, size_t n) {
+    out[0] = 0;
+    if (!g_cfg.organize) {
+        const catalog_t *c = drive_catalog(root);
+        const cat_game_t *g = c ? catalog_game(c, tid) : NULL;
+        const cat_pkg_t *p = g ? catalog_patch(g_cat, c, g) : NULL;
+        if (!p)
+            return 0;
+        snprintf(out, n, "%s", p->path);
+        return 1;
+    }
+    snprintf(out, n, "%s/ps4/%s/patch.pkg", root, tid);
+    return exists(out);
+}
+
 /* Opens the pkgs of tid with the paths already chosen (dir, app_path and patch_path).
  * cat is NULL for the folders of older versions. */
 static int src_open_paths(title_src_t *t, const char *tid, const catalog_t *cat, const cat_game_t *g) {
@@ -596,7 +670,11 @@ static int src_open_paths(title_src_t *t, const char *tid, const catalog_t *cat,
     }
     if (t->patch_path[0] && exists(t->patch_path)) {
         const sfo_item_t *gv = sfo_get(&t->app_sfo, "VERSION");
-        if (pkg_open(&t->patch, t->patch_path) ||
+        if (patch_refused(tid, t->patch_path)) {
+            snprintf(t->update_issue, sizeof(t->update_issue), "%s",
+                     TR("Update left out: the system refuses it. It is tried again when the pkg changes",
+                        "Actualización descartada: el sistema la rechaza. Se vuelve a probar cuando cambie el pkg"));
+        } else if (pkg_open(&t->patch, t->patch_path) ||
             read_sfo_ex(&t->patch, &t->patch_sfo, t->patch_sfo_sha, &t->patch_sfo_len)) {
             snprintf(t->update_issue, sizeof(t->update_issue), "%s",
                      TR("Update ignored: the update pkg could not be read",
@@ -764,6 +842,9 @@ static uint64_t title_files_fp(const char *root, const char *tid) {
     }
     uint64_t h = fp_stat(title_fp_start(), app);
     h = fp_stat(h, patch);
+    /* an update left out (or tried again) changes what the game is */
+    char mark[96];
+    h = fp_stat(h, badpatch_path(tid, mark, sizeof(mark)));
     h = title_fp_add(h, g_cfg.dlc ? "add-ons" : "no add-ons", 0, g_cfg.dlc_big ? 1 : 0);
     return g_cfg.dlc ? fp_addons(h, root, tid) : h;
 }
@@ -2961,10 +3042,17 @@ static void scan_root(const char *root, int fresh, int reconnected) {
             if (!prepared[k] || src_open(&src, root, t->tid))
                 continue;
             if (register_finish(&src)) {
-                if (retry_failed(t->tid))
+                int first = retry_failed(t->tid);
+                if (!first && src.has_patch) {
+                    /* twice without the system taking it: the update is what it turns down
+                     * (CheckCumulativePatch); left out, it is tried again now */
+                    refuse_patch(t->tid, src.patch_path, t->name);
+                    retry_clear(t->tid);
+                } else if (first) {
                     notify(TR("Failed to add %s (%s), it is tried again every few minutes",
                               "No se pudo añadir %s (%s), se vuelve a intentar cada pocos minutos"),
                            t->name, t->tid);
+                }
             } else {
                 retry_clear(t->tid);
                 ok++;
@@ -3234,6 +3322,10 @@ static void trace_klog(const char *line) {
  * Removing the game from the library and adding it again made it start; this is done
  * once per title and daemon run, so a game that still fails is not removed again. */
 static char g_readd_tid[10], g_readd_why[64];
+/* The readd of a game whose update was refused: removing it clears the mark (clean_holds),
+ * so it is written again before the game is added back. */
+static int g_readd_badpatch;
+static char g_readd_patch[PATH_MAX];
 static char g_readd_done[MAX_TITLES][10];
 static int g_nreadd_done;
 static char g_last_launch[10]; /* the PS4's "APP_VER disagree" line names no title */
@@ -3305,13 +3397,25 @@ static void disagree_seen(const char *tid) {
     if (!m)
         return;
     m->running = 0; /* the launch was refused */
-    if (m->has_patch)
-        readd_queue(tid, TR("the system found another version", "el sistema encontró otra versión"));
+    if (!m->has_patch)
+        return;
+    /* The system holds one version of the game and the update is not it (it refuses the
+     * launch with CheckCumulativePatch): the game is added again without the update. */
+    char root[PATH_MAX], patch[PATH_MAX] = "";
+    if (!find_root(tid, root, sizeof(root)))
+        title_patch_path(root, tid, patch, sizeof(patch));
+    if (patch[0])
+        refuse_patch(tid, patch, m->name);
+    if (readd_queue(tid, TR("the system found another version", "el sistema encontró otra versión"))) {
+        g_readd_badpatch = patch[0] != 0;
+        snprintf(g_readd_patch, sizeof(g_readd_patch), "%s", patch);
+    }
 }
 
 /* PS4Mount's own folders of a game that left the library (the pkgs are not in them). */
 static void clean_holds(const char *tid, char (*dtids)[10], int ndtids) {
     char hold[PATH_MAX], link[PATH_MAX];
+    clear_badpatch(tid);
     snprintf(link, sizeof(link), STATE_DIR "/l/%s-app.pkg", tid);
     unlink(link);
     snprintf(link, sizeof(link), STATE_DIR "/l/%s-patch.pkg", tid);
@@ -3514,6 +3618,19 @@ void app_rescan(void) {
  * same size and time (a share that replaces a pkg in place looks unchanged otherwise). */
 void app_rescan_hard(void) {
     title_cache_forget();
+    /* the updates left out are tried again, too */
+    DIR *d = opendir(STATE_DIR);
+    struct dirent *e;
+    while (d && (e = readdir(d))) {
+        size_t l = strlen(e->d_name);
+        if (l > 8 && !strcmp(e->d_name + l - 8, ".badpatch")) {
+            char p[PATH_MAX];
+            snprintf(p, sizeof(p), STATE_DIR "/%s", e->d_name);
+            unlink(p);
+        }
+    }
+    if (d)
+        closedir(d);
     app_rescan();
 }
 void app_stop(void) { g_stop = 1; }
@@ -3814,6 +3931,12 @@ static void readd_title(const char *tid) {
            g_readd_why);
     int rc = app_remove(tid, msg, sizeof(msg));
     printf("[reg] %s: removed to add it again: %s\n", tid, msg);
+    if (g_readd_badpatch) {
+        /* the removal cleared it: the game comes back without the update */
+        g_readd_badpatch = 0;
+        write_badpatch(tid, g_readd_patch);
+        g_readd_patch[0] = 0;
+    }
     if (!rc)
         wait_db_quiet(3, 30);
     app_add(tid, msg, sizeof(msg));
