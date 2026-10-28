@@ -509,6 +509,36 @@ function tKeys(file) {
   });
   REPLY_LANG = undefined;
 
+  // --- a slow console is not piled with requests (the list reads every pkg: over a share,
+  // the whole library on each ask)
+  {
+    p = page('index.html', { dialog: true }); ({ w, d, reqs } = p);
+    await tick();
+    let inFlight = 0, most = 0;
+    const held = [];
+    w.fetch = (url) => {
+      if (url.indexOf('/api/games') !== 0) return Promise.resolve({ ok: true, json: () => Promise.resolve(reply(url)) });
+      inFlight++; most = Math.max(most, inFlight);
+      return new Promise((res) => held.push(() => { inFlight--; res({ ok: true, json: () => Promise.resolve(reply(url)) }); }));
+    };
+    w.load(); w.load(); w.load();
+    await tick();
+    ok(most === 1 && held.length === 1, 'the list is asked once at a time (' + most + ' in flight)');
+    held[0]();
+    await tick(); await tick();
+    ok(held.length === 2, 'the asks made while it was reading run once more, not once each');
+    held[1]();
+    await tick();
+    Object.defineProperty(d, 'hidden', { configurable: true, get: () => true });
+    let asked = 0, ticks = 0;
+    const later = w.setTimeout;
+    w.setTimeout = (fn) => { ticks++; if (ticks < 3) fn(); return 0; }; /* drive the chain by hand */
+    w.poll(1, () => { asked++; return Promise.resolve(); });
+    await new Promise((r) => setTimeout(r, 20)); /* its reschedules go through the stub */
+    w.setTimeout = later;
+    ok(asked === 0 && ticks >= 3, 'a page in a background tab asks nothing');
+  }
+
   // --- legacy page
   p = page('legacy.html', {}); ({ w, d, reqs } = p);
   await tick();
@@ -542,4 +572,6 @@ function tKeys(file) {
   d.getElementById('l-back').click();
   reqs.length = 0; d.querySelector('[data-a="unmount"][data-t="CUSA00791"]').click(); await tick();
   ok(reqs[0].url === '/api/unmount?title_id=CUSA00791' && reqs[0].method === 'POST', 'legacy card action posts');
-})();
+})()
+  /* jsdom keeps the windows' own timers: end the process, with the code ok() left */
+  .then(() => process.exit(process.exitCode || 0), (e) => { console.error(e); process.exit(1); });

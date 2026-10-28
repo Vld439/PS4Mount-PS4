@@ -174,13 +174,22 @@ function render() {
   for (var k in counts) s += '<span>' + esc(label(k)) + ': ' + counts[k] + '</span>';
   $('summary').innerHTML = s;
 }
-function load() {
+/* The list is asked again when the previous answer came back (a slow console must not
+ * get a pile of requests), and nothing is asked in a background tab. */
+function poll(ms, fn, when) {
+  setTimeout(function tick() {
+    if ((typeof document.hidden !== 'undefined' && document.hidden) || (when && !when())) { setTimeout(tick, ms); return; }
+    fn(function () { setTimeout(tick, ms); });
+  }, ms);
+}
+function load(done) {
   api('/api/games', 'GET', null, function (err, j) {
-    if (err) { say(t('Could not read the list: {0}', err)); return; }
+    if (err) { say(t('Could not read the list: {0}', err)); if (done) done(); return; }
     setLang(j.lang);
     games = j.games;
     $('ver').innerHTML = esc(j.version);
     render();
+    if (done) done();
   });
 }
 
@@ -338,7 +347,7 @@ $('p-go').onclick = function () {
 };
 
 load();
-setInterval(function () { if ($('v-games').className.indexOf('on') >= 0) load(); }, 5000);
+poll(5000, load, function () { return $('v-games').className.indexOf('on') >= 0; });
 </script>
 </body>
 </html>

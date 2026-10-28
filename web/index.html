@@ -384,14 +384,31 @@ $('summary').addEventListener('click', function (e) {
   if (c) { filter = c.getAttribute('data-f'); render(); }
 });
 
+/* Asks again only when the previous answer came back, and asks nothing while the page is
+ * in a background tab. The list costs the console a look at every pkg (over a share, that
+ * is the whole library), so piling requests up made it read without pause. */
+function poll(ms, fn, when) {
+  setTimeout(function step() {
+    if (document.hidden || (when && !when())) { setTimeout(step, ms); return; }
+    Promise.resolve().then(fn).then(function () { setTimeout(step, ms); }, function () { setTimeout(step, ms); });
+  }, ms);
+}
+var loadBusy = false, loadAgain = false;
 function load() {
-  api('/api/games').then(function (j) {
+  if (loadBusy) { loadAgain = true; return load.last; }
+  loadBusy = true;
+  load.last = api('/api/games').then(function (j) {
     /* a new PS4Mount loaded while this page was open: its own page, not this one */
     if (load.version && j.version !== load.version) { location.reload(); return; }
     load.version = j.version;
     setLang(j.lang); games = j.games; $('ver').textContent = j.version; render();
   })
-    .catch(function (e) { toast(t('Could not read the list: {0}', e.message)); });
+    .catch(function (e) { toast(t('Could not read the list: {0}', e.message)); })
+    .then(function () {
+      loadBusy = false;
+      if (loadAgain) { loadAgain = false; load(); }
+    });
+  return load.last;
 }
 
 function onAction(e) {
@@ -763,7 +780,7 @@ $('stop').onclick = function () {
   api('/api/stop', 'POST').then(function (j) { toast(j.message); });
 };
 load();
-setInterval(load, 5000);
+poll(5000, load);
 
 /* --- Google Drive --- */
 var drive = {}, driveBusyBefore = false;
@@ -928,8 +945,8 @@ $('d-rows').onclick = function (e) {
   }
   if (tr && confirm(t('Move {0} to the Drive trash? The pkgs on the console stay.', tr.getAttribute('data-tr')))) driveAct('trash', 'title_id=' + tr.getAttribute('data-tr'));
 };
-setInterval(function () { if ($('drivedlg').open || (drive.job && drive.job.busy) || (drive.login && drive.login.active)) loadDrive(); }, 2000);
-setInterval(function () { if (!$('drivedlg').open && !(drive.job && drive.job.busy)) loadDrive(); }, 15000);
+poll(2000, loadDrive, function () { return $('drivedlg').open || (drive.job && drive.job.busy) || (drive.login && drive.login.active); });
+poll(15000, loadDrive, function () { return !$('drivedlg').open && !(drive.job && drive.job.busy); });
 loadDrive();
 
 /* --- downloads from links --- */
@@ -1018,8 +1035,8 @@ $('lb-cancel').onclick = function () {
   if (links.job && links.job.busy && confirm(t('Cancel the download of {0}? What it downloaded so far is deleted.', links.job.name)))
     linkAct('cancel', 'id=' + links.job.id);
 };
-setInterval(function () { if ($('linkdlg').open || (links.job && links.job.busy)) loadLinks(); }, 2000);
-setInterval(function () { if (!$('linkdlg').open && !(links.job && links.job.busy)) loadLinks(); }, 15000);
+poll(2000, loadLinks, function () { return $('linkdlg').open || (links.job && links.job.busy); });
+poll(15000, loadLinks, function () { return !$('linkdlg').open && !(links.job && links.job.busy); });
 loadLinks();
 </script>
 </body>
