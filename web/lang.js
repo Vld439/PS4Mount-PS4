@@ -39,10 +39,12 @@ var LANGS = {
     "Pkgs sent to the console's storage are added from there, with no install to wait for. They still take internal space.":
       'Los pkgs enviados a la memoria de la consola se añaden desde ahí, sin esperar una instalación. Ocupan espacio interno.',
     'NAS (NFS or SMB)': 'NAS (NFS o SMB)',
-    'Not available on this firmware: the NAS needs 13.52 or 6.72.': 'No disponible en este firmware: el NAS necesita 13.52 o 6.72.',
+    'Not available on this firmware: there is no FUSE patch for it.': 'No disponible en este firmware: no hay parche de FUSE para él.',
+    "Experimental on this firmware: its FUSE patch is itemzflow's and was not tried with PS4Mount (it was on 13.52 and 6.72). If the console freezes when the share is mounted, restart it and turn the NAS off.":
+      'Experimental en este firmware: su parche de FUSE es el de itemzflow y no se ha probado con PS4Mount (sí en 13.52 y 6.72). Si la consola se cuelga al montar el recurso, reiníciala y apaga el NAS.',
     'Use a network share (read only)': 'Usar un recurso de red (solo lectura)',
-    'Only firmware 13.52 or 6.72, and only with pkgs used where they are: the share is never renamed or moved. It needs a wired console or a good Wi-Fi: games read at the speed of the network.':
-      'Solo firmware 13.52 o 6.72, y solo con los pkgs usados donde están: el recurso nunca se renombra ni se mueve. Hace falta la consola por cable o un buen Wi-Fi: los juegos leen a la velocidad de la red.',
+    'Firmware 5.05 to 13.52, and only with pkgs used where they are: the share is never renamed or moved. It needs a wired console or a good Wi-Fi: games read at the speed of the network.':
+      'Firmware 5.05 a 13.52, y solo con los pkgs usados donde están: el recurso nunca se renombra ni se mueve. Hace falta la consola por cable o un buen Wi-Fi: los juegos leen a la velocidad de la red.',
     'Protocol': 'Protocolo',
     'Server': 'Servidor',
     'Export (NFS) or share (SMB)': 'Exportación (NFS) o recurso (SMB)',
@@ -50,6 +52,25 @@ var LANGS = {
     'Port': 'Puerto',
     'User (SMB)': 'Usuario (SMB)',
     'Password (SMB)': 'Contraseña (SMB)',
+    'Remove several': 'Quitar varios',
+    "Console storage: turn on \"Also use pkgs in the console's /data/PS4Mount\" in Settings":
+      'Memoria de la consola: activa "Usar también los pkgs de /data/PS4Mount de la consola" en Ajustes',
+    'Remove games from the library': 'Quitar juegos de la biblioteca',
+    "The chosen games leave the console's home screen. Their pkgs stay where they are: nothing is deleted, and Add to library brings each one back.":
+      'Los juegos elegidos salen de la pantalla de inicio de la consola. Sus pkgs se quedan donde están: no se borra nada, y Añadir a la biblioteca devuelve cada uno.',
+    'Remove the chosen ones': 'Quitar los elegidos',
+    'No games to remove (an open game is closed first)': 'No hay juegos que quitar (cierra antes el juego abierto)',
+    'Remove {0} game(s) from the library? Their pkgs stay where they are.': '¿Quitar {0} juego(s) de la biblioteca? Sus pkgs se quedan donde están.',
+    '{0} removed; not removed: {1}': '{0} quitado(s); sin quitar: {1}',
+    '{0} game(s) removed from the library': '{0} juego(s) quitado(s) de la biblioteca',
+    'Removing {0} of {1}…': 'Quitando {0} de {1}…',
+    'First start: check the settings (which folders, games per group, add-ons) and press Save in Settings. No game is added until then.':
+      'Primera vez: revisa los ajustes (qué carpetas, juegos por grupo, DLC) y pulsa Guardar en Ajustes. Hasta entonces no se añade ningún juego.',
+    'Look for new games on it': 'Buscar juegos nuevos en él',
+    'Every minute': 'Cada minuto',
+    'Every 10 minutes': 'Cada 10 minutos',
+    'Every hour': 'Cada hora',
+    'Only with Scan for games': 'Solo con Buscar juegos',
     'saved': 'guardada',
     "Find servers on the network":
       "Buscar servidores en la red",

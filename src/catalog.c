@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "la_alloc.h" /* the arrays grow past the libc heap of the payload's process */
 #include "mem.h"
 #include "pkg.h"
 

@@ -4,25 +4,45 @@ PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount
 
 ## 0.6.3-beta
 
-The network share works on **firmware 6.72** too, and adding a NAS library no longer reads it once and again: each game is read once and kept, while the console is on and between restarts, and only new or changed pkgs are opened. The panel stays usable while a drive is walked or a game is read, long pkg paths no longer leave a game half registered, and a game whose update the system refuses (Bloodborne) is added without it.
+The network share works on **firmware 6.72** too (and, experimental, on every firmware itemzflow has a FUSE patch for, 5.05 to 13.50), and adding a NAS library no longer reads it once and again: each game is read once and kept, while the console is on and between restarts, and only new or changed pkgs are opened. The panel stays usable while a drive is walked or a game is read, long pkg paths no longer leave a game half registered, and a game whose update the system refuses (Bloodborne) is added without it. Also from the 6.72 tester's report: the notice shows the panel's real address and says when the games are ready, a first start waits for the settings, the share can be checked less often or only by hand, and several games can be removed at once.
+
+**Upgrading with games on a NAS**: their paths change once (see below), so they are added again and the console asks for one restart.
 
 **Español**
 
 - **NAS en el firmware 6.72**, además del 13.52: el parche que enciende FUSE va por firmware, y el de 6.72 (el de itemzflow) ya está probado en consola.
+- **NAS experimental de 5.05 a 13.50**: los parches de FUSE de itemzflow para los otros 25 firmwares, convertidos tal cual (los de 6.72 y 13.52 salen idénticos a los probados). El panel avisa de que en ese firmware es experimental.
 - **Añadir juegos ya no relee la biblioteca entera**: cada juego se lee una vez y se guarda por unidad (`/data/ps4mount/titles-<unidad>.txt`), y solo se abren los pkgs nuevos o cambiados y los del grupo que se está registrando. Al añadir, un pkg por juego en vez de la biblioteca otra vez.
 - El **panel** pide la lista de una en una, no pide nada con la pestaña en segundo plano, y sigue contestando mientras se recorre una unidad o se lee un juego, también **Parar**.
-- **Rutas largas**: el sistema corta la ruta de un pkg a 95 caracteres y el juego quedaba a medias. PS4Mount le da un enlace corto (`/data/ps4mount/l/<TITLE_ID>.pkg`) cuando la ruta no cabe; sirve igual para USB y NAS.
+- **Rutas largas**: el sistema corta la ruta de un pkg a 95 caracteres y el juego quedaba a medias. PS4Mount le da un enlace corto (`/data/ps4mount/l/<TITLE_ID>-app.pkg`, `-patch.pkg`, `-ac-<DLC>.pkg`, uno por DLC) cuando la ruta no cabe; sirve igual para USB y NAS.
+- **El NAS tiene siempre la misma ruta** (`/data/ps4mount/nas`, un enlace al montaje): volver a cargar PS4Mount en el mismo arranque lo montaba en otra carpeta (`nas-2`, `nas-3`…), y eso releía la biblioteca entera y volvía a añadir todos sus juegos pidiendo reiniciar. Ahora no se lee nada ni se añade nada.
+- **Ajustes → NAS → Buscar juegos nuevos en él**: cada minuto (como antes), cada 10 minutos, cada hora o **solo con Buscar juegos**.
+- El aviso de arranque da la **dirección real del panel** (`http://192.168.1.50:8770`), y al terminar el primer análisis avisa de cuántos juegos están **listos para jugar** (abrir uno antes daba "datos dañados").
+- **Primera vez**: si en la consola no hay nada de PS4Mount, no se añade ningún juego hasta guardar los Ajustes una vez (antes, un USB ya conectado se añadía entero con los valores por defecto). Quien ya lo usaba no nota nada.
+- **Quitar varios**: botón en el panel para quitar de la biblioteca los juegos elegidos (o todos) de una vez.
+- **Enviar juegos** explica cómo activar la memoria de la consola como destino cuando está apagada.
+- El panel ya no deja juegos "en marcha" que el sistema no llegó a abrir o que se cerraron con error; el log dice cuándo el sistema cierra un juego que no se suspendió a tiempo (lo que pierde el progreso sin guardar).
+- Una conexión `https://` al panel se cierra al momento (el panel es solo `http://`), y el README lo explica.
 - El **log** dice qué está haciendo el análisis (`checking N pkg(s), M new or changed`, `M read in X s`) y solo cuenta las lecturas de verdad: una línea por MB ya no llena el log.
-- **Actualizaciones que el sistema rechaza** (Bloodborne 01.09): el juego se añade **sin la actualización**, y esa actualización no se vuelve a usar; si el pkg cambia (otra actualización) se prueba de nuevo. **Buscar juegos** y quitar el juego también lo reintentan.
+- **Actualizaciones que el sistema rechaza** (Bloodborne 01.09): el juego se añade **sin la actualización**, y esa actualización no se vuelve a usar; si el pkg cambia (otra actualización) se prueba de nuevo, y también con **Buscar juegos**. Las marcas que dejaron versiones anteriores se siguen respetando.
 
 **English**
 
 - **NAS on firmware 6.72**, as well as 13.52: the patch that enables FUSE is per firmware, and the 6.72 one (itemzflow's) is tested on a console.
+- **Experimental NAS on 5.05 to 13.50**: itemzflow's FUSE patches for the other 25 firmwares, converted one for one (those of 6.72 and 13.52 come out the same as the tested ones). The panel says it is experimental on that firmware.
 - **Adding games no longer reads the whole library again**: each game is read once and kept per drive (`/data/ps4mount/titles-<drive>.txt`), and only new or changed pkgs and those of the group being registered are opened. Adding a game costs one pkg; the library is not read again.
 - The **panel** asks for the list one request at a time, asks for nothing in a background tab, and answers while a drive is walked or a game is read, **Stop** included.
-- **Long paths**: the system cuts a pkg path at 95 characters, which left a game half registered. PS4Mount hands it a short link (`/data/ps4mount/l/<TITLE_ID>.pkg`) when the path does not fit; it works for USB drives and NAS alike.
+- **Long paths**: the system cuts a pkg path at 95 characters, which left a game half registered. PS4Mount hands it a short link (`/data/ps4mount/l/<TITLE_ID>-app.pkg`, `-patch.pkg`, `-ac-<ADD-ON>.pkg`, one per add-on) when the path does not fit; it works for USB drives and NAS alike.
+- **The NAS always has the same path** (`/data/ps4mount/nas`, a link to the mount): loading PS4Mount again in the same boot mounted it in another folder (`nas-2`, `nas-3`…), which read the whole library again and added all its games again, asking for a restart. Now nothing is read and nothing is added.
+- **Settings → NAS → Look for new games on it**: every minute (as before), every 10 minutes, every hour or **only with Scan for games**.
+- The start notice gives the panel's **real address** (`http://192.168.1.50:8770`), and when the first scan ends it says how many games are **ready to play** (starting one earlier said its data was corrupted).
+- **First start**: when the console has nothing of PS4Mount yet, no game is added until the Settings are saved once (a USB drive plugged in already was added whole with the defaults). Existing users notice nothing.
+- **Remove several**: a panel button removes the chosen games (or all) from the library at once.
+- **Send games** says how to turn on the console's storage as a destination when it is off.
+- The panel no longer shows games as running when the system never started them or they closed with an error; the log says when the system closes a game that did not suspend in time (which loses unsaved progress).
+- An `https://` connection to the panel is closed at once (the panel is `http://` only), and the README says so.
 - The **log** says what the scan is doing (`checking N pkg(s), M new or changed`, `M read in X s`) and only counts real reads: a line per MB no longer fills it.
-- **Updates the system refuses** (Bloodborne 01.09): the game is added **without the update**, and that update is not used again; when the pkg changes (another update) it is tried again. **Scan for games** and removing the game retry it too.
+- **Updates the system refuses** (Bloodborne 01.09): the game is added **without the update**, and that update is not used again; when the pkg changes (another update) it is tried again, and with **Scan for games** too. The marks left by earlier versions are still honoured.
 
 ## 0.6.2-beta
 

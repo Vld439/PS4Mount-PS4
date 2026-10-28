@@ -109,6 +109,7 @@ button.small{padding:5px 10px;font-size:13px}
   <div class="bar">
     <input id="q" type="search" placeholder="Search game or CUSA">
     <button id="rescan" class="primary">Scan for games</button>
+    <button id="removebtn">Remove several</button>
     <button id="sendbtn" hidden>Send games</button>
     <button id="linkbtn" hidden>Download links</button>
     <button id="backupbtn" hidden>Back up to Drive</button>
@@ -123,6 +124,7 @@ button.small{padding:5px 10px;font-size:13px}
 <div id="linkbar"><span class="db-main" id="lb-text"></span><progress id="lb-prog" max="1" value="0"></progress><button class="small" id="lb-cancel">Cancel</button>
   <span class="db-sub" id="lb-sub"></span></div>
 <main>
+  <div class="warn" id="setupnote" hidden>First start: check the settings (which folders, games per group, add-ons) and press Save in Settings. No game is added until then.</div>
   <div class="summary" id="summary"></div>
   <div class="grid" id="grid"></div>
   <div class="empty" id="empty" hidden>No PS4 games found. Put the .pkg files (game, update and add-ons) in the PS4Mount folder of a USB drive, or send them with Send games.</div>
@@ -149,9 +151,10 @@ button.small{padding:5px 10px;font-size:13px}
   <span class="hint" style="margin-top:-8px">Pkgs sent to the console's storage are added from there, with no install to wait
     for. They still take internal space.</span>
   <fieldset id="nasbox"><legend>NAS (NFS or SMB)</legend>
-    <span class="hint" id="nas-unsupported" hidden>Not available on this firmware: the NAS needs 13.52 or 6.72.</span>
+    <span class="hint" id="nas-unsupported" hidden>Not available on this firmware: there is no FUSE patch for it.</span>
+    <span class="warn" id="nas-experimental" hidden>Experimental on this firmware: its FUSE patch is itemzflow's and was not tried with PS4Mount (it was on 13.52 and 6.72). If the console freezes when the share is mounted, restart it and turn the NAS off.</span>
     <label class="check"><input type="checkbox" id="s-nas"> Use a network share (read only)</label>
-    <span class="hint" style="margin-top:-8px">Only firmware 13.52 or 6.72, and only with pkgs used where they are: the share
+    <span class="hint" style="margin-top:-8px">Firmware 5.05 to 13.52, and only with pkgs used where they are: the share
       is never renamed or moved. It needs a wired console or a good Wi-Fi: games read at the speed of the network.</span>
     <div class="row" style="justify-content:flex-start;flex-wrap:wrap">
       <button type="button" id="nas-find">Find servers on the network</button>
@@ -182,6 +185,9 @@ button.small{padding:5px 10px;font-size:13px}
       <label>Port <input type="text" class="num" id="s-nas-port" inputmode="numeric" pattern="[0-9]*" placeholder="auto"></label>
       <label id="nas-userl">User (SMB) <input type="text" id="s-nas-user" spellcheck="false" autocapitalize="off" placeholder="guest"></label>
       <label id="nas-passl">Password (SMB) <input type="password" id="s-nas-pass" autocomplete="new-password" placeholder="saved"></label>
+      <label>Look for new games on it
+        <select id="s-nas-rescan"><option value="1">Every minute</option><option value="10">Every 10 minutes</option><option value="60">Every hour</option><option value="0">Only with Scan for games</option></select>
+      </label>
     </div>
     <span class="hint" id="nas-status"></span>
   </fieldset>
@@ -211,6 +217,16 @@ button.small{padding:5px 10px;font-size:13px}
 <div class="hint" id="p-info"></div>
 <div class="row" style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
   <button type="button" id="p-cancel">Cancel</button><button type="button" class="danger" id="p-go" disabled>Restore the chosen ones</button>
+</div></dialog>
+<dialog id="remdlg"><h3>Remove games from the library</h3>
+<div class="note">The chosen games leave the console's home screen. Their pkgs stay where they are: nothing is deleted, and Add to library brings each one back.</div>
+<div class="pickwrap"><table class="picker">
+  <thead><tr><th class="c"><input type="checkbox" id="r-all" title="Select all"></th><th>Game</th></tr></thead>
+  <tbody id="r-rows"></tbody>
+</table></div>
+<div class="hint" id="r-info"></div>
+<div class="row" style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+  <button type="button" id="r-cancel">Cancel</button><button type="button" class="danger" id="r-go" disabled>Remove the chosen ones</button>
 </div></dialog>
 <dialog id="senddlg"><h3>Send games</h3>
 <div class="hint" style="color:var(--muted);font-size:13px;margin-bottom:10px">Pick the pkgs on this computer. Each one is
@@ -401,7 +417,7 @@ function load() {
     /* a new PS4Mount loaded while this page was open: its own page, not this one */
     if (load.version && j.version !== load.version) { location.reload(); return; }
     load.version = j.version;
-    setLang(j.lang); games = j.games; $('ver').textContent = j.version; render();
+    setLang(j.lang); games = j.games; $('ver').textContent = j.version; $('setupnote').hidden = !j.setup; render();
   })
     .catch(function (e) { toast(t('Could not read the list: {0}', e.message)); })
     .then(function () {
@@ -451,10 +467,13 @@ $('settingsbtn').onclick = function () {
     $('s-nas-share').value = c.nas_share || '';
     $('s-nas-sub').value = c.nas_sub || '';
     $('s-nas-port').value = c.nas_port ? c.nas_port : '';
+    $('s-nas-rescan').value = String(c.nas_rescan);
+    if ($('s-nas-rescan').value !== String(c.nas_rescan)) $('s-nas-rescan').value = '1';
     $('s-nas-user').value = c.nas_user || '';
     $('s-nas-pass').value = '';
     $('s-nas-pass').placeholder = c.nas_has_pass ? t('saved') : '';
     $('nas-unsupported').hidden = nasOk;
+    $('nas-experimental').hidden = !nasOk || c.nas_tested;
     $('nas-find').disabled = $('nas-list').disabled = !nasOk;
     $('nas-msg').textContent = '';
     $('nas-hosts').innerHTML = $('nas-shares').innerHTML = '';
@@ -480,6 +499,7 @@ function nasFields() {
   $('s-nas-share').disabled = !on;
   $('s-nas-sub').disabled = !on;
   $('s-nas-port').disabled = !on;
+  $('s-nas-rescan').disabled = !on;
   $('s-nas-user').disabled = !on || !smb;
   $('s-nas-pass').disabled = !on || !smb;
 }
@@ -612,6 +632,54 @@ $('p-all').onchange = function () {
   pickUpdate();
 };
 $('p-cancel').onclick = function () { $('pickdlg').close(); };
+
+/* Remove several: one request per game, in order (each takes a second or two). */
+function remChosen() {
+  var boxes = $('r-rows').getElementsByTagName('input'), tids = [];
+  for (var i = 0; i < boxes.length; i++) if (boxes[i].checked) tids.push(boxes[i].value);
+  return tids;
+}
+function remUpdate() {
+  var n = remChosen().length, all = $('r-rows').getElementsByTagName('input').length;
+  $('r-all').checked = n > 0 && n === all;
+  $('r-go').disabled = !n;
+  $('r-info').textContent = n ? t('{0} game(s) selected', n) : t('No games selected');
+}
+$('removebtn').onclick = function () {
+  var rows = '';
+  games.slice().sort(byName).forEach(function (g) {
+    if (g.state !== 'ready' && g.state !== 'restart') return;
+    rows += '<tr><td class="c"><input type="checkbox" value="' + g.title_id + '"></td>' +
+      '<td>' + esc(g.name) + '<div class="meta">' + g.title_id + ' · ' + esc(g.source) + '</div></td></tr>';
+  });
+  $('r-rows').innerHTML = rows || '<tr><td colspan="2">' + t('No games to remove (an open game is closed first)') + '</td></tr>';
+  remUpdate();
+  $('remdlg').showModal();
+};
+$('r-rows').onchange = remUpdate;
+$('r-all').onchange = function () {
+  var boxes = $('r-rows').getElementsByTagName('input');
+  for (var i = 0; i < boxes.length; i++) boxes[i].checked = this.checked;
+  remUpdate();
+};
+$('r-cancel').onclick = function () { $('remdlg').close(); };
+$('r-go').onclick = function () {
+  var tids = remChosen(), done = 0, failed = [];
+  if (!tids.length || !confirm(t('Remove {0} game(s) from the library? Their pkgs stay where they are.', tids.length))) return;
+  $('r-go').disabled = true;
+  (function next(i) {
+    if (i >= tids.length) {
+      $('remdlg').close();
+      toast(failed.length ? t('{0} removed; not removed: {1}', done, failed.join(', ')) : t('{0} game(s) removed from the library', done));
+      load();
+      return;
+    }
+    $('r-info').textContent = t('Removing {0} of {1}…', i + 1, tids.length);
+    api('/api/unmount?title_id=' + tids[i], 'POST')
+      .then(function () { done++; }, function () { failed.push(tids[i]); })
+      .then(function () { next(i + 1); });
+  })(0);
+};
 $('p-go').onclick = function () {
   var size = restoreSize(), boxes = $('p-rows').getElementsByTagName('input'), tids = [];
   if (!size) return;
@@ -636,6 +704,7 @@ $('setform').onsubmit = function (e) {
     '&dlc=' + ($('s-dlc').checked ? 1 : 0) + '&dlc_big=' + ($('s-dlcbig').checked ? 1 : 0) + '&organize=' + ($('s-organize').checked ? 1 : 0) + '&internal=' + ($('s-internal').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value) +
     '&nas=' + ($('s-nas').checked ? 1 : 0) + '&nas_proto=' + $('s-nas-proto').value +
     '&nas_port=' + encodeURIComponent($('s-nas-port').value) +
+    '&nas_rescan=' + $('s-nas-rescan').value +
     '&nas_server=' + encodeURIComponent($('s-nas-server').value.trim()) +
     '&nas_share=' + encodeURIComponent($('s-nas-share').value.trim()) +
     '&nas_sub=' + encodeURIComponent($('s-nas-sub').value.trim()) +
@@ -653,9 +722,11 @@ function destById(id) { for (var i = 0; i < dests.length; i++) if (dests[i].id =
 function fillDests(list) {
   var cur = $('dest').value;
   dests = list || [];
-  $('dest').innerHTML = dests.map(function (d) {
+  $('dest').innerHTML = (dests.map(function (d) {
     return '<option value="' + esc(d.id) + '">' + esc(d.label) + ' — ' + esc(d.folder) + ' (' + esc(t('{0} free', mb(d.free))) + ')</option>';
-  }).join('') || '<option value="">' + t('No drive connected') + '</option>';
+  }).join('') || '<option value="">' + t('No drive connected') + '</option>') +
+    /* the console's storage is a place to send to only when it is used: say where to turn it on */
+    (destById('internal') ? '' : '<option value="" disabled>' + esc(t("Console storage: turn on \"Also use pkgs in the console's /data/PS4Mount\" in Settings")) + '</option>');
   if (destById(cur)) $('dest').value = cur;
 }
 /* Why it cannot be sent to the chosen place, or '' when it can. */

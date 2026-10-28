@@ -12,5 +12,6 @@
 
 /* 1 and the link name in out (n bytes) when the system must be handed a link instead of
  * path, 0 when path itself fits (out untouched). The link is <dir>/<tid>-<kind>.pkg: a
- * symlink to path, made by the caller. */
+ * symlink to path, made by the caller. kind tells the pkgs of one game apart: "app",
+ * "patch", or "ac-<label>" for each add-on. */
 int short_pkg_link(const char *dir, const char *tid, const char *kind, const char *path, char *out, size_t n);

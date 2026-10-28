@@ -35,7 +35,7 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 | --- | --- |
 | Juegos desde un **USB exFAT** (también pkgs de más de 4 GB) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
 | Juegos desde la **memoria interna** (`/data/PS4Mount`) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
-| Juegos desde una **NAS** por **SMB o NFS**, solo lectura, con búsqueda en la red | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado (firmware 13.52 y 6.72) |
+| Juegos desde una **NAS** por **SMB o NFS**, solo lectura, con búsqueda en la red | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado (firmware 13.52 y 6.72; de 5.05 a 13.50, experimental) |
 | **Actualizaciones** | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
 | Juegos **donde están**, sin mover ni renombrar los pkgs (cualquier carpeta de la unidad) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
 | **DLC** de hasta 256 MB (casi todos: trajes, packs, licencias) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: PS4Mount los instala con el instalador del sistema en segundos, y aparecen en la información del juego |
@@ -54,14 +54,14 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 ## Requisitos
 
 - Una PS4 con jailbreak y **GoldHEN** (con su BinLoader activado, el puerto 9090).
-- **Payload Guest** u otra forma de cargar payloads.
+- Una forma de cargar payloads: **Payloader/Launchpad** de GoldHEN (recomendado), Payload Guest, o la línea de PS4Mount en `/data/GoldHEN/payloads.ini` para que arranque solo.
 - Pkgs **fake** de PS4 (`CUSA…`).
 - Para jugar desde un USB: un disco formateado en **exFAT**.
 
 ## Uso
 
 1. **Descarga** `ps4mount-ps4.bin` de [Releases](https://github.com/Vld439/PS4Mount-PS4/releases) y cópialo en **`/data/payloads/`** de la consola (por FTP, o como copies tus otros payloads).
-2. **Después de cada arranque**, abre **Payload Guest** y elige PS4Mount. Aparece la notificación `PS4Mount 0.2.0-beta en marcha. Panel en http://<IP de la PS4>:8770`.
+2. **Después de cada arranque**, carga PS4Mount (Payloader/Launchpad de GoldHEN, Payload Guest o AutoRun). Aparece la notificación `PS4Mount <versión> en marcha. Panel en http://192.168.1.50:8770`, con la IP de tu consola.
 3. **Pon los juegos**, de una de estas formas:
    - **En un USB:** copia los pkgs **donde quieras** del disco (por ejemplo en la carpeta `PS4Mount`, o en una carpeta por juego) y conéctalo a la PS4. PS4Mount los busca en todo el disco y los agrupa por el título que llevan dentro (juego, actualización y DLC), sin moverlos ni renombrarlos; las carpetas ocultas y las del sistema no se miran.
    - **Desde el PC:** con **Enviar juegos** en el panel (ver más abajo).
@@ -271,7 +271,7 @@ Ya está: el panel muestra tu correo y tu espacio. La conexión se guarda en la 
 | Instalar también los DLC grandes | Sí | Los DLC de más de 256 MB también se instalan, en segundo plano: un juego solo ve un DLC instalado por el sistema. Ocupan memoria interna; antes se comprueba que haya sitio. Apagado, no se usan. |
 | Organizar los pkgs en la carpeta ps4 | No | Mueve los pkgs a `ps4/<TITLE_ID>/` para tenerlos ordenados. Apagado (por defecto), los pkgs se usan donde están, con su nombre, sin mover ni renombrar nada; los que PS4Mount ya había organizado vuelven solos a su sitio original (los organizados a mano se quedan en `ps4/`). En la memoria interna se buscan solo `/data/PS4Mount` y `ps4`. |
 | Usar también los pkgs de /data/PS4Mount | Sí | Usa también los pkgs de la memoria interna. |
-| NAS (NFS o SMB) | No | Usa los pkgs de una carpeta compartida en red, **solo lectura** y sin mover ni renombrar nada (con Organizar activado no aparece). Firmware 13.52 y 6.72 (ver abajo). |
+| NAS (NFS o SMB) | No | Usa los pkgs de una carpeta compartida en red, **solo lectura** y sin mover ni renombrar nada (con Organizar activado no aparece). Firmware 5.05 a 13.52 (ver abajo). |
 | Idioma | El de la consola | El idioma del panel y de las notificaciones: el de la consola, inglés o español. |
 
 Se guardan en `/data/ps4mount/config.txt`. Los ajustes también tienen **Restaurar los archivos de todos los juegos** (o de los elegidos) y **Volver a usar los pkgs restaurados**.
@@ -309,7 +309,7 @@ Los campos se pueden rellenar también a mano:
 | Usuario y contraseña (SMB) | Vacíos, entra como invitado. La contraseña se guarda en claro en `config.txt`. |
 
 - **Mejor por cable.** PS4Mount pide los datos por adelantado y varios a la vez, así que aprovecha casi toda la red, pero por Wi-Fi las cargas son lentas y alguna textura tarda en aparecer. **Con cable** se juega como desde el disco interno. Si no tienes switch ni un puerto libre en el router, sirve un **cable directo del PC a la consola**: en el PC, comparte su conexión por ese cable (en Linux con NetworkManager: `nmcli connection add type ethernet ifname <interfaz> con-name ps4 ipv4.method shared`; en Windows, "Conexión compartida a Internet" del adaptador Wi-Fi), y en la PS4 configura la red por cable en modo **Fácil**.
-- **Solo firmware 13.52 y 6.72**: en otros el ajuste sale desactivado (la consola no trae NFS y el sistema de ficheros en modo usuario, FUSE, no se puede activar).
+- **Firmware**: probado en **13.52 y 6.72**. En 5.05, 5.07, 9.00, 9.03, 9.04, 9.50, 9.51, 9.60, 10.00, 10.01, 10.50, 10.70, 10.71, 11.00, 11.02, 11.50, 11.52, 12.00, 12.02, 12.50, 12.52, 13.00, 13.02, 13.04 y 13.50 es **experimental**: el parche que activa FUSE es el de itemzflow, sin probar con PS4Mount (el panel lo avisa). En el resto (por ejemplo 7.xx y 8.xx) el ajuste sale desactivado: no hay parche de FUSE conocido.
 - **Solo con Organizar apagado** (el valor por defecto): el recurso nunca se organiza.
 - **SMB** usa SMB2/3. **NFS** prueba NFSv4.2, NFSv4.0 y NFSv3; para que el panel liste las exportaciones, el servidor tiene que tener `rpcbind` (si no, escríbela a mano).
 - Un servidor que **no contesta** (apagado, dirección mal escrita, cortafuegos) se avisa en 3 segundos.
@@ -343,7 +343,8 @@ Con "Organizar" apagado, **borrar desde la consola no borra tus pkgs**: el juego
 | --- | --- |
 | CE-32930-7 al abrir un juego recién añadido | Reinicia la consola una vez y vuelve a cargar PS4Mount. |
 | "No se puede iniciar la aplicación" | Comprueba que PS4Mount está en marcha y que el disco del juego está conectado (PS4Mount avisa si no lo está). |
-| El panel no abre | Usa la IP de la **consola**, con `http://` delante y `:8770`, desde la misma red. |
+| El panel no abre | Escribe la dirección **completa** del aviso, con `http://` delante y `:8770`, desde la misma red. El panel no tiene https: si el navegador la cambia a `https://`, corrígela a mano (o desactiva el modo "solo HTTPS" para esa dirección). |
+| Algunos juegos no arrancan en 7.xx, ni siquiera instalados de forma normal | Activa el **AIO fix** en los ajustes de GoldHEN. |
 | Un pkg no se añade | Mira el log (panel → **Log**): dice por qué (no es fake, necesita otro firmware, está incompleto…). |
 | El panel o las notificaciones salen en otro idioma | Cámbialo en **Ajustes → Idioma**. |
 | Google Drive: `invalid_client` al conectar | El cliente no es del tipo **TV y dispositivos de entrada limitada**, o el ID/secreto están mal copiados: crea uno de ese tipo y pégalo de nuevo. |
@@ -424,7 +425,7 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 | --- | --- |
 | Games from an **exFAT USB drive** (pkgs over 4 GB too) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
 | Games from the **console's storage** (`/data/PS4Mount`) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
-| Games from a **NAS** over **SMB or NFS**, read only, found on the network | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested (firmware 13.52 and 6.72) |
+| Games from a **NAS** over **SMB or NFS**, read only, found on the network | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested (firmware 13.52 and 6.72; 5.05 to 13.50 experimental) |
 | **Updates** | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
 | Games **where they are**, without moving or renaming their pkgs (any folder of the drive) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
 | **Add-ons (DLC)** up to 256 MB (almost all: costumes, packs, licenses) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: PS4Mount installs them with the system's installer in seconds, and they show in the game's information |
@@ -443,14 +444,14 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 ## Requirements
 
 - A jailbroken PS4 with **GoldHEN** (its BinLoader on, port 9090).
-- **Payload Guest** or another way to load payloads.
+- A way to load payloads: GoldHEN's **Payloader/Launchpad** (recommended), Payload Guest, or PS4Mount's line in `/data/GoldHEN/payloads.ini` to start it on its own.
 - PS4 **fake** pkgs (`CUSA…`).
 - To play from USB: a drive formatted as **exFAT**.
 
 ## Use
 
 1. **Download** `ps4mount-ps4.bin` from [Releases](https://github.com/Vld439/PS4Mount-PS4/releases) and copy it to **`/data/payloads/`** on the console (over FTP, or however you copy your other payloads).
-2. **After every boot**, open **Payload Guest** and pick PS4Mount. The notification `PS4Mount 0.2.0-beta running. Panel at http://<PS4 IP>:8770` shows up.
+2. **After every boot**, load PS4Mount (GoldHEN's Payloader/Launchpad, Payload Guest or AutoRun). The notification `PS4Mount <version> running. Panel at http://192.168.1.50:8770` shows up, with your console's IP.
 3. **Add games**, one of these ways:
    - **On a USB drive:** copy the pkgs **anywhere on the drive** (for example the `PS4Mount` folder, or one folder per game) and plug it into the PS4. PS4Mount searches the whole drive and groups them by the title they carry inside (game, update and add-ons), without moving or renaming them; hidden and system folders are skipped.
    - **From a computer:** with **Send games** in the panel (see below).
@@ -660,7 +661,7 @@ That is all: the panel shows your email and your space. The connection is kept o
 | Also install big add-ons | On | Add-ons over 256 MB are installed too, in the background: a game only sees an add-on the system has installed. They take internal space; there has to be room first. Off, they are not used. |
 | Organize pkgs into the ps4 folder | Off | Moves the pkgs to `ps4/<TITLE_ID>/` to keep them in order. Off (the default), the pkgs are used where they are, with their own names, without moving or renaming anything; the ones PS4Mount had organized go back on their own to where they were (the ones you organized by hand stay in `ps4/`). On the console's storage, only `/data/PS4Mount` and `ps4` are searched. |
 | Also use pkgs in the console's /data/PS4Mount | On | Uses the pkgs in the console's storage too. |
-| NAS (NFS or SMB) | Off | Uses the pkgs in a shared network folder, **read only** and without moving or renaming anything (it does not show with Organize on). Firmware 13.52 and 6.72 (see below). |
+| NAS (NFS or SMB) | Off | Uses the pkgs in a shared network folder, **read only** and without moving or renaming anything (it does not show with Organize on). Firmware 5.05 to 13.52 (see below). |
 | Language | The console's | The language of the panel and the notifications: the console's, English or Spanish. |
 
 They are saved in `/data/ps4mount/config.txt`. The settings also have **Restore the files of all games** (or of chosen ones) and **Use restored pkgs again**.
@@ -698,7 +699,7 @@ The fields can be filled in by hand too:
 | User and password (SMB) | Empty, it goes in as a guest. The password is saved in plain text in `config.txt`. |
 
 - **Wired is best.** PS4Mount asks for the data ahead of time, several pieces at once, so it uses almost all of the network, but over Wi-Fi loading is slow and some textures take a moment. **Over a cable** games play as from the internal drive. With no switch or free router port, a **cable straight from the computer to the console** works too: share the computer's connection on that cable (on Linux with NetworkManager: `nmcli connection add type ethernet ifname <interface> con-name ps4 ipv4.method shared`; on Windows, "Internet Connection Sharing" on the Wi-Fi adapter), and set the PS4's wired network to **Easy**.
-- **Firmware 13.52 and 6.72**: on others the setting is disabled (the console has no NFS, and the user-space file system, FUSE, cannot be switched on).
+- **Firmware**: tested on **13.52 and 6.72**. On 5.05, 5.07, 9.00, 9.03, 9.04, 9.50, 9.51, 9.60, 10.00, 10.01, 10.50, 10.70, 10.71, 11.00, 11.02, 11.50, 11.52, 12.00, 12.02, 12.50, 12.52, 13.00, 13.02, 13.04 and 13.50 it is **experimental**: the patch that switches FUSE on is itemzflow's, not tried with PS4Mount (the panel says so). On the rest (7.xx and 8.xx, for one) the setting is disabled: there is no known FUSE patch.
 - **Only with Organize off** (the default): the share is never organized.
 - **SMB** uses SMB2/3. **NFS** tries NFSv4.2, NFSv4.0 and NFSv3; for the panel to list the exports, the server needs `rpcbind` (otherwise type the export by hand).
 - A server that **does not answer** (off, a mistyped address, a firewall) is reported in 3 seconds.
@@ -733,7 +734,8 @@ With "Organize" off, **deleting on the console does not delete your pkgs**: the 
 | --- | --- |
 | CE-32930-7 when starting a game just added | Restart the console once and load PS4Mount again. |
 | "Cannot start the application" | Check that PS4Mount is running and that the game's drive is connected (PS4Mount says so when it is not). |
-| The panel does not open | Use the **console's** IP, with `http://` in front and `:8770`, from the same network. |
+| The panel does not open | Type the **whole** address of the notice, with `http://` in front and `:8770`, from the same network. The panel has no https: if the browser turns it into `https://`, change it back by hand (or turn off the browser's "HTTPS-only" mode for that address). |
+| Some games do not start on 7.xx, not even installed the normal way | Turn on the **AIO fix** in GoldHEN's settings. |
 | A pkg is not added | Read the log (panel → **Log**): it says why (not fake, needs another firmware, incomplete…). |
 | Links: "the link opens a web page" | It is not the direct link: on the download page, copy the link of the button that starts the download (or the one your browser shows in Downloads). |
 | Links: "the server refused the link (403)" | Many links expire or work for one browser only: make a new one and press **Try again** or paste it again. |

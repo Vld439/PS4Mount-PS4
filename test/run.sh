@@ -29,8 +29,8 @@ fi
 } > "$B/page_data.h"
 
 # SQLite once per compiler and flags (it is large)
-SQ="$B/sqlite3-$(echo "$CC $FLAGS" | md5sum | cut -c1-8).o"
-[ -f "$SQ" ] || $CC $FLAGS -w -c third_party/sqlite/sqlite3.c -o "$SQ" \
+SQ="$B/sqlite3-$( (echo "$CC $FLAGS"; cat src/la_alloc.h) | md5sum | cut -c1-8).o"
+[ -f "$SQ" ] || $CC $FLAGS -w -c third_party/sqlite/sqlite3.c -o "$SQ" -include src/la_alloc.h \
     -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_DEFAULT_CACHE_SIZE=-128
 
 # BearSSL once per compiler and flags, as a library
@@ -60,7 +60,7 @@ $CC $FLAGS -o "$B/unit" test/unit.c src/build.c src/mem.c src/lang.c src/check.c
 "$B/unit"
 
 echo "== pkg catalog"
-$CC $FLAGS -o "$B/catalog_test" test/catalog_test.c src/catalog.c src/pkg.c src/mem.c src/crypto.c
+$CC $FLAGS -o "$B/catalog_test" test/catalog_test.c src/catalog.c src/pkg.c src/mem.c src/la_alloc.c src/crypto.c
 "$B/catalog_test"
 
 echo "== refused updates"
@@ -80,7 +80,7 @@ $CC $FLAGS -o "$B/fw_sim" test/fw_sim.c src/fw.c
 "$B/fw_sim"
 
 echo "== system database"
-$CC $FLAGS -Ithird_party/sqlite -DAPP_DB="\"$B/app.db\"" -o "$B/db_test" test/db_test.c src/db.c src/crypto.c "$SQ"
+$CC $FLAGS -Ithird_party/sqlite -DAPP_DB="\"$B/app.db\"" -o "$B/db_test" test/db_test.c src/db.c src/crypto.c src/mem.c src/la_alloc.c "$SQ"
 "$B/db_test"
 
 echo "== web panel server"

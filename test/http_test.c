@@ -300,7 +300,7 @@ int main(void) {
 
     printf("answers are valid JSON strings\n");
     r = post("/api/rescan", "");
-    CHECK(strstr(r, "\"message\":\"done \\\"rescan\\\"\"") != NULL || strstr(r, "Scanning") != NULL);
+    CHECK(strstr(r, "\"message\":\"done \\\"rescan\\\"\"") != NULL || strstr(r, "Looking for games") != NULL);
     r = post("/api/mount?title_id=CUSA00001", "");
     CHECK(strstr(r, "\"message\":\"done \\\"add\\\"\"") != NULL);
 

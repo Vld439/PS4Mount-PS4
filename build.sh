@@ -24,9 +24,11 @@ done
     (cd tools && xxd -i -n k_pdb_patch_template pdb_patch_template.bin)
     (cd tools && xxd -i -n k_pdb_addcont_template pdb_addcont_template.bin)
 } > build/pdb_template.h
-# A small page cache (128 KB): the process the payload runs in has a libc heap of a few MB.
-SQ_FLAGS="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_DEFAULT_CACHE_SIZE=-128"
-SQ="build/sqlite3-$(echo "$SQ_FLAGS" | md5sum | cut -c1-8).o"
+# A small page cache (128 KB): the process the payload runs in has a libc heap of a few MB,
+# and its large blocks (the cache's first ~85 KB) go on mapped pages (la_alloc.h): a heap
+# filled by earlier loads in the same boot made every app.db lookup fail.
+SQ_FLAGS="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_DEFAULT_CACHE_SIZE=-128 -include src/la_alloc.h"
+SQ="build/sqlite3-$( (echo "$SQ_FLAGS"; cat src/la_alloc.h) | md5sum | cut -c1-8).o"
 [ -f "$SQ" ] || $B/orbis-clang -O2 -w -c third_party/sqlite/sqlite3.c -o "$SQ" $SQ_FLAGS
 # BearSSL (TLS for Google Drive) once, as a library: only what is used is linked.
 # For a PlayStation target, clang before 22 declares the AES-NI, PCLMUL and SSSE3
@@ -76,8 +78,11 @@ if [ ! -f "$FS/libsmb2.a" ]; then
     done | xargs -P "$(nproc)" -I{} sh -c '{}'
     $B/orbis-ar rcs "$FS/libsmb2.a" "$FS"/lib/*.o
 fi
-FF_FLAGS="-O2 -w -DFUSE_USE_VERSION=26 -D_FILE_OFFSET_BITS=64"
-FF="build/libfuse-$( (echo "$FF_FLAGS"; cat third_party/libfuse/source/*.c third_party/libfuse/source/*.h third_party/libfuse/include/*.h third_party/libfuse/include/orbis/*.h) | md5sum | cut -c1-8)"
+# Its buffers (~370 KB a mount) go on mapped pages (la_alloc.h): a mount outlives the
+# load that made it, and the heap of the process was full after a few loads in one boot.
+# (libnfs and libsmb2 free strings the libc made, so they keep the libc's allocator.)
+FF_FLAGS="-O2 -w -DFUSE_USE_VERSION=26 -D_FILE_OFFSET_BITS=64 -include src/la_alloc.h"
+FF="build/libfuse-$( (echo "$FF_FLAGS"; cat src/la_alloc.h third_party/libfuse/source/*.c third_party/libfuse/source/*.h third_party/libfuse/include/*.h third_party/libfuse/include/orbis/*.h) | md5sum | cut -c1-8)"
 if [ ! -f "$FF/libfuse.a" ]; then
     mkdir -p "$FF"
     for f in third_party/libfuse/source/*.c; do

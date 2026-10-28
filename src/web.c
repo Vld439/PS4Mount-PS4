@@ -322,6 +322,14 @@ void web_handle(int fd) {
         return;
     }
     req[n] = 0;
+    /* https://: a TLS handshake. There is no certificate to answer it (a made-up one would
+     * show a security warning), so it is closed at once: browsers that tried https first
+     * go back to http:// quickly. */
+    if ((unsigned char)req[0] == 0x16) {
+        printf("[web] an https:// request: the panel is http:// only\n");
+        close(fd);
+        return;
+    }
     /* the body of a POST may arrive after the headers */
     char *body = strstr(req, "\r\n\r\n");
     const char *cl = strstr(req, "Content-Length:");
@@ -377,7 +385,7 @@ void web_handle(int fd) {
         }
     } else if (post && !strcmp(path, "/api/rescan")) {
         app_rescan_hard();
-        json_msg(fd, 1, "Scanning USB drives for games");
+        json_msg(fd, 1, TR("Looking for games on the drives and the share", "Buscando juegos en los discos y el NAS"));
     } else if (post && !strncmp(path, "/api/restore", 12) && (path[12] == 0 || path[12] == '?')) {
         /* ?title_id=<one game>, body title_ids=<games, comma separated>, or neither for all */
         int rc;

@@ -67,6 +67,7 @@ int main(void) {
     unlink(APP_DB);
     printf("missing database\n");
     CHECK(!db_is_registered("CUSA00001"));
+    CHECK(!db_ready()); /* no database read: nothing may be taken as unregistered */
     CHECK(!exists(APP_DB)); /* opening read-only never creates it */
 
     printf("titles\n");
@@ -78,6 +79,7 @@ int main(void) {
             "('CUSA00002','TITLE_ID','CUSA00002'),('CUSA00003','TITLE','C');"); /* CUSA00003: no TITLE_ID row */
     next_second();
     CHECK(db_is_registered("CUSA00001"));
+    CHECK(db_ready());
     CHECK(db_is_registered("CUSA00002"));
     CHECK(!db_is_registered("CUSA00003"));
     CHECK(!db_is_registered(""));

@@ -72,6 +72,11 @@ static void refresh(void) {
     }
 }
 
+int db_ready(void) {
+    refresh();
+    return g_read_ok;
+}
+
 int db_is_registered(const char *title_id) {
     return db_app_ver(title_id) != NULL;
 }

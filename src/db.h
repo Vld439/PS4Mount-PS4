@@ -8,6 +8,9 @@
 #include "pkg.h"
 
 /* Read only: the system databases are written by the system alone. */
+/* 1 once app.db has been read: until then every title looks unregistered, and nothing
+ * may be decided from that (a read can fail, for one with no memory left). */
+int db_ready(void);
 int db_is_registered(const char *title_id);
 /* The APP_VER the system registered for title_id ("" when it has none), NULL when the
  * title is not registered. The PS4 refuses to start a game whose update has another

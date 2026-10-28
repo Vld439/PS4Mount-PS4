@@ -6,10 +6,11 @@
 
 #include "../src/shortpath.h"
 
-static int fails;
+static int fails, checks;
 
 #define CHECK(c)                                                                                                       \
     do {                                                                                                               \
+        checks++;                                                                                                      \
         if (!(c)) {                                                                                                    \
             printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c);                                                        \
             fails++;                                                                                                   \
@@ -47,9 +48,10 @@ int main(void) {
      * not share it, and it is always short enough for the system */
     CHECK(short_pkg_link("/data/ps4mount/l", "CUSA03173", "patch", path, link, sizeof(link)) == 1);
     CHECK(!strcmp(link, "/data/ps4mount/l/CUSA03173-patch.pkg"));
-    CHECK(short_pkg_link("/data/ps4mount/l", "CUSA03174", "ac", path, link, sizeof(link)) == 1);
-    CHECK(!strcmp(link, "/data/ps4mount/l/CUSA03174-ac.pkg"));
-    CHECK(strlen(link) <= SYS_PATH_MAX);
+    CHECK(short_pkg_link("/data/ps4mount/l", "CUSA03174", "ac-000000000000DLC1", path, link, sizeof(link)) == 1);
+    CHECK(!strcmp(link, "/data/ps4mount/l/CUSA03174-ac-000000000000DLC1.pkg"));
+    CHECK(strlen("/user") + strlen(link) <= SYS_PATH_MAX);
+
 
     /* the longest name a game has: a share at the deepest folder */
     repeat(path, 300, 'b');
@@ -62,6 +64,6 @@ int main(void) {
     char tiny[8];
     CHECK(short_pkg_link("/data/ps4mount/l", "CUSA03173", "app", path, tiny, sizeof(tiny)) == 0);
 
-    printf("%s: %d check(s), %d failed\n", fails ? "FAIL" : "short path", 11, fails);
+    printf("%s: %d check(s), %d failed\n", fails ? "FAIL" : "short path", checks, fails);
     return fails ? 1 : 0;
 }
