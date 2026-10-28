@@ -1957,7 +1957,11 @@ static time_t db_mtime(void) {
 /* Waits until the system databases were not written for quiet seconds (max limit). */
 static void wait_db_quiet(int quiet, int limit) {
     time_t start = time(NULL), last = db_mtime(), changed = time(NULL);
+    int said = 0;
     while (time(NULL) - changed < quiet && time(NULL) - start < limit) {
+        if (!said)
+            printf("[reg] the system is writing its databases: waiting for them (up to %d s)\n", limit);
+        said = 1;
         pump_events(1000);
         time_t m = db_mtime();
         if (m != last) {
@@ -2749,9 +2753,13 @@ static int catalog_update(catalog_t *cat, const char *root, int fresh) {
     g_walk_root = root;
     g_walk_restored = exists(RESTORED_LIST);
     int unread = catalog_walk(cat, root, walk_skip, root_dir_skip, NULL, 0);
+    if ((unread || fresh) && cat->npkgs)
+        printf("[scan] %s: checking %d pkg(s), %d new or changed\n", root_label(root), cat->npkgs, unread);
     if (unread) {
+        time_t t0 = time(NULL);
         int read = catalog_read(cat);
-        printf("[scan] %s: %d pkg(s), %d new or changed read\n", root, cat->npkgs, read);
+        printf("[scan] %s: %d pkg(s), %d read in %ld s\n", root_label(root), cat->npkgs, read,
+               (long)(time(NULL) - t0));
     }
     if ((unread || cat->npkgs != before) && catalog_save(cat, file))
         printf("[scan] %s: could not save %s: %s\n", root, file, strerror(errno));
@@ -2939,6 +2947,7 @@ static void scan_root(const char *root, int fresh, int reconnected) {
             if (src.app.fd > 0)
                 src_close(&src);
         }
+        printf("[reg] group %d/%d: %d of %d ready, registering\n", group, groups, np, n);
         install_all(ids, np);
         /* own rows only after ShellCore stopped writing to its databases */
         wait_db_quiet(3, 30);

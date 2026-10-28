@@ -513,7 +513,9 @@ static int fs_release(const char *path, struct fuse_file_info *fi) {
         g_be->close(f->h); /* a handle of a client already gone is dead: just drop it */
     }
     pthread_mutex_unlock(&g_lock);
-    if (f->fetched)
+    /* what a game reads in passing is not news; a pkg read for a game (the registration
+     * or the launch) is, and so is a read that took a while */
+    if (f->fetched > (8u << 20) || f->ms > 1000)
         printf("[nas] %s: %llu MB read in %llu go(es), %lld ms waiting (%lld KB/s)\n", path, f->fetched >> 20, f->waits,
                f->ms, f->ms ? (long long)(f->fetched / 1024 * 1000 / (unsigned long long)f->ms) : 0);
     if (f->lost && f->gen == g_gen)
