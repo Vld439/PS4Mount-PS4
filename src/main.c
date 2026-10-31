@@ -354,10 +354,13 @@ static const char *pkg_url(const char *tid, const char *kind, const char *path, 
 
 static int is_nas(const char *root) { return !strcmp(root, NAS_ROOT_PATH); }
 
-/* A share is only used with pkgs where they are: organizing would rename them. */
+/* Pkgs used where they are: with organizing off everywhere, and always on a share, which
+ * is read-only and cannot be renamed into ps4/<TITLE_ID>/. */
+static int in_place(const char *root) { return !g_cfg.organize || is_nas(root); }
+
 static int root_present(const char *root) {
     if (is_nas(root))
-        return !g_cfg.organize && nas_active();
+        return nas_active();
     return is_internal(root) ? g_cfg.internal : is_mountpoint(root);
 }
 
@@ -686,7 +689,7 @@ static void refuse_patch(const char *tid, const char *patch_path, const char *na
 /* The pkg of the update the drive has for tid (catalog or folder). 0 when there is none. */
 static int title_patch_path(const char *root, const char *tid, char *out, size_t n) {
     out[0] = 0;
-    if (!g_cfg.organize) {
+    if (in_place(root)) {
         const catalog_t *c = drive_catalog(root);
         const cat_game_t *g = c ? catalog_game(c, tid) : NULL;
         const cat_pkg_t *p = g ? catalog_patch(g_cat, c, g) : NULL;
@@ -787,7 +790,7 @@ static int src_open_paths(title_src_t *t, const char *tid, const catalog_t *cat,
  * with organize off, where the catalog of the drive found them. */
 static int src_open(title_src_t *t, const char *root, const char *tid) {
     memset(t, 0, sizeof(*t));
-    if (!g_cfg.organize) {
+    if (in_place(root)) {
         const catalog_t *cat = drive_catalog(root);
         const cat_game_t *g = cat ? catalog_game(cat, tid) : NULL;
         if (!g)
@@ -822,7 +825,7 @@ static uint64_t fp_addons(uint64_t h, const char *root, const char *tid) {
     char x[40];
     uint64_t dh = 0;
     int nd = 0;
-    if (!g_cfg.organize) {
+    if (in_place(root)) {
         const catalog_t *c = drive_catalog(root);
         const cat_game_t *g = c ? catalog_game(c, tid) : NULL;
         const cat_pkg_t *list[CAT_MAX_DLC];
@@ -871,7 +874,7 @@ static uint64_t fp_addons(uint64_t h, const char *root, const char *tid) {
 static uint64_t title_files_fp(const char *root, const char *tid) {
     char app[PATH_MAX], patch[PATH_MAX];
     app[0] = patch[0] = 0;
-    if (!g_cfg.organize) {
+    if (in_place(root)) {
         const catalog_t *c = drive_catalog(root);
         const cat_game_t *g = c ? catalog_game(c, tid) : NULL;
         if (!g)
@@ -2875,7 +2878,7 @@ static int adopt_root_pkgs(const char *root) {
  * there, or the games the catalog of the drive found anywhere. */
 static int titles_on_root(const char *root, char (*tids)[10], int max) {
     int n = 0;
-    if (!g_cfg.organize) {
+    if (in_place(root)) {
         const catalog_t *c = drive_catalog(root);
         for (int i = 0; c && i < c->ngames && n < max; i++)
             snprintf(tids[n++], 10, "%s", c->games[i].title_id);
@@ -2901,7 +2904,7 @@ static int titles_on_root(const char *root, char (*tids)[10], int max) {
 /* The game and update pkg paths of tid on root (empty patch without an update). */
 static int title_pkgs(const char *root, const char *tid, char *patch, size_t pn, char *app, size_t an) {
     patch[0] = app[0] = 0;
-    if (!g_cfg.organize) {
+    if (in_place(root)) {
         const catalog_t *c = drive_catalog(root);
         const cat_game_t *g = c ? catalog_game(c, tid) : NULL;
         if (!g)
@@ -3021,17 +3024,17 @@ static int g_stop; /* the panel asked to stop: the long loops end before the dae
 
 static void scan_root(const char *root, int fresh, int reconnected) {
     const char *label = root_label(root);
-    int have = g_cfg.organize ? has_candidates(root) : catalog_has_games(root);
+    int have = in_place(root) ? catalog_has_games(root) : has_candidates(root);
     if (!have) {
         if (fresh)
             printf("[scan] %s: no ps4 folder or pkg, skipped\n", root);
         return;
     }
-    if (fresh && g_manual_scan && g_cfg.organize)
+    if (fresh && g_manual_scan && !in_place(root))
         notify(TR("Scanning %s for PS4 games...", "Buscando juegos de PS4 en %s..."), label);
     if (reconnected)
         clear_removed_dlc();
-    int moved = g_cfg.organize ? adopt_root_pkgs(root) : 0;
+    int moved = in_place(root) ? 0 : adopt_root_pkgs(root);
     if (moved && !fresh)
         notify(TR("%s: %d new package(s) found", "%s: %d pkg(s) nuevo(s) encontrado(s)"), label, moved);
     static title_t titles[MAX_TITLES];
@@ -3292,7 +3295,7 @@ static void scan_all(void) {
         return;
     }
     release_stale();
-    if (!g_cfg.organize) {
+    if (!g_cfg.organize || nas_active()) {
         /* Pkgs are used where they are: bring every catalog up to date first, then group
          * the pkgs of each drive into games (catalog_link). */
         int ready[NROOTS] = {0};
@@ -3828,7 +3831,7 @@ static int find_root(const char *tid, char *root, size_t n) {
         root_path(i, r, sizeof(r));
         if (!root_present(r))
             continue;
-        if (!g_cfg.organize) {
+        if (in_place(r)) {
             const catalog_t *c = drive_catalog(r);
             if (c && catalog_game(c, tid)) {
                 snprintf(root, n, "%s", r);
@@ -3901,8 +3904,8 @@ void app_games_json(buf_t *out) {
             json_str(out, t->update_issue);
             /* used where they are: nothing was moved or renamed, so there are no original
              * files to move back (also for games found in the old ps4/<TID> folders) */
-            int in_place = !g_cfg.organize;
-            buf_printf(out, ",\"in_place\":%s", in_place ? "true" : "false");
+            int inpl = !g_cfg.organize || !strncmp(t->dir, NAS_ROOT_PATH "/", sizeof(NAS_ROOT_PATH));
+            buf_printf(out, ",\"in_place\":%s", inpl ? "true" : "false");
             char svt[16] = "";
             if (t->system_ver)
                 ver_text(t->system_ver, svt, sizeof(svt));
@@ -5034,11 +5037,6 @@ int app_config_set(const char *body, char *msg, size_t cap) {
         snprintf(msg, cap, "%s", TR("Not saved: there is no NAS on this firmware", "No se guardó: no hay NAS en este firmware"));
         return -1;
     }
-    if (c.nas && c.organize) {
-        snprintf(msg, cap, "%s", TR("Not saved: the NAS is read only, so turn off organizing pkgs first",
-                                    "No se guardó: el NAS es de solo lectura, así que desactiva antes organizar los pkg"));
-        return -1;
-    }
     if (c.nas && (!c.nas_server[0] || !c.nas_share[0])) {
         snprintf(msg, cap, "%s", TR("Not saved: the NAS needs a server and a share",
                                     "No se guardó: el NAS necesita un servidor y un recurso"));
@@ -5468,12 +5466,12 @@ static void drive_add_file(drive_file_t *files, int *nf, int max, const char *pa
 static int drive_game_files(const char *tid, drive_file_t *files, int max, char *name, size_t nn) {
     char root[PATH_MAX], p[PATH_MAX];
     int nf = 0;
-    if (!g_cfg.organize) {
+    if (!g_cfg.organize || nas_active()) {
         char app[PATH_MAX] = "", patch[PATH_MAX] = "";
         pthread_mutex_lock(&g_cat_lock);
         for (int i = 0; i < NROOTS && !app[0]; i++) {
             root_path(i, root, sizeof(root));
-            if (!root_present(root))
+            if (!root_present(root) || !in_place(root))
                 continue;
             const catalog_t *c = drive_catalog(root);
             const cat_game_t *g = c ? catalog_game(c, tid) : NULL;
