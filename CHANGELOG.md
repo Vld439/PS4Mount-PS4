@@ -2,6 +2,22 @@
 
 PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount) by gasb07 (PS5); its versions start again at 0.1.0. The history of the original is in its project and in this repository's git history.
 
+## 0.7.4-fix
+
+Fixes on top of 0.7.4-beta.
+
+- **Pkgs organized by default** (`organize` on): the .pkg files are moved into `ps4/<title ID>/` on the drive, so the console's own installer does not offer them again as installable games.
+- **An add-on the installer refuses is not tried again on every load**: it is kept in `/data/ps4mount/dlcfail.txt` (content id, size and digest) and only tried again when that pkg changes. Delete the file to try them all again.
+- **Games from the console's storage**: the pkg in the hold folder is linked with its own path (never through the `/data` alias, which the system cannot mount) and, when the path is longer than the 95 characters the system keeps, with a short link in `/data/ps4mount/l/`. Long names no longer leave a game added but unable to start.
+- **Add-ons already installed are not installed again**: an add-on folder left mounted by an older version no longer hides the ones the system installed, which were copied again on every registration.
+
+**Español**
+
+- **Los pkgs se organizan por defecto** (`organize` activado): los .pkg se mueven a `ps4/<ID del título>/` en la unidad, así el instalador de la consola no los vuelve a ofrecer como juegos instalables.
+- **Un DLC que el instalador rechaza no se reintenta en cada carga**: queda en `/data/ps4mount/dlcfail.txt` (content id, tamaño y digest) y solo se prueba otra vez cuando cambia ese pkg. Borrar el archivo fuerza a intentarlos todos de nuevo.
+- **Juegos de la memoria interna**: el pkg de la carpeta hold se enlaza con su ruta real (nunca por el alias `/data`, que el sistema no puede montar) y, si la ruta pasa de los 95 caracteres que guarda el sistema, con un enlace corto en `/data/ps4mount/l/`. Los nombres largos ya no dejan un juego añadido pero sin poder arrancar.
+- **Los DLC ya instalados no se vuelven a instalar**: una carpeta de DLC que dejó montada una versión anterior ya no tapa los que instaló el sistema, que se copiaban otra vez en cada registro.
+
 ## 0.7.4-beta
 
 The network share works on **firmware 6.72** too (and, experimental, on every firmware itemzflow has a FUSE patch for, 5.05 to 13.50), and adding a NAS library no longer reads it once and again: each game is read once and kept, while the console is on and between restarts, and only new or changed pkgs are opened. The panel stays usable while a drive is walked or a game is read, long pkg paths no longer leave a game half registered, and a game whose update the system refuses (Bloodborne) is added without it. Also from the 6.72 tester's report: the notice shows the panel's real address and says when the games are ready, a first start waits for the settings, the share can be checked less often or only by hand, and several games can be removed at once.

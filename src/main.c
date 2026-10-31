@@ -13,7 +13,7 @@
  *   3. Mounts whose storage disappeared are released.
  * Titles installed the normal way are never touched.
  *
- * With organize off (the default), step 1 is skipped: the pkgs are used where they are,
+ * With organize off, step 1 is skipped: the pkgs are used where they are,
  * in any folder of the drive (the ps4/<TITLE_ID>/ folders of older versions included),
  * and the catalog (catalog.c) groups them per game from what they carry inside.
  * Nothing is renamed or moved. */
@@ -64,7 +64,7 @@
 #include "web.h"
 #include "icon_data.h"
 
-#define VERSION "PS4Mount 0.7.4-beta"
+#define VERSION "PS4Mount 0.7.4-fix"
 #define LOCK_PORT 9032
 #define SCAN_SECONDS 10
 /* A full walk of the drive is slower on drives with many files: the catalog is brought
@@ -98,7 +98,7 @@ typedef struct {
     int npaths;
     int restore_batch; /* games removed from the library per group when moving pkgs back */
     int internal;      /* pkgs in the console's /data/PS4Mount are used too */
-    int organize;      /* pkgs are moved into <root>/ps4/<TID>/; off (default): used where they are */
+    int organize;      /* pkgs are moved into <root>/ps4/<TID>/ (default); off: used where they are */
     int lang;          /* LANG_* of notifications and the panel, -1: the console's */
     int nas;           /* a network share is used too (firmwares with a fusefs patch, read only) */
     int nas_proto;     /* NAS_NFS or NAS_SMB */
@@ -118,7 +118,7 @@ typedef struct {
  * moved until the user puts it there (the drive root, "", is still a choice). */
 #define DEFAULT_SCAN_PATH "PS4Mount"
 
-static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, 0, -1, 0, NAS_NFS, 0, "", "", "", "", "", 1, 1};
+static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, 1, -1, 0, NAS_NFS, 0, "", "", "", "", "", 1, 1};
 #define NAS_RESCAN_MAX 1440 /* minutes: once a day */
 static int g_setup; /* a first start: no game is added until the settings are saved (first_start) */
 /* A first start with nobody at the panel for this long goes on with the default settings:
@@ -320,16 +320,19 @@ static const char *sys_path(const char *path, char *out, size_t n) {
     return out;
 }
 
-/* The path handed to the system for a pkg: its own when it is short, and otherwise
- * STATE_DIR/l/<TID>-<kind>.pkg, a short link to it (shortpath.h), made or fixed here. */
-static const char *pkg_url(const char *tid, const char *kind, const char *path, char *out, size_t n) {
+/* The pkg in the hold folder is a link to this: the pkg's own path when it is short, and
+ * otherwise STATE_DIR/l/<TID>-<kind>.pkg, a short link to it (shortpath.h), made or fixed
+ * here. The alias /data -> /user/data is not used: a link through it does not mount (the
+ * system cannot build the pkg's block map, 0x8002000c). */
+static const char *pkg_link(const char *tid, const char *kind, const char *path, char *out, size_t n) {
     char link[PATH_MAX];
     struct stat a, b;
     if (!short_pkg_link(STATE_DIR "/l", tid, kind, path, link, sizeof(link))) {
         /* the path fits: a link left from when the pkg was somewhere with a longer one goes */
         snprintf(link, sizeof(link), STATE_DIR "/l/%s-%s.pkg", tid, kind);
         unlink(link);
-        return sys_path(path, out, n);
+        snprintf(out, n, "%s", path);
+        return out;
     }
     /* the pkg moved, or the drive it is on was mounted again: the link is made anew */
     if (stat(link, &a) || stat(path, &b) || a.st_dev != b.st_dev || a.st_ino != b.st_ino) {
@@ -338,7 +341,15 @@ static const char *pkg_url(const char *tid, const char *kind, const char *path, 
         if (symlink(path, link))
             printf("[reg] %s: short link %s: %s\n", tid, link, strerror(errno));
     }
-    return sys_path(link, out, n);
+    snprintf(out, n, "%s", link);
+    return out;
+}
+
+/* The path handed to the system for a pkg in its records (app.json, BGFT): /user/data,
+ * which is what the system writes and what BGFT accepts. */
+static const char *pkg_url(const char *tid, const char *kind, const char *path, char *out, size_t n) {
+    char p[PATH_MAX];
+    return sys_path(pkg_link(tid, kind, path, p, sizeof(p)), out, n);
 }
 
 static int is_nas(const char *root) { return !strcmp(root, NAS_ROOT_PATH); }
@@ -1126,12 +1137,16 @@ static int place_dlc(dlc_src_t *a) {
 /* The ac.pkg link of every add-on exists and reaches its pkg. */
 /* 1 when the add-on is installed the system's way: its own pkg in /user/addcont, not
  * PS4Mount's mount there. */
+static void unmount_all_layers(const char *target, int force);
+
 static int dlc_installed_ids(const char *dtid, const char *cid) {
     char p[96];
     struct stat st;
     snprintf(p, sizeof(p), "/user/addcont/%s", dtid);
     if (mounted_from(p, NULL, 0))
-        return 0;
+        /* an older PS4Mount left the add-on folder mounted over the real one: what the
+         * system installed is below it, and would be installed again on every registration */
+        unmount_all_layers(p, 1);
     snprintf(p, sizeof(p), "/user/addcont/%s/%s/ac.pkg", dtid, cid + 20);
     return !lstat(p, &st) && S_ISREG(st.st_mode);
 }
@@ -1150,6 +1165,82 @@ static int dlc_failed(const char *content_id) {
         if (!strcmp(g_dlc_failed[i], content_id))
             return 1;
     return 0;
+}
+
+/* Add-ons the installer would not take in an earlier load, with the size and digest of the
+ * pkg they were: they are not tried again until that pkg changes, so a backup the system
+ * refuses is not installed again at every load. Delete the file to try them all again. */
+#define MAX_DLC_REFUSED 256
+#define DLC_REFUSED_LIST STATE_DIR "/dlcfail.txt"
+typedef struct {
+    char content_id[40];
+    uint64_t size;
+    char digest[65];
+} dlc_refused_t;
+static dlc_refused_t g_dlc_refused[MAX_DLC_REFUSED];
+static int g_ndlc_refused, g_dlc_refused_loaded;
+
+static void dlc_hex(const uint8_t d[32], char out[65]) {
+    for (int i = 0; i < 32; i++)
+        snprintf(out + i * 2, 3, "%02x", d[i]);
+}
+
+static void dlc_refused_load(void) {
+    if (g_dlc_refused_loaded)
+        return;
+    g_dlc_refused_loaded = 1;
+    FILE *f = fopen(DLC_REFUSED_LIST, "r");
+    char line[160];
+    if (!f)
+        return;
+    while (g_ndlc_refused < MAX_DLC_REFUSED && fgets(line, sizeof(line), f)) {
+        dlc_refused_t *r = &g_dlc_refused[g_ndlc_refused];
+        unsigned long long sz = 0;
+        line[strcspn(line, "\r\n")] = 0;
+        if (sscanf(line, "%39s %llu %64s", r->content_id, &sz, r->digest) == 3) {
+            r->size = sz;
+            g_ndlc_refused++;
+        }
+    }
+    fclose(f);
+}
+
+static int dlc_refused(const dlc_src_t *a) {
+    char dig[65];
+    dlc_refused_load();
+    dlc_hex(a->pkg.digest, dig);
+    for (int i = 0; i < g_ndlc_refused; i++)
+        if (!strcmp(g_dlc_refused[i].content_id, a->pkg.content_id) && g_dlc_refused[i].size == a->pkg.pkg_size &&
+            !strcmp(g_dlc_refused[i].digest, dig))
+            return 1;
+    return 0;
+}
+
+static void dlc_refused_add(const dlc_src_t *a) {
+    dlc_refused_load();
+    int i;
+    for (i = 0; i < g_ndlc_refused; i++)
+        if (!strcmp(g_dlc_refused[i].content_id, a->pkg.content_id))
+            break;
+    if (i == g_ndlc_refused) {
+        if (i >= MAX_DLC_REFUSED) { /* the oldest makes room */
+            memmove(&g_dlc_refused[0], &g_dlc_refused[1], sizeof(g_dlc_refused[0]) * (MAX_DLC_REFUSED - 1));
+            i = MAX_DLC_REFUSED - 1;
+        } else {
+            g_ndlc_refused++;
+        }
+    }
+    dlc_refused_t *r = &g_dlc_refused[i];
+    snprintf(r->content_id, sizeof(r->content_id), "%s", a->pkg.content_id);
+    r->size = a->pkg.pkg_size;
+    dlc_hex(a->pkg.digest, r->digest);
+    FILE *f = fopen(DLC_REFUSED_LIST, "w");
+    if (!f)
+        return;
+    for (int k = 0; k < g_ndlc_refused; k++)
+        fprintf(f, "%s\t%llu\t%s\n", g_dlc_refused[k].content_id, (unsigned long long)g_dlc_refused[k].size,
+                g_dlc_refused[k].digest);
+    fclose(f);
 }
 
 /* Big add-ons being installed: the system copies them in the background, minutes for a
@@ -1429,6 +1520,11 @@ static int dlc_install(dlc_src_t *a) {
         return 0;
     if (dlc_failed(a->pkg.content_id))
         return 2;
+    if (dlc_refused(a)) { /* the same pkg was refused before: not again at every load */
+        if (g_ndlc_failed < MAX_DLC_FAILED)
+            snprintf(g_dlc_failed[g_ndlc_failed++], sizeof(g_dlc_failed[0]), "%s", a->pkg.content_id);
+        return 2;
+    }
     int big = a->pkg.pkg_size > DLC_INSTALL_MAX;
     if (big && dlc_pending(a->pkg.content_id))
         return 3;
@@ -1469,6 +1565,7 @@ static int dlc_install(dlc_src_t *a) {
             printf("[dlc] %s: not installed after a minute\n", a->pkg.content_id);
         if (g_ndlc_failed < MAX_DLC_FAILED)
             snprintf(g_dlc_failed[g_ndlc_failed++], sizeof(g_dlc_failed[0]), "%s", a->pkg.content_id);
+        dlc_refused_add(a); /* not tried again at every load until its pkg changes */
         return 1;
     }
     printf("[dlc] %s installed\n", a->pkg.content_id);
@@ -1554,14 +1651,16 @@ static int place_files(title_src_t *t) {
     size_t pl = 0, ppl = 0;
     uint8_t *pg = pkg_entry(app, 0x1001, &pl), *ppg = pat ? pkg_entry(pat, 0x1001, &ppl) : NULL;
     buf_t json = {0}, pbm = {0}, xml = {0}, pjson = {0}, ppbm_patch = {0}, pxml = {0}, ppbm = {0};
-    char app_url[PATH_MAX + 8], patch_url[PATH_MAX + 8];
+    char app_url[PATH_MAX + 8], patch_url[PATH_MAX + 8], app_link[PATH_MAX], patch_link[PATH_MAX];
     build_app_json(&json, app, pkg_url(tid, "app", t->app_path, app_url, sizeof(app_url)));
+    pkg_link(tid, "app", t->app_path, app_link, sizeof(app_link));
     /* the PS4 leaves no version and type 0 in app.pbm and patch.pbm (as every install
      * does on 13.52) */
     build_app_pbm(&pbm, app, "", 0);
     patch_ref_t pr = {0}, *prp = NULL;
     if (pat) {
         build_app_json(&pjson, pat, pkg_url(tid, "patch", t->patch_path, patch_url, sizeof(patch_url)));
+        pkg_link(tid, "patch", t->patch_path, patch_link, sizeof(patch_link));
         build_app_pbm(&ppbm_patch, pat, "", 0);
         pr = (patch_ref_t){pat, ppg, ppl, t->ver, patch_url, &pjson};
         prp = &pr;
@@ -1572,7 +1671,7 @@ static int place_files(title_src_t *t) {
         rc = -1;
         goto out;
     }
-    rc |= hold_prepare("app", tid, "app.pkg", app_url);
+    rc |= hold_prepare("app", tid, "app.pkg", app_link);
     hold_path(hold, sizeof(hold), "app", tid);
     snprintf(q, sizeof(q), "%s/app.json", hold);
     rc |= write_buf(q, &json);
@@ -1590,7 +1689,7 @@ static int place_files(title_src_t *t) {
     rc |= write_buf(q, &ppbm);
     rc |= place_bgft(t, &json, prp);
     if (pat) {
-        rc |= hold_prepare("patch", tid, "patch.pkg", patch_url);
+        rc |= hold_prepare("patch", tid, "patch.pkg", patch_link);
         hold_path(hold, sizeof(hold), "patch", tid);
         snprintf(q, sizeof(q), "%s/patch.json", hold);
         rc |= write_buf(q, &pjson);
@@ -4644,7 +4743,7 @@ static int first_start(void) {
 static void config_save(void) {
     g_setup = 0; /* the settings were chosen: games are added from now on */
     buf_t b = {0};
-    buf_printf(&b, "batch=%d\nbatch_size=%d\ndlc=%d\ndlc_big=%d\nrestore_batch=%d\ninternal=%d\norganize=%d\nlang=%s\n",
+    buf_printf(&b, "ver=2\nbatch=%d\nbatch_size=%d\ndlc=%d\ndlc_big=%d\nrestore_batch=%d\ninternal=%d\norganize=%d\nlang=%s\n",
                g_cfg.batch, g_cfg.batch_size, g_cfg.dlc, g_cfg.dlc_big, g_cfg.restore_batch, g_cfg.internal, g_cfg.organize,
                g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto");
     buf_printf(&b, "nas=%d\nnas_proto=%d\nnas_port=%d\nnas_server=%s\nnas_share=%s\nnas_sub=%s\nnas_user=%s\nnas_pass=%s\n",
@@ -4664,7 +4763,12 @@ static void config_load(void) {
     config_t c = g_cfg;
     c.npaths = 0;
     char line[768], why[160], path[128];
+    int ver = 0;
     while (fgets(line, sizeof(line), f)) {
+        if (!strncmp(line, "ver=", 4)) {
+            ver = atoi(line + 4);
+            continue;
+        }
         line[strcspn(line, "\r\n")] = 0;
         if (!strncmp(line, "batch=", 6))
             c.batch = atoi(line + 6) != 0;
@@ -4716,6 +4820,12 @@ static void config_load(void) {
         snprintf(c.paths[0], sizeof(c.paths[0]), DEFAULT_SCAN_PATH);
         c.npaths = 1;
     }
+    /* Before 0.7.5 the settings had no version and organize was off: the pkgs stayed where
+     * they were, the console's installer found them again and a game could end up installed
+     * on both drives (issue #4). The ps4 folder is the default again; turning it off is kept
+     * from the next save on. */
+    if (ver < 2)
+        c.organize = 1;
     g_cfg = c;
     printf("[config] batch=%d batch_size=%d dlc=%d restore_batch=%d organize=%d folders=%d\n", g_cfg.batch, g_cfg.batch_size,
            g_cfg.dlc, g_cfg.restore_batch, g_cfg.organize, g_cfg.npaths);
