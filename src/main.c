@@ -110,6 +110,8 @@ typedef struct {
     char nas_pass[64];
     int dlc_big;       /* add-ons over DLC_INSTALL_MAX are installed too (they take space on the console) */
     int nas_rescan;    /* minutes between looks at the share for new pkgs; 0: only when asked */
+    int klog;          /* the console's kernel log is read (game start/stop); off leaves it to
+                        * another payload (AnyPad needs it to identify its virtual pad) */
 } config_t;
 
 #define MAX_RESTORE_BATCH 10
@@ -118,7 +120,7 @@ typedef struct {
  * moved until the user puts it there (the drive root, "", is still a choice). */
 #define DEFAULT_SCAN_PATH "PS4Mount"
 
-static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, 1, -1, 0, NAS_NFS, 0, "", "", "", "", "", 1, 1};
+static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, 1, -1, 0, NAS_NFS, 0, "", "", "", "", "", 1, 1, 1};
 #define NAS_RESCAN_MAX 1440 /* minutes: once a day */
 static int g_setup; /* a first start: no game is added until the settings are saved (first_start) */
 /* A first start with nobody at the panel for this long goes on with the default settings:
@@ -2609,7 +2611,7 @@ static int adopt_dir_pass(const char *root, const char *dir, int pass) {
                       "%s está hecho para el firmware %s (esta consola tiene %s): solo funciona con un backport"),
                    e->d_name, need, have);
         }
-        int is_app = cat && !strcmp(cat->sval, "gd"), is_patch = cat && !strcmp(cat->sval, "gp");
+        int is_app = cat && pkg_cat_is_game(cat->sval), is_patch = cat && !strcmp(cat->sval, "gp");
         int is_dlc = cat && !strcmp(cat->sval, "ac");
         if (is_dlc || pass == 1) {
             /* add-ons go in the second pass: their game may be in this folder too */
@@ -3373,7 +3375,12 @@ static void scan_all(void) {
 /* --- klog events --- */
 
 static int klog_connect(void) {
-    int s = socket(AF_INET, SOCK_STREAM, 0);
+    int s;
+    if (!g_cfg.klog) {
+        printf("[klog] off: the log is left to another payload\n");
+        return -1;
+    }
+    s = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in a = {0};
     a.sin_family = AF_INET;
     a.sin_port = htons(3232);
@@ -4752,7 +4759,7 @@ static void config_save(void) {
     buf_printf(&b, "nas=%d\nnas_proto=%d\nnas_port=%d\nnas_server=%s\nnas_share=%s\nnas_sub=%s\nnas_user=%s\nnas_pass=%s\n",
                g_cfg.nas, g_cfg.nas_proto, g_cfg.nas_port, g_cfg.nas_server, g_cfg.nas_share,
                g_cfg.nas_sub, g_cfg.nas_user, g_cfg.nas_pass);
-    buf_printf(&b, "nas_rescan=%d\n", g_cfg.nas_rescan);
+    buf_printf(&b, "nas_rescan=%d\nklog=%d\n", g_cfg.nas_rescan, g_cfg.klog);
     for (int i = 0; i < g_cfg.npaths; i++)
         buf_printf(&b, "path=%s\n", g_cfg.paths[i]);
     write_file(CONFIG_PATH, b.data, b.len, 0666);
@@ -4765,6 +4772,7 @@ static void config_load(void) {
         return;
     config_t c = g_cfg;
     c.npaths = 0;
+    c.klog = 1; /* unless the settings say otherwise (a console that never had the key) */
     char line[768], why[160], path[128];
     int ver = 0;
     while (fgets(line, sizeof(line), f)) {
@@ -4787,6 +4795,8 @@ static void config_load(void) {
             c.internal = atoi(line + 9) != 0;
         else if (!strncmp(line, "organize=", 9))
             c.organize = atoi(line + 9) != 0;
+        else if (!strncmp(line, "klog=", 5))
+            c.klog = atoi(line + 5) != 0;
         else if (!strncmp(line, "lang=", 5))
             c.lang = lang_from_tag(line + 5);
         else if (!strncmp(line, "path=", 5) && c.npaths < MAX_SCAN_PATHS &&
@@ -4837,11 +4847,11 @@ static void config_load(void) {
 void app_config_json(buf_t *out) {
     buf_printf(out,
                "{\"batch\":%s,\"batch_size\":%d,\"dlc\":%s,\"dlc_big\":%s,\"internal\":%s,\"organize\":%s,\"restore_batch\":%d,\"max_restore_batch\":%d,"
-               "\"lang\":\"%s\",\"ui_lang\":\"%s\",\"nas_supported\":%s,\"nas\":%s,\"nas_proto\":\"%s\",\"nas_port\":%d,"
+               "\"lang\":\"%s\",\"ui_lang\":\"%s\",\"klog\":%s,\"nas_supported\":%s,\"nas\":%s,\"nas_proto\":\"%s\",\"nas_port\":%d,"
                "\"nas_rescan\":%d,\"nas_tested\":%s,\"nas_server\":",
                g_cfg.batch ? "true" : "false", g_cfg.batch_size, g_cfg.dlc ? "true" : "false", g_cfg.dlc_big ? "true" : "false",
                g_cfg.internal ? "true" : "false", g_cfg.organize ? "true" : "false", g_cfg.restore_batch, MAX_RESTORE_BATCH,
-               g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto", lang_tag(g_lang),
+               g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto", lang_tag(g_lang), g_cfg.klog ? "true" : "false",
                nas_supported() ? "true" : "false", g_cfg.nas ? "true" : "false",
                g_cfg.nas_proto == NAS_SMB ? "smb" : "nfs", g_cfg.nas_port, g_cfg.nas_rescan,
                nas_fw_tested(g_fw) ? "true" : "false");
@@ -4964,6 +4974,8 @@ int app_config_set(const char *body, char *msg, size_t cap) {
                 c.internal = atoi(value) != 0;
             else if (k == 8 && !strncmp(p, "organize", 8))
                 c.organize = atoi(value) != 0;
+            else if (k == 4 && !strncmp(p, "klog", 4))
+                c.klog = atoi(value) != 0;
             else if (k == 4 && !strncmp(p, "lang", 4))
                 c.lang = lang_from_tag(value); /* "auto" and anything else: the console's */
             else if (k == 13 && !strncmp(p, "restore_batch", 13)) {

@@ -148,6 +148,9 @@ button.small{padding:5px 10px;font-size:13px}
   <label class="check"><input type="checkbox" id="s-organize"> Organize pkgs into the ps4 folder</label>
   <span class="hint" style="margin-top:-8px">On (the default): the .pkg files are moved into ps4/&lt;title ID&gt;/ on the drive, so the console's
     own installer does not find them again. Off: they are used where they are, anywhere on the drive, and are not renamed or moved.</span>
+  <label class="check"><input type="checkbox" id="s-klog"> Read the console's log (game start and stop)</label>
+  <span class="hint" style="margin-top:-8px">On by default. Turn it off to leave the log to another payload: AnyPad needs it to tell its virtual
+    pad apart, and only one payload can read it. Games in play are then noticed a few seconds later, from their mount.</span>
   <label class="check"><input type="checkbox" id="s-internal"> Also use pkgs in the console's /data/PS4Mount</label>
   <span class="hint" style="margin-top:-8px">Pkgs sent to the console's storage are added from there, with no install to wait
     for. They still take internal space.</span>
@@ -460,6 +463,7 @@ $('settingsbtn').onclick = function () {
     $('s-dlcbig').checked = c.dlc_big;
     $('s-organize').checked = c.organize;
     $('s-internal').checked = c.internal;
+    $('s-klog').checked = c.klog;
     var nasOk = !!c.nas_supported;
     $('s-nas').checked = !!c.nas;
     $('s-nas').disabled = !nasOk;
@@ -702,7 +706,7 @@ $('setform').onsubmit = function (e) {
   var size = $('s-size').value;
   if (!/^[0-9]+$/.test(size) || +size < 1 || +size > 50) { toast(t('Games per group must be a number from 1 to {0}', 50)); return; }
   var body = 'batch=' + ($('s-batch').checked ? 1 : 0) + '&batch_size=' + encodeURIComponent($('s-size').value) +
-    '&dlc=' + ($('s-dlc').checked ? 1 : 0) + '&dlc_big=' + ($('s-dlcbig').checked ? 1 : 0) + '&organize=' + ($('s-organize').checked ? 1 : 0) + '&internal=' + ($('s-internal').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value) +
+    '&dlc=' + ($('s-dlc').checked ? 1 : 0) + '&dlc_big=' + ($('s-dlcbig').checked ? 1 : 0) + '&organize=' + ($('s-organize').checked ? 1 : 0) + '&internal=' + ($('s-internal').checked ? 1 : 0) + '&klog=' + ($('s-klog').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value) +
     '&nas=' + ($('s-nas').checked ? 1 : 0) + '&nas_proto=' + $('s-nas-proto').value +
     '&nas_port=' + encodeURIComponent($('s-nas-port').value) +
     '&nas_rescan=' + $('s-nas-rescan').value +

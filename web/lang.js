@@ -37,6 +37,9 @@ var LANGS = {
       'Activado (por defecto): los .pkg se mueven a ps4/<ID del título>/ en la unidad, así el instalador de la consola no los encuentra otra vez. Desactivado: se usan donde están, en cualquier parte de la unidad, sin renombrarlos ni moverlos.',
     'Off (the default): the .pkg files are used where they are, anywhere on the drive, grouped by their title ID. They are not renamed or moved; the games PS4Mount organized before go back to where they were.':
       'Apagado (por defecto): los .pkg se usan donde están, en cualquier parte de la unidad, agrupados por su título. No se renombran ni se mueven; los juegos que PS4Mount organizó antes vuelven a su sitio.',
+    "Read the console's log (game start and stop)": 'Leer el log de la consola (inicio y fin de juego)',
+    "On by default. Turn it off to leave the log to another payload: AnyPad needs it to tell its virtual pad apart, and only one payload can read it. Games in play are then noticed a few seconds later, from their mount.":
+      'Activado por defecto. Desactivalo para dejarle el log a otro payload: AnyPad lo necesita para distinguir su pad virtual, y solo un payload puede leerlo. Los juegos en marcha se notan unos segundos más tarde, por su montaje.',
     "Also use pkgs in the console's /data/PS4Mount": 'Usar también los pkgs de /data/PS4Mount de la consola',
     "Pkgs sent to the console's storage are added from there, with no install to wait for. They still take internal space.":
       'Los pkgs enviados a la memoria de la consola se añaden desde ahí, sin esperar una instalación. Ocupan espacio interno.',
