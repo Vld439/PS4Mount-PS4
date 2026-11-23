@@ -6,6 +6,23 @@
 set -e
 cd "$(dirname "$0")"
 B=${PS4_PAYLOAD_SDK:-/opt/ps4-payload-sdk}/bin
+# macOS has no nproc, and its xargs -I cannot take the long compile lines: run the
+# commands (one per argument) with at most NPROC at once, a batch at a time.
+NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+par() {
+    local max=$1 pids=() cmd p fail=0
+    shift
+    for cmd in "$@"; do
+        sh -c "$cmd" &
+        pids+=($!)
+        if [ "${#pids[@]}" -ge "$max" ]; then
+            for p in "${pids[@]}"; do wait "$p" || fail=1; done
+            pids=()
+        fi
+    done
+    for p in ${pids[@]+"${pids[@]}"}; do wait "$p" || fail=1; done
+    return "$fail"
+}
 mkdir -p build
 # Embedded data: panel page, Media tab icon, playgo record templates.
 # The pages with their texts in other languages (web/lang.js) where they say <!--LANG-->.
@@ -38,10 +55,12 @@ BR_FLAGS="-O2 -w -maes -mpclmul -mssse3 -msse4.1 -DBR_RDRAND=0"
 BR="build/bearssl-$( (echo "$BR_FLAGS"; cat third_party/bearssl/src/*.c third_party/bearssl/src/*/*.c) | md5sum | cut -c1-8)"
 if [ ! -f "$BR/libbearssl.a" ]; then
     mkdir -p "$BR"
+    cmds=()
     for f in third_party/bearssl/src/*.c third_party/bearssl/src/*/*.c; do
         o="$BR/$(echo "${f#third_party/bearssl/src/}" | tr / _).o"
-        echo "$B/orbis-clang $BR_FLAGS -Ithird_party/bearssl/inc -Ithird_party/bearssl/src -c $f -o $o"
-    done | xargs -P "$(nproc)" -I{} sh -c '{}'
+        cmds+=("$B/orbis-clang $BR_FLAGS -Ithird_party/bearssl/inc -Ithird_party/bearssl/src -c $f -o $o")
+    done
+    par "$NPROC" "${cmds[@]}"
     $B/orbis-ar rcs "$BR/libbearssl.a" "$BR"/*.o
 fi
 # libarchive (RAR and ZIP of downloads from links) and the zlib it inflates ZIPs with, once,
@@ -51,9 +70,11 @@ LA_FLAGS="-O2 -w -fno-short-wchar -include src/la_alloc.h -DHAVE_CONFIG_H"
 LA="build/libarchive-$( (echo "$LA_FLAGS"; cat src/la_alloc.h third_party/libarchive/*.[ch] third_party/zlib/*.[ch]) | md5sum | cut -c1-8)"
 if [ ! -f "$LA/libarchive.a" ]; then
     mkdir -p "$LA"
+    cmds=()
     for f in third_party/libarchive/*.c third_party/zlib/*.c; do
-        echo "$B/orbis-clang $LA_FLAGS -Ithird_party/libarchive -Ithird_party/zlib -Ithird_party/bearssl/inc -c $f -o $LA/$(basename "$f" .c).o"
-    done | xargs -P "$(nproc)" -I{} sh -c '{}'
+        cmds+=("$B/orbis-clang $LA_FLAGS -Ithird_party/libarchive -Ithird_party/zlib -Ithird_party/bearssl/inc -c $f -o $LA/$(basename "$f" .c).o")
+    done
+    par "$NPROC" "${cmds[@]}"
     $B/orbis-ar rcs "$LA/libarchive.a" "$LA"/*.o
 fi
 # libnfs (NFS) and libsmb2 (SMB), the clients of a network share, and libfuse (the
@@ -63,19 +84,23 @@ FN_FLAGS="-O2 -w -DHAVE_CONFIG_H -DHAVE_NFS4_2 -D_U_= -include third_party/libnf
 FN="build/libnfs-$( (echo "$FN_FLAGS"; cat third_party/libnfs/*/*.c third_party/libnfs/config.h third_party/libnfs/ps4_compat.h) | md5sum | cut -c1-8)"
 if [ ! -f "$FN/libnfs.a" ]; then
     mkdir -p "$FN"
+    cmds=()
     for f in third_party/libnfs/{lib,mount,nfs,nfs4,portmap,nlm,nsm,rquota}/*.c; do
         [ "$(basename "$f")" = rdma.c ] && continue # Linux epoll, not built here
-        echo "$B/orbis-clang $FN_FLAGS -Ithird_party/libnfs -Ithird_party/libnfs/include -Ithird_party/libnfs/include/nfsc -Ithird_party/libnfs/mount -Ithird_party/libnfs/nfs -Ithird_party/libnfs/nfs4 -Ithird_party/libnfs/portmap -Ithird_party/libnfs/nlm -Ithird_party/libnfs/nsm -Ithird_party/libnfs/rquota -c $f -o $FN/$(basename "$f" .c).o"
-    done | xargs -P "$(nproc)" -I{} sh -c '{}'
+        cmds+=("$B/orbis-clang $FN_FLAGS -Ithird_party/libnfs -Ithird_party/libnfs/include -Ithird_party/libnfs/include/nfsc -Ithird_party/libnfs/mount -Ithird_party/libnfs/nfs -Ithird_party/libnfs/nfs4 -Ithird_party/libnfs/portmap -Ithird_party/libnfs/nlm -Ithird_party/libnfs/nsm -Ithird_party/libnfs/rquota -c $f -o $FN/$(basename "$f" .c).o")
+    done
+    par "$NPROC" "${cmds[@]}"
     $B/orbis-ar rcs "$FN/libnfs.a" "$FN"/*.o
 fi
 FS_FLAGS="-O2 -w -DHAVE_ARC4RANDOM_BUF -DHAVE_CONFIG_H -DHAVE_DEV_URANDOM -D_FILE_OFFSET_BITS=64 -D_U_="
 FS="build/libsmb2-$( (echo "$FS_FLAGS"; cat third_party/libsmb2/lib/*.c third_party/libsmb2/config.h) | md5sum | cut -c1-8)"
 if [ ! -f "$FS/libsmb2.a" ]; then
     mkdir -p "$FS/lib"
+    cmds=()
     for f in third_party/libsmb2/lib/*.c; do
-        echo "$B/orbis-clang $FS_FLAGS -Ithird_party/libsmb2 -Ithird_party/libsmb2/include -Ithird_party/libsmb2/include/smb2 -Ithird_party/libsmb2/lib -c $f -o $FS/lib/$(basename "$f" .c).o"
-    done | xargs -P "$(nproc)" -I{} sh -c '{}'
+        cmds+=("$B/orbis-clang $FS_FLAGS -Ithird_party/libsmb2 -Ithird_party/libsmb2/include -Ithird_party/libsmb2/include/smb2 -Ithird_party/libsmb2/lib -c $f -o $FS/lib/$(basename "$f" .c).o")
+    done
+    par "$NPROC" "${cmds[@]}"
     $B/orbis-ar rcs "$FS/libsmb2.a" "$FS"/lib/*.o
 fi
 # Its buffers (~370 KB a mount) go on mapped pages (la_alloc.h): a mount outlives the
@@ -85,9 +110,11 @@ FF_FLAGS="-O2 -w -DFUSE_USE_VERSION=26 -D_FILE_OFFSET_BITS=64 -include src/la_al
 FF="build/libfuse-$( (echo "$FF_FLAGS"; cat src/la_alloc.h third_party/libfuse/source/*.c third_party/libfuse/source/*.h third_party/libfuse/include/*.h third_party/libfuse/include/orbis/*.h) | md5sum | cut -c1-8)"
 if [ ! -f "$FF/libfuse.a" ]; then
     mkdir -p "$FF"
+    cmds=()
     for f in third_party/libfuse/source/*.c; do
-        echo "$B/orbis-clang $FF_FLAGS -Ithird_party/libfuse/include -c $f -o $FF/$(basename "$f" .c).o"
-    done | xargs -P "$(nproc)" -I{} sh -c '{}'
+        cmds+=("$B/orbis-clang $FF_FLAGS -Ithird_party/libfuse/include -c $f -o $FF/$(basename "$f" .c).o")
+    done
+    par "$NPROC" "${cmds[@]}"
     $B/orbis-ar rcs "$FF/libfuse.a" "$FF"/*.o
 fi
 # A later load adopts the NAS mount of an earlier one only with the same NAS code.

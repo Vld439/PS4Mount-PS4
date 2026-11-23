@@ -111,7 +111,7 @@ pre{white-space:pre-wrap;font-size:12px;background:#0b0d11;padding:12px;border-r
 <!--LANG-->
 <script>
 var games = [], busy = {}, maxRestore = 10, msgTimer = 0;
-var labels = {ready: 'Ready', restart: 'Restart to play', running: 'Running', removed: 'Not in library', internal: 'Installed on console', pending: 'Adding', duplicate: 'On another drive', offline: 'Drive not connected'};
+var labels = {ready: 'Ready', restart: 'Restart to play', running: 'Running', removed: 'Not in library', internal: 'On console storage', pending: 'Adding', duplicate: 'On another drive', offline: 'Drive not connected'};
 function label(state) { return labels[state] ? t(labels[state]) : state; }
 
 function $(id) { return document.getElementById(id); }
@@ -128,6 +128,7 @@ function say(text) {
 function api(path, method, body, done) {
   var x = new XMLHttpRequest();
   x.open(method || 'GET', path, true);
+  x.setRequestHeader('X-PS4Mount', '1');
   if (body !== null && body !== undefined) x.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
   x.onreadystatechange = function () {
     if (x.readyState !== 4) return;

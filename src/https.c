@@ -229,6 +229,8 @@ static conn_t *conn_open(const http_url_t *u, int any, volatile int *cancel, int
             br_ssl_client_init_full(&c->cc, &c->xc, PUB_TAs, PUB_TAs_NUM);
         else
             br_ssl_client_init_full(&c->cc, &c->xc, TAs, TAs_NUM);
+        /* TLS 1.2 only: the full profile would also negotiate 1.0/1.1 (BearSSL has no 1.3) */
+        br_ssl_engine_set_versions(&c->cc.eng, BR_TLS12, BR_TLS12);
         br_ssl_engine_set_buffer(&c->cc.eng, c->iobuf, sizeof(c->iobuf), 1);
         uint8_t seed[32];
         entropy(seed, sizeof(seed));
@@ -529,7 +531,8 @@ static int request_on(conn_t *c, const http_req_t *q, const http_url_t *u, int k
         }
     }
     head[hl] = 0;
-    if (strncmp(head, "HTTP/1.", 7) || !(r->status = atoi(head + 9))) {
+    if (strncmp(head, "HTTP/1.", 7) || head[7] < '0' || head[7] > '9' || head[8] != ' ' ||
+        !(r->status = atoi(head + 9))) {
         snprintf(err, n, "not an HTTP answer");
         goto out;
     }

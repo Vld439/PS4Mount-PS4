@@ -112,6 +112,7 @@ typedef struct {
     int nas_rescan;    /* minutes between looks at the share for new pkgs; 0: only when asked */
     int klog;          /* the console's kernel log is read (game start/stop); off leaves it to
                         * another payload (AnyPad needs it to identify its virtual pad) */
+    int autorun;       /* the .bin is listed in GoldHEN's payloads.ini: it starts with the console */
 } config_t;
 
 #define MAX_RESTORE_BATCH 10
@@ -120,7 +121,7 @@ typedef struct {
  * moved until the user puts it there (the drive root, "", is still a choice). */
 #define DEFAULT_SCAN_PATH "PS4Mount"
 
-static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, 1, -1, 0, NAS_NFS, 0, "", "", "", "", "", 1, 1, 1};
+static config_t g_cfg = {1, 5, 1, {DEFAULT_SCAN_PATH}, 1, 5, 1, 1, -1, 0, NAS_NFS, 0, "", "", "", "", "", 1, 1, 1, 0};
 #define NAS_RESCAN_MAX 1440 /* minutes: once a day */
 static int g_setup; /* a first start: no game is added until the settings are saved (first_start) */
 /* A first start with nobody at the panel for this long goes on with the default settings:
@@ -146,7 +147,7 @@ static int console_language(void) {
     if (kernel_dynlib_handle(getpid(), "libSceRegMgr.sprx", &h)) { /* not in this process yet */
         int lh = sceKernelLoadStartModule("/system/common/lib/libSceRegMgr.sprx", 0, NULL, 0, NULL, &res);
         h = lh > 0 ? (uint32_t)lh : 0;
-        loaded = lh;
+        loaded = lh > 0;
     }
     int (*get)(long, int *) = h ? (void *)kernel_dynlib_dlsym(getpid(), h, "sceRegMgrGetInt") : NULL;
     if (get && !(rc = get(REG_LANGUAGE, &reg)) && reg >= 0)
@@ -169,8 +170,6 @@ typedef struct { char useless[45]; char message[3075]; } notify_request_t;
 int sceUserServiceInitialize(void *);
 int sceUserServiceGetForegroundUser(int32_t *);
 int sceAppInstUtilInitialize(void);
-int sceAppInstUtilAppInstallAll(void *);
-int sceAppInstUtilAppUnInstall(const char *);
 int sceKernelSendNotificationRequest(int, notify_request_t *, size_t, int);
 
 /* Set while the boot instance waits to be replaced by a load that can use the share:
@@ -1533,7 +1532,10 @@ static int dlc_install(dlc_src_t *a) {
     int big = a->pkg.pkg_size > DLC_INSTALL_MAX;
     if (big && dlc_pending(a->pkg.content_id))
         return 3;
-    if (big && (free_bytes("/user") < a->pkg.pkg_size + DLC_SPACE_MARGIN || g_ndlc_pending == MAX_DLC_PENDING)) {
+    uint64_t fb_user = free_bytes("/user");
+    /* pkg_size + margin can wrap: compare without adding */
+    if (big && ((a->pkg.pkg_size > fb_user || fb_user - a->pkg.pkg_size < DLC_SPACE_MARGIN) ||
+                g_ndlc_pending == MAX_DLC_PENDING)) {
         const sfo_item_t *n = sfo_get(&a->sfo, "TITLE");
         notify(TR("Not enough space on the console to install the add-on %s (%llu MB): free some space and load PS4Mount again",
                   "No hay espacio en la consola para instalar el DLC %s (%llu MB): libera espacio y vuelve a cargar PS4Mount"),
@@ -2078,9 +2080,13 @@ static void enforce_patch_sfo(const char *tid, int has_patch, const char *patch_
 
 /* Registration method: see fw.h. */
 typedef int (*title_dir_fn)(const char *title_id, const char *dir, void *reserved);
+typedef int (*install_all_fn)(void *param);
+typedef int (*uninstall_fn)(const char *title_id);
 
 static int g_reg_mode = REG_ALL;
 static title_dir_fn g_title_dir;
+static install_all_fn g_install_all;
+static uninstall_fn g_uninstall_call;
 static char g_fw_text[16] = "unknown";
 
 static const char *reg_mode_name(void) {
@@ -2092,13 +2098,21 @@ static void check_firmware(void) {
     unsigned major, minor;
     fw_decode(fw, &major, &minor);
     fw_text(fw, g_fw_text, sizeof(g_fw_text));
-    /* looked up at runtime: linking it would stop the payload from loading where it is gone */
+    /* looked up at runtime: linking them would stop the payload from loading where a
+     * firmware does not export them (sceAppInstUtilInitialize stays linked, so the
+     * module is loaded and the handle below always resolves) */
     uint32_t h = 0;
-    if (!kernel_dynlib_handle(getpid(), "libSceAppInstUtil.sprx", &h))
+    if (!kernel_dynlib_handle(getpid(), "libSceAppInstUtil.sprx", &h)) {
         g_title_dir = (title_dir_fn)kernel_dynlib_dlsym(getpid(), h, "sceAppInstUtilAppInstallTitleDir");
+        g_install_all = (install_all_fn)kernel_dynlib_dlsym(getpid(), h, "sceAppInstUtilAppInstallAll");
+        g_uninstall_call = (uninstall_fn)kernel_dynlib_dlsym(getpid(), h, "sceAppInstUtilAppUnInstall");
+    }
     g_reg_mode = fw_reg_mode(major, g_title_dir != NULL);
-    printf("[main] firmware %s (0x%08x), AppInstallTitleDir %s, registration: %s\n", g_fw_text, fw,
-           g_title_dir ? "present" : "missing", reg_mode_name());
+    if (g_reg_mode == REG_ALL && !g_install_all)
+        g_reg_mode = g_title_dir ? REG_TITLEDIR : REG_NONE;
+    printf("[main] firmware %s (0x%08x), InstallAll %s, TitleDir %s, UnInstall %s, registration: %s\n",
+           g_fw_text, fw, g_install_all ? "present" : "missing", g_title_dir ? "present" : "missing",
+           g_uninstall_call ? "present" : "missing", reg_mode_name());
 }
 
 /* The system registration runs in its own thread: after rest mode InstallAll was seen to
@@ -2114,7 +2128,9 @@ static int register_call(const char *tid) {
         printf("[reg] %s: AppInstallTitleDir=0x%08x\n", tid, rc);
         return rc == (int)0x80990002 ? 0 : rc; /* 0x80990002: already known, restored */
     }
-    return sceAppInstUtilAppInstallAll(NULL);
+    if (!g_install_all)
+        return -1;
+    return g_install_all(NULL);
 }
 
 static void *install_thread(void *arg) {
@@ -2781,6 +2797,24 @@ static int has_pkg(const char *dir) {
     return found;
 }
 
+/* The same folders adopt_dir_pkgs reads (the folder and its subfolders two levels
+ * down): a drive whose pkgs are only in subfolders must still count as a candidate,
+ * or it is skipped on every scan. */
+static int has_pkg_deep(const char *dir) {
+    char (*dirs)[PATH_MAX] = mem_alloc(sizeof(*dirs) * MAX_SCAN_DIRS);
+    if (!dirs)
+        return has_pkg(dir);
+    int n = 0, found = 0;
+    snprintf(dirs[n++], PATH_MAX, "%s", dir);
+    add_subdirs(dir, dirs, &n);
+    for (int i = 1, first_level = n; i < first_level; i++)
+        add_subdirs(dirs[i], dirs, &n);
+    for (int i = 0; i < n && !found; i++)
+        found = has_pkg(dirs[i]);
+    mem_free(dirs);
+    return found;
+}
+
 /* Titles that failed to be added wait before the next try, and the failure is
  * notified once: when the system refuses registrations, every scan would retry. */
 #define RETRY_SECONDS 300
@@ -2834,7 +2868,7 @@ static int has_candidates(const char *root) {
         return 1;
     for (int i = 0; i < g_cfg.npaths; i++) {
         scan_dir(p, sizeof(p), root, i);
-        if (has_pkg(p))
+        if (has_pkg_deep(p))
             return 1;
     }
     return 0;
@@ -3772,6 +3806,14 @@ static void handle_klog_line(const char *line) {
                 for (int j = 0; g->used && j < g->ndlc_tids; j++) {
                     if (strncmp(id + 7, g->dlc_tids[j], 9))
                         continue;
+                    /* the log line carries pkg-controlled metadata: only a plain
+                     * content-id charset may reach a path (no '/', '\\', '.', '..') */
+                    int plain = 1;
+                    for (const char *c = id; *c && plain; c++)
+                        plain = (*c >= 'A' && *c <= 'Z') || (*c >= 'a' && *c <= 'z') || (*c >= '0' && *c <= '9') ||
+                               *c == '-' || *c == '_';
+                    if (!plain)
+                        break;
                     char path[96], hold[PATH_MAX];
                     snprintf(path, sizeof(path), STATE_DIR "/%s.removed", id);
                     write_file(path, id, strlen(id), 0666);
@@ -3860,7 +3902,23 @@ void app_games_json(buf_t *out) {
         g_setup_seen = time(NULL); /* someone is at the panel: the defaults wait */
     buf_printf(out, "{\"lang\":\"%s\",\"setup\":%s,\"version\":", lang_tag(g_lang), g_setup ? "true" : "false");
     json_str(out, VERSION);
-    buf_printf(out, ",\"games\":[");
+    /* the drives in use, with room left: where the pkgs are and what a send needs */
+    buf_printf(out, ",\"drives\":[");
+    int dfirst = 1;
+    for (int i = 0; i < NROOTS; i++) {
+        char root[PATH_MAX];
+        root_path(i, root, sizeof(root));
+        struct statfs sf;
+        if (!root_present(root) || statfs(root, &sf))
+            continue;
+        buf_printf(out, "%s{\"label\":", dfirst ? "" : ",");
+        dfirst = 0;
+        json_str(out, root_label(root));
+        buf_printf(out, ",\"free\":%llu,\"total\":%llu}",
+                   (unsigned long long)((uint64_t)sf.f_bavail * (uint64_t)sf.f_bsize),
+                   (unsigned long long)((uint64_t)sf.f_blocks * (uint64_t)sf.f_bsize));
+    }
+    buf_printf(out, "],\"games\":[");
     int first = 1, nlisted = 0;
     static char listed[MAX_TITLES][10];
     for (int i = 0; i < NROOTS; i++) {
@@ -4029,13 +4087,17 @@ static char g_uninstall_tid[10];
 
 static void *uninstall_thread(void *arg) {
     (void)arg;
-    g_uninstall_rc = sceAppInstUtilAppUnInstall(g_uninstall_tid);
+    g_uninstall_rc = g_uninstall_call(g_uninstall_tid);
     g_uninstall_busy = 0;
     return NULL;
 }
 
 /* 0 or the system error; -2 while an earlier call is still running or this one timed out. */
 static int uninstall_title(const char *tid) {
+    if (!g_uninstall_call) {
+        printf("[remove] %s: sceAppInstUtilAppUnInstall is not in this firmware\n", tid);
+        return -3;
+    }
     if (g_uninstall_busy) {
         printf("[remove] %s: an earlier uninstall (%s) is still running\n", tid, g_uninstall_tid);
         return -2;
@@ -4136,6 +4198,23 @@ static void clean_name(char *s) {
             *s = '_';
 }
 
+/* orig comes from origin.txt (media anyone can write) or the pkg TITLE: joined under the
+ * drive root it must not leave it — no absolute path, no backslash, no ".." component. */
+static int orig_safe(const char *o) {
+    if (!o[0] || o[0] == '/' || strchr(o, '\\'))
+        return 0;
+    for (const char *p = o; *p;) {
+        const char *e = strchr(p, '/');
+        size_t l = e ? (size_t)(e - p) : strlen(p);
+        if ((l == 1 && p[0] == '.') || (l == 2 && p[0] == '.' && p[1] == '.'))
+            return 0;
+        if (!e)
+            break;
+        p = e + 1;
+    }
+    return 1;
+}
+
 /* Moves <game_dir>/<rel> to its recorded original path (or fallback, relative to the
  * drive root, for pkgs moved before origins were recorded) and adds it to the list of
  * restored pkgs when remember is set (moved back on request: the scan leaves them alone).
@@ -4149,6 +4228,10 @@ static int restore_pkg(const char *root, const char *game_dir, const char *rel, 
     if (origin_find(game_dir, rel, orig, sizeof(orig))) {
         snprintf(orig, sizeof(orig), "%s", fallback);
         clean_name(orig);
+    }
+    if (!orig_safe(orig)) {
+        printf("[restore] %s: unsafe original path %s\n", src, orig);
+        return -1;
     }
     snprintf(dir, sizeof(dir), "%s/%s", root, orig);
     char *slash = strrchr(dir, '/');
@@ -4759,7 +4842,7 @@ static void config_save(void) {
     buf_printf(&b, "nas=%d\nnas_proto=%d\nnas_port=%d\nnas_server=%s\nnas_share=%s\nnas_sub=%s\nnas_user=%s\nnas_pass=%s\n",
                g_cfg.nas, g_cfg.nas_proto, g_cfg.nas_port, g_cfg.nas_server, g_cfg.nas_share,
                g_cfg.nas_sub, g_cfg.nas_user, g_cfg.nas_pass);
-    buf_printf(&b, "nas_rescan=%d\nklog=%d\n", g_cfg.nas_rescan, g_cfg.klog);
+    buf_printf(&b, "nas_rescan=%d\nklog=%d\nautorun=%d\n", g_cfg.nas_rescan, g_cfg.klog, g_cfg.autorun);
     for (int i = 0; i < g_cfg.npaths; i++)
         buf_printf(&b, "path=%s\n", g_cfg.paths[i]);
     write_file(CONFIG_PATH, b.data, b.len, 0666);
@@ -4797,6 +4880,8 @@ static void config_load(void) {
             c.organize = atoi(line + 9) != 0;
         else if (!strncmp(line, "klog=", 5))
             c.klog = atoi(line + 5) != 0;
+        else if (!strncmp(line, "autorun=", 8))
+            c.autorun = atoi(line + 8) != 0;
         else if (!strncmp(line, "lang=", 5))
             c.lang = lang_from_tag(line + 5);
         else if (!strncmp(line, "path=", 5) && c.npaths < MAX_SCAN_PATHS &&
@@ -4844,14 +4929,18 @@ static void config_load(void) {
            g_cfg.dlc, g_cfg.restore_batch, g_cfg.organize, g_cfg.npaths);
 }
 
+static const char *payload_file(void);
+static int autorun_apply(int on);
+
 void app_config_json(buf_t *out) {
     buf_printf(out,
                "{\"batch\":%s,\"batch_size\":%d,\"dlc\":%s,\"dlc_big\":%s,\"internal\":%s,\"organize\":%s,\"restore_batch\":%d,\"max_restore_batch\":%d,"
-               "\"lang\":\"%s\",\"ui_lang\":\"%s\",\"klog\":%s,\"nas_supported\":%s,\"nas\":%s,\"nas_proto\":\"%s\",\"nas_port\":%d,"
+               "\"lang\":\"%s\",\"ui_lang\":\"%s\",\"klog\":%s,\"autorun\":%s,\"autorun_ok\":%s,\"nas_supported\":%s,\"nas\":%s,\"nas_proto\":\"%s\",\"nas_port\":%d,"
                "\"nas_rescan\":%d,\"nas_tested\":%s,\"nas_server\":",
                g_cfg.batch ? "true" : "false", g_cfg.batch_size, g_cfg.dlc ? "true" : "false", g_cfg.dlc_big ? "true" : "false",
                g_cfg.internal ? "true" : "false", g_cfg.organize ? "true" : "false", g_cfg.restore_batch, MAX_RESTORE_BATCH,
                g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto", lang_tag(g_lang), g_cfg.klog ? "true" : "false",
+               g_cfg.autorun ? "true" : "false", payload_file() ? "true" : "false",
                nas_supported() ? "true" : "false", g_cfg.nas ? "true" : "false",
                g_cfg.nas_proto == NAS_SMB ? "smb" : "nfs", g_cfg.nas_port, g_cfg.nas_rescan,
                nas_fw_tested(g_fw) ? "true" : "false");
@@ -4976,6 +5065,8 @@ int app_config_set(const char *body, char *msg, size_t cap) {
                 c.organize = atoi(value) != 0;
             else if (k == 4 && !strncmp(p, "klog", 4))
                 c.klog = atoi(value) != 0;
+            else if (k == 7 && !strncmp(p, "autorun", 7))
+                c.autorun = atoi(value) != 0;
             else if (k == 4 && !strncmp(p, "lang", 4))
                 c.lang = lang_from_tag(value); /* "auto" and anything else: the console's */
             else if (k == 13 && !strncmp(p, "restore_batch", 13)) {
@@ -5068,9 +5159,12 @@ int app_config_set(const char *body, char *msg, size_t cap) {
                       c.nas_port != g_cfg.nas_port || strcmp(c.nas_server, g_cfg.nas_server) ||
                       strcmp(c.nas_share, g_cfg.nas_share) || strcmp(c.nas_sub, g_cfg.nas_sub) ||
                       strcmp(c.nas_user, g_cfg.nas_user) || strcmp(c.nas_pass, g_cfg.nas_pass);
+    int autorun_changed = c.autorun != g_cfg.autorun;
     g_cfg = c;
     apply_lang();
     config_save();
+    if (autorun_changed && autorun_apply(c.autorun))
+        printf("[config] autorun %s: could not update payloads.ini\n", c.autorun ? "on" : "off");
     printf("[config] saved: batch=%d batch_size=%d dlc=%d restore_batch=%d organize=%d folders=%d\n", c.batch,
            c.batch_size, c.dlc, c.restore_batch, c.organize, c.npaths);
     if (was_organize && !c.organize) /* turned off: send the organized games back to where they were */
@@ -5387,7 +5481,9 @@ static void panel_app_step(void) {
         return;
     pthread_t th;
     g_panel_fetching = 1;
-    if (!pthread_create(&th, NULL, panel_app_fetch, NULL))
+    if (pthread_create(&th, NULL, panel_app_fetch, NULL))
+        g_panel_fetching = 0;
+    else
         pthread_detach(th);
 }
 
@@ -5421,7 +5517,8 @@ int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint6
     }
     mkdirs(dir, 0777);
     uint64_t fb = free_bytes(dir), margin = 64ull << 20;
-    if (fb < length + margin) {
+    /* length + margin can wrap: compare without adding */
+    if (length > fb || fb - length < margin) {
         snprintf(msg, cap, TR("not enough space in %s: %llu MB free, %llu MB needed", "no hay espacio en %s: %llu MB libres, %llu MB necesarios"), dir,
                  (unsigned long long)(fb >> 20), (unsigned long long)((length + margin) >> 20));
         return -1;
@@ -5747,6 +5844,87 @@ static const char *payload_file(void) {
         }
     }
     return NULL;
+}
+
+/* GoldHEN's AutoRun list: "/data/GoldHEN/payloads.ini" (the same file as the /user/data
+ * one). Entries are "<path> = 1" lines under [AutoRun]; everything else is kept as is. */
+#define AUTORUN_INI "/data/GoldHEN/payloads.ini"
+#define AUTORUN_INI_ALT "/user/data/GoldHEN/payloads.ini"
+
+/* The line names the payload file, whatever path it was listed with before. */
+static int ini_is_ours(const char *s, size_t len) {
+    static const char name[] = "ps4mount-ps4.bin";
+    for (size_t i = 0; i + sizeof(name) - 1 <= len; i++) {
+        size_t j = 0;
+        for (; j < sizeof(name) - 1; j++) {
+            char a = s[i + j];
+            if (a >= 'A' && a <= 'Z')
+                a += 'a' - 'A';
+            if (a != name[j])
+                break;
+        }
+        if (j == sizeof(name) - 1 && (i == 0 || s[i - 1] == '/'))
+            return 1;
+    }
+    return 0;
+}
+
+/* Makes payloads.ini list (on) or not list (off) the payload under [AutoRun].
+ * 0 when it says what the setting says, -1 when there is no payload file or it fails. */
+static int autorun_apply(int on) {
+    const char *me = payload_file();
+    if (!me)
+        return -1;
+    mkdirs("/data/GoldHEN", 0777);
+    size_t len = 0;
+    uint8_t *raw = read_all(AUTORUN_INI, &len);
+    const char *ini = AUTORUN_INI;
+    if (!raw) {
+        raw = read_all(AUTORUN_INI_ALT, &len);
+        ini = AUTORUN_INI_ALT;
+    }
+    if (!raw && !on)
+        return 0; /* nothing was listed: nothing to take off */
+    buf_t out = {0};
+    int added = 0;
+    for (size_t pos = 0; raw && pos < len;) {
+        size_t e = pos;
+        while (e < len && raw[e] != '\n')
+            e++;
+        const char *line = (const char *)raw + pos;
+        size_t ll = e - pos, vl = ll;
+        while (vl && (line[vl - 1] == '\r' || line[vl - 1] == ' ' || line[vl - 1] == '\t'))
+            vl--;
+        if (ini_is_ours(line, vl)) { /* ours, wherever it was: dropped, added back below */
+            pos = e < len ? e + 1 : e;
+            continue;
+        }
+        size_t a = 0;
+        while (a < vl && (line[a] == ' ' || line[a] == '\t'))
+            a++;
+        buf_put(&out, line, ll);
+        if (e < len)
+            buf_put(&out, "\n", 1);
+        if (on && !added && vl - a == 9 && line[a] == '[' && !strncasecmp(line + a + 1, "autorun]", 8)) {
+            char ent[PATH_MAX + 16];
+            int el = snprintf(ent, sizeof(ent), "%s = 1\n", me);
+            buf_put(&out, ent, (size_t)el);
+            added = 1;
+        }
+        pos = e < len ? e + 1 : e;
+    }
+    if (on && !added) {
+        if (out.len && ((const uint8_t *)out.data)[out.len - 1] != '\n')
+            buf_put(&out, "\n", 1);
+        buf_put(&out, "\n[AutoRun]\n", 10);
+        char ent[PATH_MAX + 16];
+        int el = snprintf(ent, sizeof(ent), "%s = 1\n", me);
+        buf_put(&out, ent, (size_t)el);
+    }
+    int rc = write_file(ini, out.len ? out.data : (const uint8_t *)"", out.len, 0666);
+    buf_free(&out);
+    mem_free(raw);
+    return rc;
 }
 
 /* One line (without its CRLF) within ms; 1 when the socket said something. */
@@ -6236,6 +6414,8 @@ int main(void) {
     g_setup_start = time(NULL);
     config_load();
     apply_lang();
+    if (g_cfg.autorun)
+        autorun_apply(1); /* the ini was maybe edited by hand: make it say the setting */
     if (g_setup)
         printf("[main] first start: no game is added until the settings are saved\n");
     signal(SIGPIPE, SIG_IGN);

@@ -98,7 +98,7 @@ function tKeys(file) {
     ok(keys.length > 20 && !missing.length, f + ': every t() text has a Spanish one' + (missing.length ? ': ' + JSON.stringify(missing) : ''));
     ok(built.every((c) => /^t\(labels\[/.test(c) || /^t\(c\.kind\)/.test(c)), f + ': t() of a computed text only for states and pkg kinds: ' + built.join(' '));
   });
-  ['Ready', 'Restart to play', 'Running', 'Not in library', 'Installed on console', 'Adding', 'On another drive', 'Drive not connected',
+  ['Ready', 'Restart to play', 'Running', 'Not in library', 'On console storage', 'Adding', 'On another drive', 'Drive not connected',
     'game', 'update', 'add-on', 'other'].forEach((k) => ok(!!L.es[k], 'Spanish for "' + k + '"'));
   Object.keys(L.es).forEach((k) => {
     // the same ones; a translation may use one twice ("de {0} en {0}")

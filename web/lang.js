@@ -226,7 +226,22 @@ var LANGS = {
     'Restart to play': 'Reinicia para jugar',
     'Running': 'Abierto',
     'Not in library': 'Fuera de la biblioteca',
-    'Installed on console': 'Instalado en la consola',
+    'On console storage': 'En el almacenamiento de la consola',
+    'free': 'libre',
+    'Nothing is installed: the game plays straight from its .pkg files.':
+      'No está instalado: el juego se juega directamente desde sus .pkg.',
+    'Where the games are': 'Dónde están los juegos',
+    'Nothing is installed: each game plays straight from its .pkg files, where they already are — a USB drive, a NAS share, or the console\'s /data/PS4Mount. PS4Mount only adds it to the home screen; the pkgs are never copied for it.':
+      'No se instala nada: cada juego se juega directamente desde sus .pkg, donde ya están — un USB, un recurso de red o el /data/PS4Mount de la consola. PS4Mount solo lo añade a la pantalla de inicio; los pkgs nunca se copian para ello.',
+    'The only things that take console storage are big add-ons (DLC over 256 MB, if enabled) and the panel app. Removing a game from the library, or restoring its files, never deletes a .pkg.':
+      'Lo único que ocupa la memoria de la consola son los DLC grandes (más de 256 MB, si están activados) y la app del panel. Quitar un juego de la biblioteca, o devolver sus archivos, nunca borra un .pkg.',
+    'Start with the console (GoldHEN AutoRun)': 'Arrancar con la consola (AutoRun de GoldHEN)',
+    'Adds PS4Mount\'s line to GoldHEN\'s payloads.ini, so it starts by itself after the jailbreak: no need to send it each time. Needs GoldHEN 2.4b18.10+ with PayLoader and the .bin in /data/payloads. The jailbreak itself is still needed after a full shutdown.':
+      'Añade la línea de PS4Mount al payloads.ini de GoldHEN, para que arranque solo tras el jailbreak: no hay que enviarlo cada vez. Necesita GoldHEN 2.4b18.10+ con PayLoader y el .bin en /data/payloads. El jailbreak sigue siendo necesario tras un apagado completo.',
+    'Not available: the payload file was not found in /data/payloads (it is needed to write its AutoRun line).':
+      'No disponible: no se encontró el archivo del payload en /data/payloads (hace falta para escribir su línea de AutoRun).',
+    'No PS4 games found. Put the .pkg files (game, update and add-ons) anywhere on a USB drive or in the console\'s /data/PS4Mount, then Scan for games — or send them from this page.':
+      'No hay juegos de PS4. Pon los .pkg (juego, actualización y DLC) en cualquier parte de un USB o en el /data/PS4Mount de la consola, y pulsa Buscar juegos — o envíalos desde esta página.',
     'Adding': 'Añadiéndose',
     'On another drive': 'En otra unidad',
     'Drive not connected': 'Unidad no conectada',

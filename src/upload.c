@@ -14,6 +14,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "check.h"
@@ -95,6 +96,8 @@ int upload_clean_name(const char *name, char *out, size_t n) {
     return 0;
 }
 
+static int write_all(int fd, const uint8_t *p, size_t n);
+
 static void answer(int fd, int ok, const char *msg) {
     buf_t b = {0};
     buf_printf(&b, "{\"ok\":%s,\"%s\":", ok ? "true" : "false", ok ? "message" : "error");
@@ -105,8 +108,8 @@ static void answer(int fd, int ok, const char *msg) {
                      "HTTP/1.1 %s\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: %zu\r\n"
                      "Cache-Control: no-store\r\nConnection: close\r\n\r\n",
                      ok ? "200 OK" : "400 Bad Request", b.len);
-    if (write(fd, head, (size_t)n) > 0)
-        (void)!write(fd, b.data, b.len);
+    if (write_all(fd, (const uint8_t *)head, (size_t)n) || write_all(fd, b.data, b.len))
+        ; /* the client went away: nothing to say about it */
     buf_free(&b);
 }
 
@@ -146,13 +149,20 @@ static int check_part(const job_t *j, char *msg, size_t n) {
     return 0;
 }
 
-/* A name in dir not taken yet: "Game.pkg", then "Game (1).pkg"... */
-static void free_name(const char *dir, const char *name, char *out, size_t n) {
+/* A name in dir not taken yet: "Game.pkg", then "Game (1).pkg"...
+ * 0 on success; -1 when every candidate is taken (the caller must not rename over it). */
+static int free_name(const char *dir, const char *name, char *out, size_t n) {
     struct stat st;
     snprintf(out, n, "%.3800s/%.250s", dir, name);
+    if (stat(out, &st))
+        return 0;
     size_t l = strlen(name) - 4;
-    for (int i = 1; !stat(out, &st) && i < 1000; i++)
+    for (int i = 1; i < 1000; i++) {
         snprintf(out, n, "%.3800s/%.*s (%d).pkg", dir, (int)(l > 240 ? 240 : l), name, i);
+        if (stat(out, &st))
+            return 0;
+    }
+    return -1;
 }
 
 static void *receive(void *arg) {
@@ -160,6 +170,9 @@ static void *receive(void *arg) {
     char msg[512] = "";
     int out = open(j->part, O_WRONLY | O_CREAT | O_TRUNC, 0666), checked = 0, rc = 0;
     uint64_t got = 0;
+    /* a sender that drips a byte every minute would hold the slot forever:
+     * two hours is far past any real pkg over a LAN */
+    time_t deadline = time(NULL) + 7200;
     uint8_t *buf = mem_alloc(CHUNK);
     if (out < 0 || !buf) {
         snprintf(msg, sizeof(msg), TR("cannot write %.300s: %s", "no se puede escribir %.300s: %s"), j->part, strerror(errno));
@@ -171,6 +184,11 @@ static void *receive(void *arg) {
         got = take;
     }
     while (!rc && got < j->length) {
+        if (time(NULL) > deadline) {
+            snprintf(msg, sizeof(msg), TR("%s: the transfer took too long", "%s: la transferencia tardó demasiado"), j->name);
+            rc = -1;
+            break;
+        }
         size_t want = j->length - got < CHUNK ? (size_t)(j->length - got) : CHUNK;
         ssize_t r = read(j->fd, buf, want);
         if (r <= 0) {
@@ -205,11 +223,15 @@ static void *receive(void *arg) {
         rc = check_part(j, msg, sizeof(msg));
     if (!rc) {
         char final[PATH_MAX];
-        free_name(j->final, j->name, final, sizeof(final)); /* j->final holds the folder until now */
-        snprintf(j->final, sizeof(j->final), "%s", final);
-        if (rename(j->part, j->final)) {
-            snprintf(msg, sizeof(msg), TR("%s: rename failed (%s)", "%s: no se pudo renombrar (%s)"), j->name, strerror(errno));
+        if (free_name(j->final, j->name, final, sizeof(final))) { /* j->final holds the folder until now */
+            snprintf(msg, sizeof(msg), TR("%s: no free name left in %s", "%s: no queda ningún nombre libre en %s"), j->name, j->final);
             rc = -1;
+        } else {
+            snprintf(j->final, sizeof(j->final), "%s", final);
+            if (rename(j->part, j->final)) {
+                snprintf(msg, sizeof(msg), TR("%s: rename failed (%s)", "%s: no se pudo renombrar (%s)"), j->name, strerror(errno));
+                rc = -1;
+            }
         }
     }
     if (rc) {
@@ -246,6 +268,13 @@ int upload_start(int fd, const char *dir, const char *name, uint64_t length, con
     if (busy)
         return -1;
     job_t *j = calloc(1, sizeof(*j));
+    if (!j) {
+        pthread_mutex_lock(&g_mu);
+        g_state = ST_IDLE;
+        pthread_mutex_unlock(&g_mu);
+        close(fd);
+        return -1;
+    }
     j->fd = fd;
     j->length = length;
     j->fw = fw;
@@ -256,6 +285,14 @@ int upload_start(int fd, const char *dir, const char *name, uint64_t length, con
     snprintf(j->final, sizeof(j->final), "%s", dir);
     if (pre_len) {
         j->pre = mem_alloc(pre_len);
+        if (!j->pre) {
+            pthread_mutex_lock(&g_mu);
+            g_state = ST_IDLE;
+            pthread_mutex_unlock(&g_mu);
+            close(fd);
+            free(j);
+            return -1;
+        }
         memcpy(j->pre, pre, pre_len);
         j->pre_len = pre_len;
     }

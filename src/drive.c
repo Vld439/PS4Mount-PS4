@@ -503,7 +503,8 @@ static int api_stall(const char *method, const char *url, const char *ctype, con
         if (!rc) {
             google_error(r, err, n);
             http_resp_free(r);
-        }
+        } else
+            http_resp_free(r); /* a partial buffered body is not kept for the retry */
         printf("[drive] %s %s: %s (try %d)\n", method, url, err, t + 1);
         if (pause_s(g_drive_retry_seconds << t))
             break;
@@ -1207,15 +1208,17 @@ static void *dl_worker(void *arg) {
             int q = api_stall("GET", url, NULL, NULL, 0, range, piece_sink, &pc, DL_STALL, keep, &r, err, sizeof(err));
             if (q && pc.at < pc.want && !g_cancel && !g_quit && !d->stop)
                 printf("[drive] block %llu: %s at %zu of %zu bytes, opening it again\n", (unsigned long long)b, err, pc.at, pc.want);
-            if (!q && r.status != 206 && !(r.status == 200 && from == 0 && to == d->f->size)) {
+            /* the status was parsed even when the body transfer failed: a 200 that filled
+             * the block is the whole file, not the part asked for */
+            if (r.status && r.status != 206 && !(r.status == 200 && from == 0 && to == d->f->size)) {
                 gone = r.status == 404;
                 if (r.status == 200)
                     snprintf(err, sizeof(err), "%s", TR("Drive sent the whole file instead of a part", "Drive envió el archivo entero en vez de una parte"));
                 else
                     google_error(&r, err, sizeof(err));
+                pc.at = before = 0; /* nothing of it was taken */
             }
-            if (!q)
-                http_resp_free(&r);
+            http_resp_free(&r);
             ok = pc.at == pc.want;
             if (ok || g_cancel || g_quit)
                 break;
@@ -1256,7 +1259,7 @@ static int download_file(const remote_file_t *f, const char *part, char *err, si
         return -1;
     }
     /* as many slots as memory gives, at least one a connection plus one */
-    for (d.slots = 0; d.slots < DL_SLOTS && d.slots < (int)d.nblocks + 1; d.slots++)
+    for (d.slots = 0; d.slots < DL_SLOTS && (uint64_t)d.slots < d.nblocks + 1; d.slots++)
         if (!(d.buf[d.slots] = mem_alloc(g_drive_block)))
             break;
     if (d.nblocks && d.slots < 2) {
@@ -1421,6 +1424,11 @@ static void run_download(const char *tid, const char *dest) {
         for (int i = 0; i < nr; i++) {
             if ((pass == 0) != !strcmp(rem[i].kind, "game"))
                 continue;
+            /* a Drive file name is a name, not a path: never let it leave its folder */
+            if (strchr(rem[i].name, '/') || strchr(rem[i].name, '\\') || strstr(rem[i].name, "..")) {
+                printf("[drive] %s: skipping %s: not a plain name\n", tid, rem[i].name);
+                continue;
+            }
             pthread_mutex_lock(&g_mu);
             snprintf(g_cur_file, sizeof(g_cur_file), "%s", rem[i].name);
             g_file_i++;

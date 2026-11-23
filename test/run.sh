@@ -7,6 +7,23 @@ cd "$(dirname "$0")/.."
 B=build/test
 mkdir -p "$B"
 CC=${CC:-cc}
+# macOS has no nproc, and its xargs -I cannot take the long compile lines: run the
+# commands (one per argument) with at most NPROC at once, a batch at a time.
+NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+par() {
+    local max=$1 pids=() cmd p fail=0
+    shift
+    for cmd in "$@"; do
+        sh -c "$cmd" &
+        pids+=($!)
+        if [ "${#pids[@]}" -ge "$max" ]; then
+            for p in "${pids[@]}"; do wait "$p" || fail=1; done
+            pids=()
+        fi
+    done
+    for p in ${pids[@]+"${pids[@]}"}; do wait "$p" || fail=1; done
+    return "$fail"
+}
 FLAGS="-O1 -g -Wall -Wextra -I$B -Isrc"
 if [ "${SANITIZE:-0}" = 1 ]; then
     FLAGS="$FLAGS -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
@@ -37,9 +54,11 @@ SQ="$B/sqlite3-$( (echo "$CC $FLAGS"; cat src/la_alloc.h) | md5sum | cut -c1-8).
 BR="$B/bearssl-$(echo "$CC $FLAGS" | md5sum | cut -c1-8)"
 if [ ! -f "$BR/libbearssl.a" ]; then
     mkdir -p "$BR"
+    cmds=()
     for f in third_party/bearssl/src/*.c third_party/bearssl/src/*/*.c; do
-        echo "$CC $FLAGS -w -Ithird_party/bearssl/inc -Ithird_party/bearssl/src -c $f -o $BR/$(echo "${f#third_party/bearssl/src/}" | tr / _).o"
-    done | xargs -P "$(nproc)" -I{} sh -c '{}'
+        cmds+=("$CC $FLAGS -w -Ithird_party/bearssl/inc -Ithird_party/bearssl/src -c $f -o $BR/$(echo "${f#third_party/bearssl/src/}" | tr / _).o")
+    done
+    par "$NPROC" "${cmds[@]}"
     ar rcs "$BR/libbearssl.a" "$BR"/*.o
 fi
 BRF="-Ithird_party/bearssl/inc"
@@ -48,9 +67,11 @@ BRF="-Ithird_party/bearssl/inc"
 LA="$B/libarchive-$( (echo "$CC $FLAGS"; cat src/la_alloc.h third_party/libarchive/*.[ch] third_party/zlib/*.[ch]) | md5sum | cut -c1-8)"
 if [ ! -f "$LA/libarchive.a" ]; then
     mkdir -p "$LA"
+    cmds=()
     for f in third_party/libarchive/*.c third_party/zlib/*.c; do
-        echo "$CC $FLAGS -w -include src/la_alloc.h -DHAVE_CONFIG_H -Ithird_party/libarchive -Ithird_party/zlib -Ithird_party/bearssl/inc -c $f -o $LA/$(basename "$f" .c).o"
-    done | xargs -P "$(nproc)" -I{} sh -c '{}'
+        cmds+=("$CC $FLAGS -w -include src/la_alloc.h -DHAVE_CONFIG_H -Ithird_party/libarchive -Ithird_party/zlib -Ithird_party/bearssl/inc -c $f -o $LA/$(basename "$f" .c).o")
+    done
+    par "$NPROC" "${cmds[@]}"
     ar rcs "$LA/libarchive.a" "$LA"/*.o
 fi
 LAF="-Ithird_party/libarchive"

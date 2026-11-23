@@ -28,6 +28,8 @@ main{padding:20px;max-width:1400px;margin:0 auto}
 .summary{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px;color:var(--muted)}
 .summary span{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 12px;cursor:pointer}
 .summary span.on{border-color:var(--accent);color:var(--fg)}
+.storage{color:var(--muted);font-size:12px;margin:-8px 0 14px}
+.storage span{margin-right:16px;white-space:nowrap}
 .card .art{cursor:pointer}
 .hero{height:220px;border-radius:10px;background:#0b0d11 center/cover no-repeat;margin:-4px 0 14px;position:relative}
 .hero .icon{position:absolute;left:14px;bottom:-26px;width:96px;height:96px;border-radius:12px;border:3px solid var(--panel);background:#0b0d11 center/cover no-repeat}
@@ -127,8 +129,15 @@ button.small{padding:5px 10px;font-size:13px}
 <main>
   <div class="warn" id="setupnote" hidden>First start: check the settings (which folders, games per group, add-ons) and press Save in Settings. While this page is open no game is added; closed for 2 minutes without saving, the default settings are used.</div>
   <div class="summary" id="summary"></div>
+  <div class="storage" id="storage"></div>
   <div class="grid" id="grid"></div>
-  <div class="empty" id="empty" hidden>No PS4 games found. Put the .pkg files (game, update and add-ons) in the PS4Mount folder of a USB drive, or send them with Send games.</div>
+  <div class="empty" id="empty" hidden>
+    <p id="empty-t">No PS4 games found. Put the .pkg files (game, update and add-ons) anywhere on a USB drive or in the console's /data/PS4Mount, then Scan for games — or send them from this page.</p>
+    <div class="bar" id="empty-btns" style="justify-content:center" hidden>
+      <button id="empty-send" hidden>Send games</button>
+      <button id="empty-links" hidden>Download links</button>
+    </div>
+  </div>
 </main>
 <dialog id="setdlg"><h3>Settings</h3>
 <form class="settings" id="setform">
@@ -151,9 +160,19 @@ button.small{padding:5px 10px;font-size:13px}
   <label class="check"><input type="checkbox" id="s-klog"> Read the console's log (game start and stop)</label>
   <span class="hint" style="margin-top:-8px">On by default. Turn it off to leave the log to another payload: AnyPad needs it to tell its virtual
     pad apart, and only one payload can read it. Games in play are then noticed a few seconds later, from their mount.</span>
+  <label class="check"><input type="checkbox" id="s-autorun"> Start with the console (GoldHEN AutoRun)</label>
+  <span class="hint" style="margin-top:-8px" id="autorun-hint">Adds PS4Mount's line to GoldHEN's payloads.ini, so it starts by itself after the
+    jailbreak: no need to send it each time. Needs GoldHEN 2.4b18.10+ with PayLoader and the .bin in /data/payloads.
+    The jailbreak itself is still needed after a full shutdown.</span>
   <label class="check"><input type="checkbox" id="s-internal"> Also use pkgs in the console's /data/PS4Mount</label>
   <span class="hint" style="margin-top:-8px">Pkgs sent to the console's storage are added from there, with no install to wait
     for. They still take internal space.</span>
+  <details class="nashelp"><summary>Where the games are</summary>
+    <p>Nothing is installed: each game plays straight from its .pkg files, where they already are — a USB drive, a NAS
+      share, or the console's /data/PS4Mount. PS4Mount only adds it to the home screen; the pkgs are never copied for it.</p>
+    <p>The only things that take console storage are big add-ons (DLC over 256 MB, if enabled) and the panel app.
+      Removing a game from the library, or restoring its files, never deletes a .pkg.</p>
+  </details>
   <fieldset id="nasbox"><legend>NAS (NFS or SMB)</legend>
     <span class="hint" id="nas-unsupported" hidden>Not available on this firmware: there is no FUSE patch for it.</span>
     <span class="warn" id="nas-experimental" hidden>Experimental on this firmware: its FUSE patch is itemzflow's and was not tried with PS4Mount (it was on 13.52 and 6.72). If the console freezes when the share is mounted, restart it and turn the NAS off.</span>
@@ -303,7 +322,8 @@ button.small{padding:5px 10px;font-size:13px}
 <!--LANG-->
 <script>
 var games = [], busy = {};
-var labels = {ready: 'Ready', restart: 'Restart to play', running: 'Running', removed: 'Not in library', internal: 'Installed on console', pending: 'Adding', duplicate: 'On another drive', offline: 'Drive not connected'};
+var labels = {ready: 'Ready', restart: 'Restart to play', running: 'Running', removed: 'Not in library', internal: 'On console storage', pending: 'Adding', duplicate: 'On another drive', offline: 'Drive not connected'};
+var drives = [];
 function label(state) { return labels[state] ? t(labels[state]) : state; }
 var filter = '';
 
@@ -314,8 +334,8 @@ function gb(n) { return (n / 1073741824).toFixed(n >= 10737418240 ? 0 : 1) + ' G
 function toast(msg) { var t = $('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(function () { t.style.display = 'none'; }, 4000); }
 
 function api(path, method, body) {
-  var opt = {method: method || 'GET', cache: 'no-store'};
-  if (body !== undefined) { opt.body = body; opt.headers = {'Content-Type': 'application/x-www-form-urlencoded'}; }
+  var opt = {method: method || 'GET', cache: 'no-store', headers: {'X-PS4Mount': '1'}};
+  if (body !== undefined) { opt.body = body; opt.headers['Content-Type'] = 'application/x-www-form-urlencoded'; }
   return fetch(path, opt).then(function (r) {
     return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; });
   });
@@ -376,6 +396,13 @@ function render() {
   });
   $('grid').innerHTML = html;
   $('empty').hidden = games.length > 0;
+  /* the empty state's buttons offer what this console can do right now */
+  var eb = $('empty-btns');
+  if (eb) {
+    eb.hidden = $('sendbtn').hidden && $('linkbtn').hidden;
+    $('empty-send').hidden = $('sendbtn').hidden;
+    $('empty-links').hidden = $('linkbtn').hidden;
+  }
   var s = '<span data-f=""' + (filter ? '' : ' class="on"') + '>' + t('{0} game(s)', games.length) + '</span>';
   for (var k in counts) s += '<span data-f="' + k + '"' + (filter === k ? ' class="on"' : '') + '>' + esc(label(k)) + ': ' + counts[k] + '</span>';
   $('summary').innerHTML = s;
@@ -395,7 +422,8 @@ function showGame(tid) {
   var dg = driveGame(tid);
   if (drive.connected) f.push(['Google Drive', driveState(tid) || (dg ? t('in Drive ({0})', mb(dg.size)) : t('not in Drive'))]);
   $('g-facts').innerHTML = f.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') +
-    (g.state === 'restart' ? '<dt></dt><dd class="warn">' + t('Added. Restart the console once to play it.') + '</dd>' : '');
+    (g.state === 'restart' ? '<dt></dt><dd class="warn">' + t('Added. Restart the console once to play it.') + '</dd>' : '') +
+    '<dt></dt><dd class="meta">' + esc(t('Nothing is installed: the game plays straight from its .pkg files.')) + '</dd>';
   $('g-actions').innerHTML = actions(g, true);
   $('gamedlg').showModal();
 }
@@ -413,6 +441,17 @@ function poll(ms, fn, when) {
     Promise.resolve().then(fn).then(function () { setTimeout(step, ms); }, function () { setTimeout(step, ms); });
   }, ms);
 }
+/* The drives in use and their free space: where the pkgs live and what a send needs. */
+function renderStorage() {
+  var el = $('storage'), html = '';
+  for (var i = 0; i < drives.length; i++) {
+    var d = drives[i];
+    html += '<span>' + esc(d.label) + ': ' + gb(d.free) + (d.total > 0 ? ' / ' + gb(d.total) : '') + ' ' + t('free') + '</span>';
+  }
+  el.innerHTML = html;
+  el.style.display = html ? 'block' : 'none';
+}
+
 var loadBusy = false, loadAgain = false;
 function load() {
   if (loadBusy) { loadAgain = true; return load.last; }
@@ -421,7 +460,15 @@ function load() {
     /* a new PS4Mount loaded while this page was open: its own page, not this one */
     if (load.version && j.version !== load.version) { location.reload(); return; }
     load.version = j.version;
-    setLang(j.lang); games = j.games; $('ver').textContent = j.version; $('setupnote').hidden = !j.setup; render();
+    setLang(j.lang);
+    drives = j.drives || [];
+    /* the list costs the console a look at every pkg: only redraw when it changed,
+     * or every card's artwork would be fetched again on each poll */
+    var sig = JSON.stringify(j.games) + '|' + j.lang;
+    games = j.games;
+    if (sig !== load.sig) { load.sig = sig; render(); }
+    renderStorage();
+    $('ver').textContent = j.version; $('setupnote').hidden = !j.setup;
   })
     .catch(function (e) { toast(t('Could not read the list: {0}', e.message)); })
     .then(function () {
@@ -464,6 +511,11 @@ $('settingsbtn').onclick = function () {
     $('s-organize').checked = c.organize;
     $('s-internal').checked = c.internal;
     $('s-klog').checked = c.klog;
+    $('s-autorun').checked = !!c.autorun;
+    $('s-autorun').disabled = !c.autorun_ok;
+    $('autorun-hint').textContent = c.autorun_ok ?
+      t('Adds PS4Mount\'s line to GoldHEN\'s payloads.ini, so it starts by itself after the jailbreak: no need to send it each time. Needs GoldHEN 2.4b18.10+ with PayLoader and the .bin in /data/payloads. The jailbreak itself is still needed after a full shutdown.') :
+      t('Not available: the payload file was not found in /data/payloads (it is needed to write its AutoRun line).');
     var nasOk = !!c.nas_supported;
     $('s-nas').checked = !!c.nas;
     $('s-nas').disabled = !nasOk;
@@ -706,7 +758,7 @@ $('setform').onsubmit = function (e) {
   var size = $('s-size').value;
   if (!/^[0-9]+$/.test(size) || +size < 1 || +size > 50) { toast(t('Games per group must be a number from 1 to {0}', 50)); return; }
   var body = 'batch=' + ($('s-batch').checked ? 1 : 0) + '&batch_size=' + encodeURIComponent($('s-size').value) +
-    '&dlc=' + ($('s-dlc').checked ? 1 : 0) + '&dlc_big=' + ($('s-dlcbig').checked ? 1 : 0) + '&organize=' + ($('s-organize').checked ? 1 : 0) + '&internal=' + ($('s-internal').checked ? 1 : 0) + '&klog=' + ($('s-klog').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value) +
+    '&dlc=' + ($('s-dlc').checked ? 1 : 0) + '&dlc_big=' + ($('s-dlcbig').checked ? 1 : 0) + '&organize=' + ($('s-organize').checked ? 1 : 0) + '&internal=' + ($('s-internal').checked ? 1 : 0) + '&klog=' + ($('s-klog').checked ? 1 : 0) + '&autorun=' + ($('s-autorun').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value) +
     '&nas=' + ($('s-nas').checked ? 1 : 0) + '&nas_proto=' + $('s-nas-proto').value +
     '&nas_port=' + encodeURIComponent($('s-nas-port').value) +
     '&nas_rescan=' + $('s-nas-rescan').value +
@@ -715,7 +767,7 @@ $('setform').onsubmit = function (e) {
     '&nas_sub=' + encodeURIComponent($('s-nas-sub').value.trim()) +
     '&nas_user=' + encodeURIComponent($('s-nas-user').value.trim()) +
     '&nas_pass=' + encodeURIComponent($('s-nas-pass').value);
-  fetch('/api/config', {method: 'POST', cache: 'no-store', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: body})
+  fetch('/api/config', {method: 'POST', cache: 'no-store', headers: {'X-PS4Mount': '1', 'Content-Type': 'application/x-www-form-urlencoded'}, body: body})
     .then(function (r) { return r.json(); })
     .then(function (j) { toast(j.message || j.error); if (j.ok) { $('setdlg').close(); load(); } })
     .catch(function (err) { toast(t('Error: {0}', err.message)); });
@@ -834,6 +886,7 @@ function sendNext() {
 }
 if (window.File && window.Blob && window.FileReader && window.XMLHttpRequest) $('sendbtn').hidden = false;
 $('sendbtn').onclick = function () { renderQueue(); $('senddlg').showModal(); };
+$('empty-send').onclick = $('sendbtn').onclick;
 $('drop').onclick = function () { $('files').click(); };
 $('files').onchange = function () { addFiles(this.files); this.value = ''; };
 $('drop').ondragover = function (e) { e.preventDefault(); this.className = 'drop over'; };
@@ -1095,6 +1148,7 @@ function loadLinks() {
   }).catch(function () { /* an older PS4Mount: no links */ });
 }
 $('linkbtn').onclick = function () { $('linkdlg').showModal(); renderLinks(); loadDests(); loadLinks(); };
+$('empty-links').onclick = $('linkbtn').onclick;
 $('l-close').onclick = function () { $('linkdlg').close(); };
 $('l-form').onsubmit = function (e) {
   e.preventDefault();

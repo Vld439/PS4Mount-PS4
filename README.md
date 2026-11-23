@@ -22,7 +22,7 @@ PS4Mount es un payload para una PS4 con jailbreak. Pones los pkgs del juego (y s
 
 Además tiene un **panel web** (desde el móvil o el PC) con tu biblioteca, portadas y fichas de cada juego, **envío de juegos desde el PC por la red local** (cada pkg se comprueba antes de enviarlo, para no pasar horas enviando un juego que la consola no puede usar) y **copias en tu Google Drive**: la consola sube tus juegos a tu Drive y los vuelve a bajar, sin PC. Hay una versión sencilla del panel para navegadores antiguos, sin probar todavía en el de la PS4.
 
-Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificaciones están en **español e inglés**: salen en el idioma de la consola (inglés si no es ninguno de los dos), y se puede cambiar en **Ajustes → Idioma**.
+Probado en una PS4 con firmware **13.52** y GoldHEN; también funciona en **14.00** (la NAS aún no: falta el parche FUSE para ese firmware). El panel y las notificaciones están en **español e inglés**: salen en el idioma de la consola (inglés si no es ninguno de los dos), y se puede cambiar en **Ajustes → Idioma**.
 
 > [!WARNING]
 > **Versión beta.** Haz una copia de seguridad de tus partidas guardadas antes de usarlo, y [cuéntanos cualquier problema](#problemas-frecuentes) con el log.
@@ -54,7 +54,7 @@ Probado en una PS4 con firmware **13.52** y GoldHEN. El panel y las notificacion
 ## Requisitos
 
 - Una PS4 con jailbreak y **GoldHEN** (con su BinLoader activado, el puerto 9090).
-- Una forma de cargar payloads: **Payloader/Launchpad** de GoldHEN (recomendado), Payload Guest, o la línea de PS4Mount en `/data/GoldHEN/payloads.ini` para que arranque solo.
+- Una forma de cargar payloads: **Payloader/Launchpad** de GoldHEN (recomendado), Payload Guest, o **Ajustes → Arrancar con la consola** en el panel, que añade la línea de PS4Mount a `/data/GoldHEN/payloads.ini` para que arranque solo (GoldHEN 2.4b18.10+).
 - Pkgs **fake** de PS4 (`CUSA…`).
 - Para jugar desde un USB: un disco formateado en **exFAT**.
 
@@ -412,7 +412,7 @@ PS4Mount is a payload for a jailbroken PS4. Put the game pkgs (with their update
 
 It also has a **web panel** (from a phone or a computer) with your library, artwork and a page per game, **sending games from a computer over the local network** (every pkg is checked before it is sent, so no one spends hours sending a game the console cannot use) and **backups in your Google Drive**: the console uploads your games to your Drive and downloads them back, no computer needed. There is a simpler panel page for older browsers, not yet tested on the PS4's own browser.
 
-Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notifications are in **English and Spanish**: they follow the console's language (English for any other), and **Settings → Language** changes it.
+Tested on a PS4 on firmware **13.52** with GoldHEN; it also works on **14.00** (NAS not yet: the FUSE patch for that firmware is missing). The panel and the notifications are in **English and Spanish**: they follow the console's language (English for any other), and **Settings → Language** changes it.
 
 > [!WARNING]
 > **Beta version.** Back up your saved data before using it, and [tell us about any problem](#troubleshooting) with the log.
@@ -444,7 +444,7 @@ Tested on a PS4 on firmware **13.52** with GoldHEN. The panel and the notificati
 ## Requirements
 
 - A jailbroken PS4 with **GoldHEN** (its BinLoader on, port 9090).
-- A way to load payloads: GoldHEN's **Payloader/Launchpad** (recommended), Payload Guest, or PS4Mount's line in `/data/GoldHEN/payloads.ini` to start it on its own.
+- A way to load payloads: GoldHEN's **Payloader/Launchpad** (recommended), Payload Guest, or **Settings → Start with the console** in the panel, which adds PS4Mount's line to `/data/GoldHEN/payloads.ini` so it starts on its own (GoldHEN 2.4b18.10+).
 - PS4 **fake** pkgs (`CUSA…`).
 - To play from USB: a drive formatted as **exFAT**.
 

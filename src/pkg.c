@@ -69,6 +69,13 @@ int pkg_open(pkg_t *pkg, const char *path) {
     if (read_at(pkg->fd, pkg->header, sizeof(pkg->header), 0) || be32(pkg->header) != 0x7f434e54)
         goto fail;
     memcpy(pkg->content_id, pkg->header + 0x40, 36);
+    /* content_id lands in file names and paths (licenses, playgo dirs): only the
+     * characters a real one uses, so a damaged pkg cannot climb out of them */
+    for (int i = 0; i < 36; i++) {
+        char c = pkg->content_id[i];
+        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_'))
+            goto fail;
+    }
     memcpy(pkg->title_id, pkg->content_id + 7, 9);
     pkg->pfs_offset = be64(pkg->header + 0x410);
     pkg->pfs_size = be64(pkg->header + 0x418);

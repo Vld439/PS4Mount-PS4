@@ -4,6 +4,7 @@
 /* Minimal HTTP server for the PS4Mount panel (one request per connection). */
 #include "web.h"
 
+#include <ctype.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -13,6 +14,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "drive.h"
@@ -24,6 +26,13 @@
 
 #define LOG_PATH "/data/ps4mount/log.txt"
 #define CHECK_MAX (16u << 20) /* most a pkg check is given */
+#define REQ_MS 30000          /* headers and the start of a body: this long, all told */
+
+static long long now_ms(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
 
 int web_listen(void) {
     int s = socket(AF_INET, SOCK_STREAM, 0), one = 1;
@@ -127,8 +136,12 @@ static void send_log(int fd) {
 static int may_write(int fd, const char *req) {
     const char *h = req;
     int header = 0;
+    /* the header block only: req also holds body bytes already read, and a
+     * "X-PS4Mount:" line in them must not count as the panel's header */
     while ((h = strchr(h, '\n'))) {
         h++;
+        if (*h == '\r' || *h == '\n')
+            break; /* the empty line that ends the headers */
         if (!strncasecmp(h, "X-PS4Mount:", 11)) {
             header = 1;
             break;
@@ -144,14 +157,19 @@ static int may_write(int fd, const char *req) {
     return (a >> 24) == 10 || (a >> 24) == 127 || (a >> 20) == 0xac1 || (a >> 16) == 0xc0a8 || (a >> 16) == 0xa9fe;
 }
 
-/* The body after what was read with the headers, up to len bytes. NULL on a short read. */
-static uint8_t *read_body(int fd, const char *pre, size_t pre_len, size_t len) {
+/* The body after what was read with the headers, up to len bytes. NULL on a short
+ * read or when deadline_ms passes first (a trickle must not hold the one thread). */
+static uint8_t *read_body(int fd, const char *pre, size_t pre_len, size_t len, long long deadline_ms) {
     uint8_t *b = mem_alloc(len ? len : 1);
     if (!b)
         return NULL;
     size_t have = pre_len < len ? pre_len : len;
     memcpy(b, pre, have);
     while (have < len) {
+        if (now_ms() >= deadline_ms) {
+            mem_free(b);
+            return NULL;
+        }
         ssize_t m = read(fd, b + have, len - have);
         if (m <= 0) {
             mem_free(b);
@@ -172,6 +190,14 @@ static int dest_param(const char *path, char *dest, size_t n) {
     return o ? 0 : -1;
 }
 
+static int hexv(char c) {
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    return c - 'A' + 10;
+}
+
 /* The form field key of body, decoded (+ and %XX) into out. 0 when present. */
 static int form_field(const char *body, const char *key, char *out, size_t n) {
     size_t kl = strlen(key), o = 0;
@@ -179,9 +205,8 @@ static int form_field(const char *body, const char *key, char *out, size_t n) {
         if (strncmp(p, key, kl) || p[kl] != '=')
             continue;
         for (p += kl + 1; *p && *p != '&' && o + 1 < n; p++) {
-            unsigned hi, lo;
-            if (*p == '%' && p[1] && p[2] && sscanf(p + 1, "%1x%1x", &hi, &lo) == 2) {
-                out[o++] = (char)(hi * 16 + lo);
+            if (*p == '%' && isxdigit((unsigned char)p[1]) && isxdigit((unsigned char)p[2])) {
+                out[o++] = (char)((hexv(p[1]) << 4) | hexv(p[2]));
                 p += 2;
             } else
                 out[o++] = *p == '+' ? ' ' : *p;
@@ -268,7 +293,8 @@ static void password_header(const char *req, char *out, size_t n) {
 /* POST /api/links/<action>: add?dest=.. (the links are the body, one a line), cancel?id=..,
  * retry?id=..; add and retry take an archive's password in X-PS4Mount-Password. The links
  * thread does the work; the panel follows it in GET /api/links. */
-static void links_action(int fd, const char *req, const char *path, const char *body, size_t have, unsigned long long length) {
+static void links_action(int fd, const char *req, const char *path, const char *body, size_t have, unsigned long long length,
+                         long long deadline) {
     const char *a = path + 11;
     size_t al = strcspn(a, "?");
     const char *idp = strstr(path, "id=");
@@ -284,7 +310,7 @@ static void links_action(int fd, const char *req, const char *path, const char *
             rc = (snprintf(msg, sizeof(msg), "%s", TR("choose where to save it", "elige dónde guardarlo")), -1);
         else if (!length || length > LINKS_TEXT_MAX)
             rc = (snprintf(msg, sizeof(msg), "%s", TR("paste at least one link", "pega al menos un enlace")), -1);
-        else if (!(data = read_body(fd, body, have, (size_t)length)) || !(text = mem_alloc((size_t)length + 1)))
+        else if (!(data = read_body(fd, body, have, (size_t)length, deadline)) || !(text = mem_alloc((size_t)length + 1)))
             rc = (snprintf(msg, sizeof(msg), "%s", TR("the links did not arrive whole", "los enlaces no llegaron enteros")), -1);
         else {
             memcpy(text, data, (size_t)length);
@@ -315,6 +341,7 @@ void web_serve(int listen_fd) {
 void web_handle(int fd) {
     struct timeval tv = {5, 0};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    long long deadline = now_ms() + REQ_MS;
     char req[8192];
     ssize_t n = read(fd, req, sizeof(req) - 1);
     if (n <= 0) {
@@ -330,14 +357,16 @@ void web_handle(int fd) {
         close(fd);
         return;
     }
-    /* the body of a POST may arrive after the headers */
+    /* the body of a POST may arrive after the headers; a trickle is cut at the deadline:
+     * this runs on the one thread that also mounts, scans and answers the panel */
     char *body = strstr(req, "\r\n\r\n");
     const char *cl = strstr(req, "Content-Length:");
     if (!cl)
         cl = strstr(req, "content-length:");
     unsigned long long length = cl ? strtoull(cl + 15, NULL, 10) : 0;
     long want = length > sizeof(req) ? (long)sizeof(req) : (long)length;
-    while (want > 0 && (size_t)n < sizeof(req) - 1 && (!body || (long)(n - (body + 4 - req)) < want)) {
+    while (want > 0 && now_ms() < deadline && (size_t)n < sizeof(req) - 1 &&
+           (!body || (long)(n - (body + 4 - req)) < want)) {
         ssize_t m = read(fd, req + n, sizeof(req) - 1 - (size_t)n);
         if (m <= 0)
             break;
@@ -349,6 +378,13 @@ void web_handle(int fd) {
     char method[8] = "", path[1024] = "", tid[10], msg[256];
     sscanf(req, "%7s %1023s", method, path);
     int post = !strcmp(method, "POST");
+    /* every POST changes something (a mount, a setting, the payload itself): the panel's
+     * own requests only, so a page of another site cannot drive the console */
+    if (post && !may_write(fd, req)) {
+        reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
+        close(fd);
+        return;
+    }
 
     if (!strcmp(path, "/") || !strcmp(path, "/index.html") || !strncmp(path, "/?", 2)) { /* /?app=1: the panel app */
         reply(fd, "200 OK", "text/html; charset=utf-8", index_html, sizeof(index_html));
@@ -422,11 +458,9 @@ void web_handle(int fd) {
     } else if (post && !strncmp(path, "/api/check", 10) && (path[10] == 0 || path[10] == '?')) {
         const char *sz = strstr(path, "size=");
         uint8_t *data = NULL;
-        if (!may_write(fd, req))
-            reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
-        else if (!length || length > CHECK_MAX)
+        if (!length || length > CHECK_MAX)
             json_msg(fd, 0, TR("send the first MB of the pkg (at most 16 MB)", "envía el primer MB del pkg (como máximo 16 MB)"));
-        else if (!(data = read_body(fd, body, (size_t)(req + n - body), (size_t)length)))
+        else if (!(data = read_body(fd, body, (size_t)(req + n - body), (size_t)length, deadline)))
             json_msg(fd, 0, TR("the pkg start did not arrive whole", "el comienzo del pkg no llegó entero"));
         else {
             buf_t b = {0};
@@ -436,9 +470,7 @@ void web_handle(int fd) {
         }
         mem_free(data);
     } else if (post && !strncmp(path, "/api/upload", 11) && (path[11] == 0 || path[11] == '?')) {
-        if (!may_write(fd, req))
-            reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
-        else if (!length)
+        if (!length)
             json_msg(fd, 0, TR("nothing was sent", "no se envió nada"));
         else if (!app_upload(fd, path, body, (size_t)(req + n - body), length, msg, sizeof(msg)))
             return; /* the upload answers and closes it */
@@ -460,26 +492,18 @@ void web_handle(int fd) {
         reply(fd, "200 OK", "application/json; charset=utf-8", b.data, b.len);
         buf_free(&b);
     } else if (post && !strncmp(path, "/api/drive/", 11)) {
-        /* downloads write files, uploads send them out: the panel's own requests only */
-        if (!may_write(fd, req))
-            reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
-        else
-            drive_action(fd, path, body);
+        drive_action(fd, path, body);
     } else if (!strcmp(path, "/api/links")) {
         buf_t b = {0};
         links_status_json(&b);
         reply(fd, "200 OK", "application/json; charset=utf-8", b.data, b.len);
         buf_free(&b);
     } else if (post && !strncmp(path, "/api/links/", 11)) {
-        /* downloads write files: the panel's own requests only */
-        if (!may_write(fd, req))
-            reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
-        else
-            links_action(fd, req, path, body, (size_t)(req + n - body), length);
+        links_action(fd, req, path, body, (size_t)(req + n - body), length, deadline);
     } else if (!strcmp(path, "/api/log")) {
         send_log(fd);
-    } else if ((!strcmp(path, "/api/nas/scan") || (post && !strcmp(path, "/api/nas/shares"))) && !may_write(fd, req)) {
-        /* they connect to other machines: the panel's own requests only */
+    } else if (!strcmp(path, "/api/nas/scan") && !may_write(fd, req)) {
+        /* it connects to other machines: the panel's own requests only */
         reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
     } else if (!strcmp(path, "/api/nas/scan")) {
         buf_t b = {0};
@@ -495,12 +519,8 @@ void web_handle(int fd) {
         int rc = app_nas_reload(msg, sizeof(msg));
         json_msg(fd, !rc, msg);
     } else if (post && !strcmp(path, "/api/app/close")) {
-        if (!may_write(fd, req))
-            reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
-        else {
-            json_msg(fd, 1, "closing");
-            app_panel_close();
-        }
+        json_msg(fd, 1, "closing");
+        app_panel_close();
     } else if (post && !strcmp(path, "/api/stop")) {
         json_msg(fd, 1, "PS4Mount is stopping");
         app_stop();

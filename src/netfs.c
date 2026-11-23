@@ -186,7 +186,8 @@ static int g_mounted, g_active, g_loop;
 static int g_reload;
 static int g_probe_said;   /* the device errors are logged once */
 static const nas_be_t *g_be;
-static unsigned g_gen; /* changes with every client: old file handles are dead */
+static unsigned g_gen;    /* changes with every client: old file handles are dead */
+static unsigned g_cfg_gen; /* changes only when the share itself does: a path means nothing on another one */
 static unsigned g_ops; /* requests served: the first ones are logged, to see where a share stops */
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -211,7 +212,7 @@ typedef struct {
 } ra_win_t;
 
 typedef struct {
-    unsigned gen;
+    unsigned gen, cfg;
     void *h;
     char path[PATH_MAX]; /* to open it again on a new connection */
     ra_win_t w[2];       /* w[cur] is read from; the other is the next one on its way */
@@ -391,6 +392,8 @@ static int ready(void) { return (g_active && g_be) || redial(-ENOTCONN); }
 static int fh_live(nas_fh_t *f) {
     if (f->gen == g_gen)
         return 1;
+    if (f->cfg != g_cfg_gen)
+        return 0; /* the share changed since it was opened: its path is not this file */
     void *h = g_be->open(f->path);
     if (!h)
         return 0;
@@ -494,7 +497,7 @@ static int ctl_write(const char *buf, size_t size) {
 static int fs_getattr(const char *path, struct stat *st) {
     if (!strcmp(path, CTL_PATH)) {
         memset(st, 0, sizeof(*st));
-        st->st_mode = S_IFREG | 0666;
+        st->st_mode = S_IFREG | 0600; /* fs_open checks the caller too */
         st->st_nlink = 1;
         st->st_size = CTL_SIZE;
         return 0;
@@ -538,6 +541,11 @@ static int fs_readdir(const char *path, void *buf, fuse_fill_dir_t fill, off_t o
 
 static int fs_open(const char *path, struct fuse_file_info *fi) {
     if (!strcmp(path, CTL_PATH)) {
+        /* it steers the mount (off, or connect to another server): only root and the
+         * user the mount runs as may open it, whoever else can reach the directory */
+        uid_t u = fuse_get_context()->uid;
+        if (u && u != (uid_t)getuid())
+            return -EACCES;
         fi->direct_io = 1; /* every read asks again */
         fi->fh = (uint64_t)(uintptr_t)&g_ctl_fh;
         return 0;
@@ -568,6 +576,7 @@ static int fs_open(const char *path, struct fuse_file_info *fi) {
         return -e;
     }
     f->gen = g_gen;
+    f->cfg = g_cfg_gen;
     pthread_mutex_unlock(&g_lock);
     fi->fh = (uint64_t)(uintptr_t)f;
     fi->keep_cache = 1;
@@ -868,9 +877,12 @@ static int connect_any(const nas_cfg_t *cfg, char *err, size_t n) {
         snprintf(err, n, "%s", be->error());
         return -1;
     }
+    int same = g_have_last && cfg_same(cfg, &g_last);
     g_be = be;
     g_active = 1;
     g_gen++;
+    if (!same)
+        g_cfg_gen++; /* the share itself changed: open files must not follow their paths onto it */
     if (cfg != &g_last)
         g_last = *cfg;
     g_have_last = 1;
@@ -888,65 +900,96 @@ static void status_set(const nas_cfg_t *cfg, const char *state) {
 
 /* ---- adopting the mount of an earlier load ---- */
 
-#define CTL_WAIT_MS 3000 /* a mount whose loop is gone never answers */
+#define CTL_WAIT_MS 3000   /* a mount whose loop is gone never answers */
+#define CTL_RETRY_MS 120000 /* a talk still inside the mount this long is taken for dead: the next one may go */
 
-static struct {
+/* One per call: a talk that never comes back keeps its own struct (and its thread)
+ * instead of sharing g_talk with the next one. */
+typedef struct {
     char path[PATH_MAX], cmd[1024], ans[512];
-    int r, done;
-} g_talk;
-static int g_talk_hung; /* a talk never came back: no other is tried in this load */
+    int r;
+    volatile int done, abandoned;
+} talk_t;
+
+static volatile int g_talk_out;        /* talks still inside a mount */
+static volatile long long g_talk_last; /* when the newest one started */
 
 static void *talk_thread(void *arg) {
-    (void)arg;
+    talk_t *t = arg;
     int r = -1, fd, sent = 1;
-    size_t len = strlen(g_talk.cmd);
+    size_t len = strlen(t->cmd);
     if (len) {
-        sent = (fd = open(g_talk.path, O_WRONLY)) >= 0 && write(fd, g_talk.cmd, len) == (ssize_t)len;
+        sent = (fd = open(t->path, O_WRONLY)) >= 0 && write(fd, t->cmd, len) == (ssize_t)len;
         if (fd >= 0)
             close(fd);
     }
-    if (sent && (fd = open(g_talk.path, O_RDONLY)) >= 0) {
-        ssize_t n = read(fd, g_talk.ans, sizeof(g_talk.ans) - 1);
+    if (sent && (fd = open(t->path, O_RDONLY)) >= 0) {
+        ssize_t n = read(fd, t->ans, sizeof(t->ans) - 1);
         close(fd);
         if (n > 0) {
-            g_talk.ans[n] = 0;
-            r = strncmp(g_talk.ans, CTL_MAGIC, strlen(CTL_MAGIC)) ? -1 : 0;
+            t->ans[n] = 0;
+            r = strncmp(t->ans, CTL_MAGIC, strlen(CTL_MAGIC)) ? -1 : 0;
         }
     }
-    g_talk.r = r;
-    __atomic_store_n(&g_talk.done, 1, __ATOMIC_RELEASE);
+    if (t->abandoned) { /* the caller gave up: it will not read the answer */
+        free(t);
+    } else {
+        t->r = r;
+        __atomic_store_n(&t->done, 1, __ATOMIC_RELEASE);
+    }
+    __atomic_sub_fetch(&g_talk_out, 1, __ATOMIC_ACQ_REL);
     return NULL;
 }
 
 /* Sends cmd ("" for none) to the control file of the mount at mnt and takes its answer:
  * 0 when a load with this NAS code serves it. On another thread, so a mount nobody serves
- * any more cannot stop the panel. */
+ * any more cannot stop the panel. A talk that times out is not tried again for CTL_RETRY_MS:
+ * the serving side may be busy connecting (which takes longer than the wait), and piling
+ * talks onto it helps nobody. */
 static int ctl_talk(const char *mnt, const char *cmd) {
-    if (g_talk_hung)
+    long long now = now_ms();
+    if (__atomic_load_n(&g_talk_out, __ATOMIC_ACQUIRE) &&
+        now - __atomic_load_n(&g_talk_last, __ATOMIC_ACQUIRE) < CTL_RETRY_MS)
         return -1;
-    snprintf(g_talk.path, sizeof(g_talk.path), "%s%s", mnt, CTL_PATH);
-    snprintf(g_talk.cmd, sizeof(g_talk.cmd), "%s", cmd);
-    g_talk.ans[0] = 0;
-    g_talk.done = 0;
+    talk_t *t = calloc(1, sizeof(*t));
+    if (!t)
+        return -1;
+    snprintf(t->path, sizeof(t->path), "%s%s", mnt, CTL_PATH);
+    snprintf(t->cmd, sizeof(t->cmd), "%s", cmd);
     pthread_t th;
-    if (pthread_create(&th, NULL, talk_thread, NULL))
+    if (pthread_create(&th, NULL, talk_thread, t)) {
+        free(t);
         return -1;
+    }
     pthread_detach(th);
-    for (int ms = 0; !__atomic_load_n(&g_talk.done, __ATOMIC_ACQUIRE); ms += 10) {
-        if (ms >= CTL_WAIT_MS) {
-            g_talk_hung = 1;
-            printf("[nas] %s does not answer\n", mnt);
-            return -1;
+    __atomic_store_n(&g_talk_last, now, __ATOMIC_RELEASE);
+    __atomic_add_fetch(&g_talk_out, 1, __ATOMIC_ACQ_REL);
+    int r = -1, got = 0;
+    for (int ms = 0; ms < CTL_WAIT_MS; ms += 10) {
+        if (__atomic_load_n(&t->done, __ATOMIC_ACQUIRE)) {
+            got = 1;
+            break;
         }
         usleep(10000);
     }
-    if (g_talk.r)
-        return -1;
-    const char *a = g_talk.ans + strlen(CTL_MAGIC), *e = strchr(a, '\n');
-    g_adopt_on = *a == '1';
-    if (e)
-        snprintf(g_status, sizeof(g_status), "%.*s", (int)strcspn(e + 1, "\n"), e + 1);
-    return 0;
+    if (!got) {
+        t->abandoned = 1;
+        if (__atomic_load_n(&t->done, __ATOMIC_ACQUIRE))
+            got = 1; /* it landed as we gave up: the thread did not take it */
+        else {
+            printf("[nas] %s does not answer\n", mnt);
+            return -1; /* the thread frees t */
+        }
+    }
+    r = t->r;
+    if (!r) {
+        const char *a = t->ans + strlen(CTL_MAGIC), *e = strchr(a, '\n');
+        g_adopt_on = *a == '1';
+        if (e)
+            snprintf(g_status, sizeof(g_status), "%.*s", (int)strcspn(e + 1, "\n"), e + 1);
+    }
+    free(t);
+    return r;
 }
 
 static void ctl_connect(const nas_cfg_t *cfg, char *cmd, size_t n) {

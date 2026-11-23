@@ -5,6 +5,7 @@
  * with its own cache, and rows written from outside make it flag them as corrupted. */
 #include "db.h"
 
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +29,8 @@ static title_row_t *g_titles;
 static int g_ntitles, g_cap;
 static time_t g_read_at;
 static int g_read_ok;
+/* the panel thread and the NAS/mount threads all ask: one reader at a time */
+static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 
 static void refresh(void) {
     if (g_read_ok && time(NULL) == g_read_at)
@@ -65,6 +68,31 @@ static void refresh(void) {
         ok = rc == SQLITE_DONE;
         sqlite3_finalize(st);
     }
+    if (!ok) {
+        /* say which schema the database has: a firmware whose app.db keeps its rows in
+         * another table makes every scan wait forever, and the reason belongs in the log */
+        static int schema_logged;
+        if (!schema_logged) {
+            schema_logged = 1;
+            sqlite3_stmt *ms = NULL;
+            if (sqlite3_prepare_v2(db, "SELECT name FROM sqlite_master WHERE type = 'table' "
+                                        "AND name IN ('tbl_appinfo','tbl_contentinfo')",
+                                   -1, &ms, NULL) == SQLITE_OK) {
+                char names[64] = "";
+                while (sqlite3_step(ms) == SQLITE_ROW) {
+                    const char *nm = (const char *)sqlite3_column_text(ms, 0);
+                    if (nm) {
+                        if (*names)
+                            strncat(names, ",", sizeof(names) - strlen(names) - 1);
+                        strncat(names, nm, sizeof(names) - strlen(names) - 1);
+                    }
+                }
+                printf("[db] %s: title table query failed; tables found: %s\n",
+                       APP_DB, *names ? names : "none of tbl_appinfo/tbl_contentinfo");
+                sqlite3_finalize(ms);
+            }
+        }
+    }
     sqlite3_close(db);
     if (ok) { /* a read that met a write in progress keeps the last list */
         g_ntitles = n;
@@ -73,8 +101,11 @@ static void refresh(void) {
 }
 
 int db_ready(void) {
+    pthread_mutex_lock(&g_mu);
     refresh();
-    return g_read_ok;
+    int ok = g_read_ok;
+    pthread_mutex_unlock(&g_mu);
+    return ok;
 }
 
 int db_is_registered(const char *title_id) {
@@ -82,9 +113,14 @@ int db_is_registered(const char *title_id) {
 }
 
 const char *db_app_ver(const char *title_id) {
+    pthread_mutex_lock(&g_mu);
     refresh();
+    const char *ver = NULL;
     for (int i = 0; i < g_ntitles; i++)
-        if (!strcmp(g_titles[i].tid, title_id))
-            return g_titles[i].ver;
-    return NULL;
+        if (!strcmp(g_titles[i].tid, title_id)) {
+            ver = g_titles[i].ver;
+            break;
+        }
+    pthread_mutex_unlock(&g_mu);
+    return ver;
 }

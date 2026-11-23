@@ -350,6 +350,10 @@ static void disposition_name(const char *cd, char *out, size_t n) {
 static int resolve_location(const char *base, const char *loc, char *out, size_t n) {
     http_url_t u;
     int w;
+    /* an https address never drops to http: the rest of the download would go in
+     * cleartext to whoever is on the path */
+    if (!strncmp(loc, "http://", 7) && !strncmp(base, "https://", 8))
+        return -1;
     if (!strncmp(loc, "http://", 7) || !strncmp(loc, "https://", 8))
         w = snprintf(out, n, "%s", loc);
     else if (http_parse_url(base, &u))
@@ -450,13 +454,14 @@ static int probe(int i, const char *link, int *kind, char *err, size_t n) {
         probe_t pr = {0};
         http_resp_t r;
         int rc = get(v->url, sizeof(v->url), "0-15", probe_sink, &pr, NULL, 30, &r, err, n);
-        if (rc && !(pr.stopped && r.status)) {
+        int st = r.status;
+        http_resp_free(&r);
+        if (rc && !(pr.stopped && st)) {
             if (halted() || attempt + 1 >= TRIES || pause_s(g_links_retry_seconds << attempt))
                 return -1;
             snprintf(v->url, sizeof(v->url), "%s", link);
             continue;
         }
-        int st = r.status;
         if (st == 206) {
             const char *slash = strchr(r.content_range, '/');
             v->size = slash && slash[1] != '*' ? strtoull(slash + 1, NULL, 10) : UINT64_MAX;
@@ -468,7 +473,6 @@ static int probe(int i, const char *link, int *kind, char *err, size_t n) {
             v->size = 0; /* an empty file: there is no byte 0 */
             v->ranges = 0;
         } else {
-            http_resp_free(&r);
             if ((st == 429 || st >= 500) && attempt + 1 < TRIES && !pause_s(g_links_retry_seconds << attempt)) {
                 snprintf(v->url, sizeof(v->url), "%s", link);
                 continue;
@@ -664,8 +668,7 @@ static int dl_resolve_locked(dl_t *d) {
         printf("[links] %s: the link gave a new address\n", d->part);
         snprintf(d->v->url, sizeof(d->v->url), "%s", url);
     }
-    if (!rc)
-        http_resp_free(&r);
+    http_resp_free(&r);
     return fresh ? 0 : -1;
 }
 
@@ -710,9 +713,10 @@ static void *dl_worker(void *arg) {
             size_t before = pc.at;
             http_resp_t r;
             int q = get(url, sizeof(url), range, piece_sink, &pc, keep, STALL, &r, err, sizeof(err));
-            int st = q ? 0 : r.status, throttled = 0, gone = 0;
-            if (!q)
-                http_resp_free(&r);
+            /* the status was parsed even when the body transfer failed: a 200 that filled
+             * the block is the whole file, not the part asked for */
+            int st = r.status, throttled = 0, gone = 0;
+            http_resp_free(&r);
             if (q && pc.at < pc.want && !halted() && !d->stop)
                 printf("[links] %s block %llu: %s at %zu of %zu bytes, opening it again\n", d->part, (unsigned long long)b, err,
                        pc.at, pc.want);
@@ -1058,8 +1062,10 @@ static int download_whole(int vi, int fd, char *err, size_t n) {
             snprintf(err, n, TR("write failed (%s): is the drive full?", "falló la escritura (%s): ¿está llena la unidad?"), strerror(w.failed));
             return -1;
         }
-        if (q)
+        if (q) {
+            http_resp_free(&r);
             continue;
+        }
         int st = r.status;
         http_resp_free(&r);
         if (st != 200) {
@@ -1141,7 +1147,7 @@ static int download_file(int vi, const char *part, char *err, size_t n) {
     d->part = part;
     d->fd = fd;
     d->nblocks = v->size ? (v->size + g_links_block - 1) / g_links_block : 0;
-    for (d->slots = 0; d->slots < SLOTS && d->slots < (int)d->nblocks + 1; d->slots++)
+    for (d->slots = 0; d->slots < SLOTS && (uint64_t)d->slots < d->nblocks + 1; d->slots++)
         if (!(d->buf[d->slots] = mem_alloc(g_links_block)))
             break;
     int rc = 0;
@@ -1928,8 +1934,16 @@ static void save_queue_locked(void) {
         return;
     for (int i = 0; i < g_njobs; i++) {
         const ljob_t *j = &g_jobs[i];
+        /* the error can carry archive-controlled text: no tab or newline in the queue file */
+        char err[sizeof(j->error)];
+        size_t k = 0;
+        for (; k + 1 < sizeof(err) && j->error[k]; k++) {
+            char c = j->error[k];
+            err[k] = c == '\t' || c == '\n' || c == '\r' ? ' ' : c;
+        }
+        err[k] = 0;
         fprintf(f, "job\t%d\t%s\t%d\t%d\t%s\t%s\t%s\t%d\n", j->id, k_states[j->state == S_RUNNING ? S_QUEUED : j->state],
-                j->started, j->kind, j->dest, j->name, j->error, j->locked);
+                j->started, j->kind, j->dest, j->name, err, j->locked);
         if (j->password[0]) {
             fprintf(f, "password\t");
             for (const char *c = j->password; *c; c++)

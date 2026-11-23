@@ -44,9 +44,13 @@ static const char *ask2(const char *req, size_t len, const char *later) {
     int sv[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv))
         return "";
+    /* both directions on both ends: the request is written before the server reads it,
+     * and macOS's small default buffers would block that write (Linux's do not) */
     int big = 1 << 20;
-    setsockopt(sv[0], SOL_SOCKET, SO_RCVBUF, &big, sizeof(big));
-    setsockopt(sv[1], SOL_SOCKET, SO_SNDBUF, &big, sizeof(big));
+    for (int i = 0; i < 2; i++) {
+        setsockopt(sv[i], SOL_SOCKET, SO_RCVBUF, &big, sizeof(big));
+        setsockopt(sv[i], SOL_SOCKET, SO_SNDBUF, &big, sizeof(big));
+    }
     if (len && write(sv[0], req, len) < 0)
         perror("write");
     pthread_t th;
@@ -83,6 +87,14 @@ static const char *post(const char *path, const char *body) {
     return ask(req);
 }
 
+/* The panel's own request: post() without the header is a client of another site. */
+static const char *postw(const char *path, const char *body) {
+    static char req[16384];
+    snprintf(req, sizeof(req), "POST %s HTTP/1.1\r\nHost: x\r\nX-PS4Mount: 1\r\nContent-Length: %zu\r\n\r\n%s", path,
+             strlen(body), body);
+    return ask(req);
+}
+
 int main(void) {
     const char *r;
     printf("pages\n");
@@ -112,17 +124,36 @@ int main(void) {
         CHECK(status(r, "404") && g_stub_calls == before);
     }
 
+    printf("every POST needs the panel's header\n");
+    /* a page of another site can POST a form but cannot send the header (CORS preflight) */
+    const char *posts[] = {"/api/mount?title_id=CUSA00001", "/api/unmount?title_id=CUSA00001", "/api/rescan",
+                           "/api/restore", "/api/restored/forget", "/api/config", "/api/nas/reload",
+                           "/api/nas/shares", "/api/app/close", "/api/stop", NULL};
+    for (int i = 0; posts[i]; i++) {
+        int before = g_stub_calls;
+        r = post(posts[i], "x=1");
+        CHECK(status(r, "403") && g_stub_calls == before);
+    }
+    /* the header line inside the body is not a header */
+    int before = g_stub_calls;
+    r = post("/api/config", "x=1\r\nX-PS4Mount: 1");
+    CHECK(status(r, "403") && g_stub_calls == before);
+    r = ask("GET /api/nas/scan HTTP/1.1\r\n\r\n");
+    CHECK(status(r, "403"));
+    r = ask("GET /api/nas/scan HTTP/1.1\r\nX-PS4Mount: 1\r\n\r\n");
+    CHECK(status(r, "200") && strstr(r, "192.168.0.19"));
+
     printf("title ids\n");
-    r = post("/api/mount?title_id=CUSA00791", "");
+    r = postw("/api/mount?title_id=CUSA00791", "");
     CHECK(status(r, "200") && !strcmp(g_stub_call, "add") && !strcmp(g_stub_arg, "CUSA00791"));
-    r = post("/api/unmount?title_id=CUSA04263", "");
+    r = postw("/api/unmount?title_id=CUSA04263", "");
     CHECK(!strcmp(g_stub_call, "remove") && !strcmp(g_stub_arg, "CUSA04263"));
     const char *bad[] = {"/api/mount?title_id=CUSA0079", "/api/mount?title_id=../../../", "/api/mount?title_id=PPSA00001",
                          "/api/mount?title_id=cusa00791", "/api/mount?title_id=", "/api/mount", "/api/unmount?title_id=CUSA%2F%2E%2E",
                          NULL};
     for (int i = 0; bad[i]; i++) {
         int before = g_stub_calls;
-        r = post(bad[i], "");
+        r = postw(bad[i], "");
         CHECK(status(r, "400") && g_stub_calls == before);
     }
     /* icons are read by title id: nothing else may reach the file system */
@@ -143,28 +174,28 @@ int main(void) {
     CHECK(status(r, "404") && g_stub_calls == calls);
 
     printf("moving back\n");
-    post("/api/restore", "");
+    postw("/api/restore", "");
     CHECK(!strcmp(g_stub_call, "restore") && !strcmp(g_stub_arg, "(null)")); /* all games */
-    post("/api/restore?title_id=CUSA00785", "");
+    postw("/api/restore?title_id=CUSA00785", "");
     CHECK(!strcmp(g_stub_arg, "CUSA00785"));
-    post("/api/restore", "title_ids=CUSA00785,CUSA04263");
+    postw("/api/restore", "title_ids=CUSA00785,CUSA04263");
     CHECK(!strcmp(g_stub_arg, "CUSA00785,CUSA04263"));
-    post("/api/restore", "title_ids=CUSA00785%2CCUSA04263%2cCUSA00791");
+    postw("/api/restore", "title_ids=CUSA00785%2CCUSA04263%2cCUSA00791");
     CHECK(!strcmp(g_stub_arg, "CUSA00785,CUSA04263,CUSA00791"));
-    post("/api/restore", "title_ids=CUSA00785&x=1");
+    postw("/api/restore", "title_ids=CUSA00785&x=1");
     CHECK(!strcmp(g_stub_arg, "CUSA00785"));
-    int before = g_stub_calls;
-    r = post("/api/restorex", "");
+    before = g_stub_calls;
+    r = postw("/api/restorex", "");
     CHECK(status(r, "404") && g_stub_calls == before);
-    r = post("/api/restore?title_id=bad", "");
+    r = postw("/api/restore?title_id=bad", "");
     CHECK(status(r, "400"));
 
     printf("settings\n");
-    post("/api/config", "batch=1&restore_batch=5");
+    postw("/api/config", "batch=1&restore_batch=5");
     CHECK(!strcmp(g_stub_call, "config") && !strcmp(g_stub_arg, "batch=1&restore_batch=5"));
     r = ask("GET /api/config HTTP/1.1\r\n\r\n");
     CHECK(status(r, "200") && strstr(r, "\"batch\""));
-    post("/api/restored/forget", "");
+    postw("/api/restored/forget", "");
     CHECK(!strcmp(g_stub_call, "forget"));
 
     printf("sending pkgs\n");
@@ -279,7 +310,7 @@ int main(void) {
     CHECK(status(r, "404") && g_stub_calls == before);
 
     printf("a body that arrives after the headers\n");
-    const char *head = "POST /api/config HTTP/1.1\r\nContent-Length: 15\r\n\r\n";
+    const char *head = "POST /api/config HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 15\r\n\r\n";
     ask2(head, strlen(head), "restore_batch=7");
     CHECK(!strcmp(g_stub_call, "config") && !strcmp(g_stub_arg, "restore_batch=7"));
 
@@ -288,9 +319,9 @@ int main(void) {
     CHECK(r[0] == 0); /* nothing sent: closed without an answer */
     r = ask("\r\n\r\n");
     CHECK(status(r, "404"));
-    r = ask("POST /api/config HTTP/1.1\r\nContent-Length: -5\r\n\r\nx=1");
+    r = ask("POST /api/config HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: -5\r\n\r\nx=1");
     CHECK(status(r, "200") || status(r, "400"));
-    r = ask("POST /api/config HTTP/1.1\r\nContent-Length: 999999999999\r\n\r\nx=1");
+    r = ask("POST /api/config HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 999999999999\r\n\r\nx=1");
     CHECK(status(r, "200") || status(r, "400"));
     static char huge[20000];
     memset(huge, 'A', sizeof(huge) - 1);
@@ -303,9 +334,9 @@ int main(void) {
     CHECK(g_stub_calls == before);
 
     printf("answers are valid JSON strings\n");
-    r = post("/api/rescan", "");
+    r = postw("/api/rescan", "");
     CHECK(strstr(r, "\"message\":\"done \\\"rescan\\\"\"") != NULL || strstr(r, "Looking for games") != NULL);
-    r = post("/api/mount?title_id=CUSA00001", "");
+    r = postw("/api/mount?title_id=CUSA00001", "");
     CHECK(strstr(r, "\"message\":\"done \\\"add\\\"\"") != NULL);
 
     printf("%d checks, %d failed\n", g_checks, g_failed);

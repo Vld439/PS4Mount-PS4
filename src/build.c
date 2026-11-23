@@ -115,7 +115,8 @@ static int playgo_table(const uint8_t *pg, size_t len, int idx, uint32_t *off, u
         return -1;
     *off = le32(pg + 0xc0 + idx * 8);
     *size = le32(pg + 0xc4 + idx * 8);
-    return *off + *size <= len ? 0 : -1;
+    /* off+size in 32 bits can wrap: compare without adding */
+    return *off <= len && *size <= len - *off ? 0 : -1;
 }
 
 uint16_t playgo_chunk_count(const uint8_t *pg, size_t len) {
@@ -137,8 +138,8 @@ int build_app_xml(buf_t *out, const uint8_t *pg, size_t len) {
         uint32_t first = le32(a + 0x10) / 2;
         uint16_t count = le16(a + 0x16);
         buf_printf(out, "<scenario>");
-        for (unsigned i = 0; i < count && (first + i) * 2 + 2 <= cs; i++)
-            buf_printf(out, i ? " %u" : "%u", le16(pg + co + (first + i) * 2));
+        for (unsigned i = 0; i < count && (uint64_t)(first + i) * 2 + 2 <= cs; i++)
+            buf_printf(out, i ? " %u" : "%u", le16(pg + co + (size_t)(first + i) * 2));
         buf_printf(out, "</scenario>");
     }
     buf_printf(out, "</scenarios></chunk_status></psproject>");
@@ -225,8 +226,10 @@ typedef struct {
 static void pdb_from_template(buf_t *out, const uint8_t *t, size_t tlen, const pdb_override_t *ov, int nov) {
     buf_put(out, t, 4);
     size_t off = 4;
-    while (off + 12 <= tlen - 4) {
+    while (off + 16 <= tlen) { /* the last 4 bytes are the CRC, not a record */
         uint32_t key = le32(t + off), l = le32(t + off + 4);
+        if (l > tlen - 16 - off)
+            break; /* a length past the template ends the list instead of reading past it */
         const void *data = t + off + 12;
         uint32_t dl = l;
         for (int i = 0; i < nov; i++)
@@ -242,22 +245,30 @@ static void pdb_from_template(buf_t *out, const uint8_t *t, size_t tlen, const p
     buf_put(out, crc, 4);
 }
 
-static void chunk_lists(const uint8_t *pg, size_t len, uint8_t **loci, uint8_t **list, uint16_t *chunks) {
+static int chunk_lists(const uint8_t *pg, size_t len, uint8_t **loci, uint8_t **list, uint16_t *chunks) {
     *chunks = playgo_chunk_count(pg, len);
     *loci = malloc(*chunks);
-    *list = malloc(*chunks * 4u);
+    *list = malloc((size_t)*chunks * 4u);
+    if (!*loci || !*list) {
+        free(*loci);
+        free(*list);
+        *loci = *list = NULL;
+        return -1;
+    }
     for (unsigned i = 0; i < *chunks; i++) {
         (*loci)[i] = 3;
         put_le16(*list + i * 4, (uint16_t)i);
         put_le16(*list + i * 4 + 2, 3);
     }
+    return 0;
 }
 
 int build_pdb(buf_t *out, const pkg_t *pkg, const char *ver, const char *url, const buf_t *app_json,
               const uint8_t *pg, size_t len, const patch_ref_t *patch) {
     uint8_t *loci, *list, size[8], vi[4];
     uint16_t chunks;
-    chunk_lists(pg, len, &loci, &list, &chunks);
+    if (chunk_lists(pg, len, &loci, &list, &chunks))
+        return -1;
     put_le64(size, pkg->pkg_size + (patch ? patch->pkg->pkg_size : 0));
     ver_int(vi, ver);
     pdb_override_t ov[] = {
@@ -279,7 +290,8 @@ int build_pdb(buf_t *out, const pkg_t *pkg, const char *ver, const char *url, co
 int build_patch_pdb(buf_t *out, const patch_ref_t *patch) {
     uint8_t *loci, *list, size[8];
     uint16_t chunks;
-    chunk_lists(patch->playgo, patch->playgo_len, &loci, &list, &chunks);
+    if (chunk_lists(patch->playgo, patch->playgo_len, &loci, &list, &chunks))
+        return -1;
     put_le64(size, patch->pkg->pkg_size);
     char base_ref[64];
     snprintf(base_ref, sizeof(base_ref), "0000000000000000-%.36s", patch->pkg->content_id);
