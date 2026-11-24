@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Reads PS4Mount's log and says, in plain words, what happened and what to do.
 
-    python3 tools/logcheck.py log.txt [log.txt.old]        (Spanish)
+    python3 tools/logcheck.py log.txt                      (Spanish)
+    python3 tools/logcheck.py log.txt.old log.txt          (both files in order)
     python3 tools/logcheck.py --lang en log.txt
     curl -s http://<console-ip>:8770/api/log | python3 tools/logcheck.py -
 
@@ -17,6 +18,7 @@ import re
 import sys
 
 LINE = re.compile(r"^(?:(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)\.\d+ )?(?:\[([a-z0-9_]+)\] )?(.*)$")
+STAMP = re.compile(r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+ ")
 
 # (id, pattern, level, Spanish, English). Level: ERROR stops something working, WARN is a
 # thing to look at, INFO is the project telling what it did.
@@ -115,19 +117,24 @@ def analyze(paths, lang):
     idx = 1 if lang == "es" else 2
     rows = []
     for p in paths:
-        fh = sys.stdin if p == "-" else open(p, encoding="utf-8", errors="replace")
-        with fh:
-            rows.extend(parse(fh))
+        if p == "-":
+            rows.extend(parse(sys.stdin))
+        else:
+            with open(p, encoding="utf-8", errors="replace") as fh:
+                rows.extend(parse(fh))
     out = []
     out.append(f"{t['file']}: {', '.join(paths)}  ({len(rows)} {t['lines']})")
     stamps = [s for _, s, _, _ in rows if s]
     if stamps:
-        out.append(t["span"].format(a=stamps[0], b=stamps[-1]))
+        out.append(t["span"].format(a=min(stamps), b=max(stamps)))
 
     out.append("")
     out.append(f"== {t['version']}")
     info = [r for r, _, tag, body in rows if tag == "main" and re.match(r"(firmware|console language|start)", body)]
-    out.extend("  " + re.sub(r"^\S+ \S+ ", "", r) for r in info[:6]) if info else out.append("  " + t["none"])
+    if info:
+        out.extend("  " + STAMP.sub("", r) for r in info[:6])
+    else:
+        out.append("  " + t["none"])
     starts = sum(1 for _, _, tag, body in rows if tag == "main" and body.startswith("start "))
     out.append("  " + t["starts"].format(n=starts))
 
@@ -149,7 +156,7 @@ def analyze(paths, lang):
             errors += 1
         elif level == "WARN":
             warns += 1
-        first = re.sub(r"^\S+ \S+ ", "", rows[hits[0]][0])[:160]
+        first = STAMP.sub("", rows[hits[0]][0])[:160]
         out.append(f"  [{level}] {(es, en)[idx - 1]}")
         out.append(f"        {t['x'].format(n=len(hits))}; {t['first']}: {first}")
     if not known:
@@ -159,7 +166,7 @@ def analyze(paths, lang):
     if others:
         out.append("")
         out.append(f"== {t['other'].format(n=min(len(others), 10))}")
-        out.extend("  " + re.sub(r"^\S+ \S+ ", "", rows[i][0])[:180] for i in others[:10])
+        out.extend("  " + STAMP.sub("", rows[i][0])[:180] for i in others[:10])
 
     out.append("")
     out.append(f"== {t['clean']}")

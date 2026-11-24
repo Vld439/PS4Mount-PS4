@@ -4,19 +4,13 @@
 #include "autorun.h"
 
 #include <errno.h>
-#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
-/* What may follow the payload file name on its line: the entry's separator or the
- * end of the line, so look-alike names (".bin2", ".binary", ".bin.bak") stay. */
-static int after_name(char c) {
-    return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\v' || c == '\f' || c == '=';
-}
 
 int autorun_is_ours(const char *line, size_t len) {
     static const char *const names[] = {"ps4mount-ps4.bin", "ps4mount-ps4.elf"};
@@ -25,16 +19,25 @@ int autorun_is_ours(const char *line, size_t len) {
         a++;
     if (a < len && (line[a] == '#' || line[a] == ';'))
         return 0; /* commented out: the user's line, not our entry */
-    for (size_t i = 0; i < len; i++) {
-        if (i && line[i - 1] != '/')
-            continue;
-        for (size_t k = 0; k < sizeof(names) / sizeof(names[0]); k++) {
-            size_t nl = strlen(names[k]), e = i + nl;
-            if (e <= len && !strncasecmp(line + i, names[k], nl) && (e == len || after_name(line[e])))
-                return 1;
-        }
+    size_t base = a, end = a;
+    while (end < len && line[end] != '=') {
+        if (line[end] == '/')
+            base = end + 1;
+        end++;
     }
+    while (end > base && (line[end - 1] == ' ' || line[end - 1] == '\t' ||
+                          line[end - 1] == '\r' || line[end - 1] == '\n'))
+        end--;
+    for (size_t k = 0; k < sizeof(names) / sizeof(names[0]); k++)
+        if (strlen(names[k]) == end - base && !strncasecmp(line + base, names[k], end - base))
+            return 1;
     return 0;
+}
+
+static int append(buf_t *out, const void *p, size_t len) {
+    size_t before = out->len;
+    buf_put(out, p, len);
+    return out->len - before == len ? 0 : -1;
 }
 
 int autorun_edit_ini(const uint8_t *raw, size_t len, const char *payload_path, int on, buf_t *out) {
@@ -53,45 +56,44 @@ int autorun_edit_ini(const uint8_t *raw, size_t len, const char *payload_path, i
         pos = e < len ? e + 1 : e;
         if (autorun_is_ours(line, vl))
             continue; /* ours, wherever it was: dropped, added back below */
-        buf_put(out, line, ll);
-        if (e < len)
-            buf_put(out, "\n", 1);
+        if (append(out, line, ll) || (e < len && append(out, "\n", 1)))
+            return -1;
         if (on && !added) {
             size_t a = 0;
             while (a < vl && (line[a] == ' ' || line[a] == '\t'))
                 a++;
             if (vl - a == 9 && line[a] == '[' && !strncasecmp(line + a + 1, "autorun]", 8)) {
-                if (e == len)
-                    buf_put(out, "\n", 1); /* the header had no line end: close it first */
-                buf_put(out, payload_path, plen);
-                buf_put(out, " = 1\n", 5);
+                if ((e == len && append(out, "\n", 1)) ||
+                    append(out, payload_path, plen) || append(out, " = 1\n", 5))
+                    return -1;
                 added = 1;
             }
         }
     }
     if (on && !added) {
         if (out->len) {
-            if (out->data[out->len - 1] != '\n')
-                buf_put(out, "\n", 1);
-            buf_put(out, "\n", 1); /* a blank line sets the section apart */
+            if ((out->data[out->len - 1] != '\n' && append(out, "\n", 1)) || append(out, "\n", 1))
+                return -1;
         }
-        buf_put(out, "[AutoRun]\n", 10);
-        buf_put(out, payload_path, plen);
-        buf_put(out, " = 1\n", 5);
+        if (append(out, "[AutoRun]\n", 10) || append(out, payload_path, plen) || append(out, " = 1\n", 5))
+            return -1;
     }
     return 0;
 }
 
 int autorun_write_atomic(const char *ini_path, const void *data, size_t len) {
     char tmp[PATH_MAX];
-    if (snprintf(tmp, sizeof(tmp), "%s.tmp", ini_path) >= (int)sizeof(tmp))
+    if (snprintf(tmp, sizeof(tmp), "%s.tmp.XXXXXX", ini_path) >= (int)sizeof(tmp))
         return -1;
-    int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    int fd = mkstemp(tmp);
     if (fd < 0)
         return -1;
     const uint8_t *p = data;
     int rc = 0;
-    while (len) {
+    struct stat st;
+    if (stat(ini_path, &st) == 0 && fchmod(fd, st.st_mode & 0777))
+        rc = -1;
+    while (!rc && len) {
         ssize_t n = write(fd, p, len);
         if (n < 0 && errno == EINTR)
             continue;

@@ -25,10 +25,10 @@ typedef struct {
     char ver[8]; /* APP_VER the system registered ("" when it has none) */
 } title_row_t;
 
-static title_row_t *g_titles;
-static int g_ntitles, g_cap;
+static title_row_t *g_titles, *g_next;
+static int g_ntitles, g_cap, g_next_cap;
 static time_t g_read_at;
-static int g_read_ok;
+static int g_read_ok, g_read_valid;
 /* the panel thread and the NAS/mount threads all ask: one reader at a time */
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 
@@ -36,6 +36,7 @@ static void refresh(void) {
     if (g_read_ok && time(NULL) == g_read_at)
         return;
     g_read_at = time(NULL);
+    g_read_valid = 0;
     sqlite3 *db = NULL;
     if (sqlite3_open_v2("file:" APP_DB "?mode=ro&nolock=1", &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, NULL) !=
         SQLITE_OK) {
@@ -53,16 +54,16 @@ static void refresh(void) {
             const char *t = (const char *)sqlite3_column_text(st, 0), *v = (const char *)sqlite3_column_text(st, 1);
             if (!t)
                 continue;
-            if (n == g_cap) {
-                int cap = g_cap ? g_cap * 2 : 256;
-                title_row_t *grown = realloc(g_titles, sizeof(*grown) * (size_t)cap);
+            if (n == g_next_cap) {
+                int cap = g_next_cap ? g_next_cap * 2 : 256;
+                title_row_t *grown = realloc(g_next, sizeof(*grown) * (size_t)cap);
                 if (!grown)
                     break;
-                g_titles = grown;
-                g_cap = cap;
+                g_next = grown;
+                g_next_cap = cap;
             }
-            snprintf(g_titles[n].tid, sizeof(g_titles[n].tid), "%s", t);
-            snprintf(g_titles[n].ver, sizeof(g_titles[n].ver), "%s", v ? v : "");
+            snprintf(g_next[n].tid, sizeof(g_next[n].tid), "%s", t);
+            snprintf(g_next[n].ver, sizeof(g_next[n].ver), "%s", v ? v : "");
             n++;
         }
         ok = rc == SQLITE_DONE;
@@ -95,9 +96,22 @@ static void refresh(void) {
     }
     sqlite3_close(db);
     if (ok) { /* a read that met a write in progress keeps the last list */
+        title_row_t *prev = g_titles;
+        int prev_cap = g_cap;
+        g_titles = g_next;
+        g_cap = g_next_cap;
+        g_next = prev;
+        g_next_cap = prev_cap;
         g_ntitles = n;
-        g_read_ok = 1;
+        g_read_ok = g_read_valid = 1;
     }
+}
+
+static const title_row_t *find_title(const char *title_id) {
+    for (int i = 0; i < g_ntitles; i++)
+        if (!strcmp(g_titles[i].tid, title_id))
+            return &g_titles[i];
+    return NULL;
 }
 
 int db_ready(void) {
@@ -112,17 +126,22 @@ int db_is_registered(const char *title_id) {
     return db_app_ver(title_id) != NULL;
 }
 
-const char *db_app_ver(const char *title_id) {
-    static _Thread_local char ver_buf[8];
-    int found = 0;
+int db_confirms_unregistered(const char *title_id) {
     pthread_mutex_lock(&g_mu);
     refresh();
-    for (int i = 0; i < g_ntitles; i++)
-        if (!strcmp(g_titles[i].tid, title_id)) {
-            snprintf(ver_buf, sizeof(ver_buf), "%s", g_titles[i].ver);
-            found = 1;
-            break;
-        }
+    int absent = g_read_valid && !find_title(title_id);
+    pthread_mutex_unlock(&g_mu);
+    return absent;
+}
+
+const char *db_app_ver(const char *title_id) {
+    static _Thread_local char ver_buf[8];
+    pthread_mutex_lock(&g_mu);
+    refresh();
+    const title_row_t *row = find_title(title_id);
+    int found = row != NULL;
+    if (found)
+        snprintf(ver_buf, sizeof(ver_buf), "%s", row->ver);
     pthread_mutex_unlock(&g_mu);
     return found ? ver_buf : NULL;
 }

@@ -105,7 +105,11 @@ static int dlc_mode_parse(const char *s) {
         return DLC_INTERNAL;
     if (!strcmp(s, "external"))
         return DLC_EXTERNAL;
-    return DLC_OFF;
+    return !strcmp(s, "off") ? DLC_OFF : -1;
+}
+
+static int dlc_skip(uint64_t size, int mode, int big) {
+    return mode == DLC_INTERNAL && !big && size > DLC_INSTALL_MAX;
 }
 
 #define MAX_SCAN_PATHS 8
@@ -271,24 +275,28 @@ static notice_entry_t g_notices[NOTICE_MAX];
 static int g_nnotices;
 static pthread_mutex_t g_notice_mu = PTHREAD_MUTEX_INITIALIZER;
 
-static void notify_v(notify_kind_t kind, const char *fmt, va_list ap) {
+static void notify_v(notify_kind_t kind, int record, const char *fmt, va_list ap) {
     notify_request_t req;
     memset(&req, 0, sizeof(req));
     req.target_id = -1;
     req.use_icon_uri = 1;
     snprintf(req.icon_uri, sizeof(req.icon_uri), "%s", notify_icon(kind));
     vsnprintf(req.message, sizeof(req.message), fmt, ap);
-    printf("[notify]%s %s\n", g_quiet ? " (not shown)" : "", req.message);
-    if (g_quiet)
+    int quiet = __atomic_load_n(&g_quiet, __ATOMIC_RELAXED);
+    if (record)
+        printf("[notify]%s %s\n", quiet ? " (not shown)" : "", req.message);
+    if (quiet)
         return;
-    pthread_mutex_lock(&g_notice_mu);
-    memmove(&g_notices[1], &g_notices[0], sizeof(g_notices[0]) * (NOTICE_MAX - 1));
-    g_notices[0].ts = (int64_t)time(NULL);
-    g_notices[0].kind = kind;
-    snprintf(g_notices[0].text, sizeof(g_notices[0].text), "%s", req.message);
-    if (g_nnotices < NOTICE_MAX)
-        g_nnotices++;
-    pthread_mutex_unlock(&g_notice_mu);
+    if (record) {
+        pthread_mutex_lock(&g_notice_mu);
+        memmove(&g_notices[1], &g_notices[0], sizeof(g_notices[0]) * (NOTICE_MAX - 1));
+        g_notices[0].ts = (int64_t)time(NULL);
+        g_notices[0].kind = kind;
+        snprintf(g_notices[0].text, sizeof(g_notices[0].text), "%s", req.message);
+        if (g_nnotices < NOTICE_MAX)
+            g_nnotices++;
+        pthread_mutex_unlock(&g_notice_mu);
+    }
     sceKernelSendNotificationRequest(0, &req, sizeof(req), 0);
 }
 
@@ -296,7 +304,7 @@ static void notify_kind(notify_kind_t kind, const char *fmt, ...) __attribute__(
 static void notify_kind(notify_kind_t kind, const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    notify_v(kind, fmt, ap);
+    notify_v(kind, 1, fmt, ap);
     va_end(ap);
 }
 
@@ -304,7 +312,15 @@ static void notify(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 static void notify(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    notify_v(NOTIFY_INFO, fmt, ap);
+    notify_v(NOTIFY_INFO, 1, fmt, ap);
+    va_end(ap);
+}
+
+static void notify_private(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+static void notify_private(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    notify_v(NOTIFY_DRIVE, 0, fmt, ap);
     va_end(ap);
 }
 
@@ -696,6 +712,10 @@ static void dlc_open(title_src_t *t) {
                 pkg_close(&a->pkg);
                 continue;
             }
+            if (dlc_skip(a->pkg.pkg_size, g_cfg.dlc_mode, g_cfg.dlc_big)) {
+                pkg_close(&a->pkg);
+                continue;
+            }
             char rm[96];
             snprintf(rm, sizeof(rm), STATE_DIR "/%s.removed", a->pkg.content_id);
             if (exists(rm)) { /* deleted on the console */
@@ -762,6 +782,10 @@ static void dlc_open_catalog(title_src_t *t, const catalog_t *c, const cat_game_
         if (pkg_open(&a->pkg, a->path) || read_sfo(&a->pkg, &a->sfo)) {
             if (a->pkg.fd >= 0)
                 pkg_close(&a->pkg);
+            continue;
+        }
+        if (dlc_skip(a->pkg.pkg_size, g_cfg.dlc_mode, g_cfg.dlc_big)) {
+            pkg_close(&a->pkg);
             continue;
         }
         a->data = a->pkg.header[0x77] == 0x1b; /* content type: 0x1b with data, 0x1c license only */
@@ -927,8 +951,10 @@ static int src_open_paths(title_src_t *t, const char *tid, const catalog_t *cat,
         /* one line for all add-ons, so markers of titles without add-ons stay as before */
         uint8_t h[32];
         buf_t all = {0};
-        for (int i = 0; i < t->ndlc; i++)
+        for (int i = 0; i < t->ndlc; i++) {
             buf_put(&all, t->dlc[i].pkg.digest, 32);
+            buf_put(&all, t->dlc[i].install ? "i" : "m", 1);
+        }
         sha256(all.data, all.len, h);
         buf_free(&all);
         size_t n = strlen(t->marker);
@@ -1136,6 +1162,13 @@ static void write_meta(pkg_t *pkg, const char *meta_dir, int *rc) {
 }
 
 static void rm_tree(const char *path) {
+    struct stat root;
+    if (lstat(path, &root))
+        return;
+    if (!S_ISDIR(root.st_mode)) {
+        unlink(path);
+        return;
+    }
     DIR *d = opendir(path);
     if (!d) {
         unlink(path);
@@ -1146,7 +1179,8 @@ static void rm_tree(const char *path) {
     while ((e = readdir(d))) {
         if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
             continue;
-        snprintf(p, sizeof(p), "%s/%s", path, e->d_name);
+        if (snprintf(p, sizeof(p), "%s/%s", path, e->d_name) >= (int)sizeof(p))
+            continue;
         struct stat st;
         if (!lstat(p, &st) && S_ISDIR(st.st_mode))
             rm_tree(p);
@@ -2069,7 +2103,7 @@ static int mount_paths(const char *tid, int has_patch, const char (*dtids)[10], 
     hold_path(hold, sizeof(hold), "patch", tid);
     if (has_patch ? mount_dir(hold, target) : (unmount_all_layers(target, 1), 0))
         return -1;
-    for (int i = 0; i < ndtids; i++) {
+    for (int i = 0; g_cfg.dlc_mode == DLC_EXTERNAL && i < ndtids; i++) {
         if (addcont_installed(dtids[i])) {
             printf("[mount] /user/addcont/%s holds add-ons installed the normal way, not mounted\n", dtids[i]);
             continue;
@@ -3548,73 +3582,99 @@ static void emu_said(const char *target, const char *why) {
     printf("[emu] %s not mounted: %s\n", target, why);
 }
 
-static void emu_mount_one(const char *src, const char *app, const char *folder) {
+static int emu_mount_one(const char *src, const char *app, const char *folder) {
     char target[PATH_MAX], appdir[PATH_MAX];
     if (emu_target(app, folder, target, sizeof(target))) {
         emu_said(src, TR("the name is not one PS4Mount mounts", "el nombre no es de los que PS4Mount monta"));
-        return;
+        return 0;
     }
     snprintf(appdir, sizeof(appdir), "/data/%s", app);
     if (!emu_is_dir_now(appdir)) {
         emu_said(target, TR("the app has no folder in /data yet: start it once", "la app aún no tiene carpeta en /data: ábrela una vez"));
-        return;
+        return 0;
     }
     int top = top_layer(target, src);
     if (top == 1)
-        return; /* already there */
+        return 0; /* already there */
     if (top == -1) {
         emu_said(target, TR("something else is mounted there", "ya hay otra cosa montada ahí"));
-        return;
+        return 0;
     }
     struct stat st;
     if (lstat(target, &st) == 0) {
         if (!S_ISDIR(st.st_mode)) {
             emu_said(target, TR("it is not a folder", "no es una carpeta"));
-            return;
+            return 0;
         }
         if (!emu_dir_empty(target)) {
             emu_said(target, TR("the console's folder already has files (it is left as it is)", "la carpeta de la consola ya tiene archivos (se deja como está)"));
-            return;
+            return 0;
         }
     } else if (mkdir(target, 0777)) {
         printf("[emu] %s: %s\n", target, strerror(errno));
-        return;
+        return 0;
     }
-    if (nullfs_mount(src, target) == 0)
-        printf("[emu] %s is now %s\n", src, target);
+    if (nullfs_mount(src, target))
+        return 0;
+    printf("[emu] %s is now %s\n", src, target);
+    return 1;
 }
 
-/* Mounts of this kind that no longer have a drive behind them are taken off, then the
- * folders of the drives that are connected are mounted. Safe to repeat. */
+static int emu_mount_matches(const char *from, const char *on) {
+    if (strncmp(on, "/data/", 6))
+        return 0;
+    static const char prefix[] = "/" EMU_DIR "/";
+    for (int i = 0; i < 10; i++) {
+        char root[32];
+        root_path(i, root, sizeof(root));
+        size_t len = strlen(root);
+        if (!strncmp(from, root, len) && !strncmp(from + len, prefix, sizeof(prefix) - 1))
+            return !strcmp(from + len + sizeof(prefix) - 1, on + 6);
+    }
+    return 0;
+}
+
+/* Drop stale mounts and fill the free slots. Keep at most 32 across scans. */
 static void emu_sync(void) {
     int n = getfsstat(NULL, 0, MNT_NOWAIT);
-    if (n > 0) {
-        struct statfs *list = mem_alloc(sizeof(*list) * (size_t)(n + 16));
-        if (list) {
-            n = getfsstat(list, (long)(sizeof(*list) * (size_t)(n + 16)), MNT_NOWAIT);
-            for (int i = 0; i < n; i++) {
-                const char *on = list[i].f_mntonname, *from = list[i].f_mntfromname;
-                if (strcmp(list[i].f_fstypename, "nullfs") || strncmp(on, "/data/", 6) || strncmp(from, "/mnt/", 5) ||
-                    !strstr(from, "/" EMU_DIR "/"))
-                    continue;
-                char t[PATH_MAX], f[PATH_MAX];
-                snprintf(t, sizeof(t), "%s", on);
-                snprintf(f, sizeof(f), "%s", from);
-                if (dead_layer(t) || !emu_is_dir_now(f)) {
-                    printf("[emu] %s: %s is gone, taken off\n", t, f);
-                    unmount_all_layers(t, 1);
-                }
-            }
-            mem_free(list);
+    if (n <= 0)
+        return;
+    size_t len = sizeof(struct statfs) * (size_t)(n + 16);
+    struct statfs *list = mem_alloc(len);
+    if (!list)
+        return;
+    n = getfsstat(list, (long)len, MNT_NOWAIT);
+    int mounted = 0;
+    for (int i = 0; i < n; i++) {
+        const char *on = list[i].f_mntonname, *from = list[i].f_mntfromname;
+        if (strcmp(list[i].f_fstypename, "nullfs") || !emu_mount_matches(from, on))
+            continue;
+        mounted++;
+        if (!dead_layer(on) && emu_is_dir_now(from))
+            continue;
+        /* A disconnected layer can defeat statfs; only remove it if
+         * the mount table shows no other layer on the same target. */
+        if (layers_on(on) != 1)
+            continue;
+        if (unmount(on, MNT_FORCE))
+            printf("[emu] %s: could not unmount %s: %s\n", on, from, strerror(errno));
+        else {
+            printf("[emu] %s: %s is gone, taken off\n", on, from);
+            mounted--;
         }
     }
-    int mounted = 0;
+    mem_free(list);
+    if (n < 0)
+        return;
     for (int i = 0; i < 10 && mounted < 32; i++) { /* the USB drives and the extended storage */
-        char root[PATH_MAX], base[PATH_MAX];
+        char root[32], parent[64], base[PATH_MAX];
         root_path(i, root, sizeof(root));
         if (!is_mountpoint(root))
             continue;
+        snprintf(parent, sizeof(parent), "%s/PS4Mount", root);
         snprintf(base, sizeof(base), "%s/" EMU_DIR, root);
+        if (!emu_is_dir_now(parent) || !emu_is_dir_now(base))
+            continue;
         DIR *d = opendir(base);
         struct dirent *e;
         while (d && (e = readdir(d)) && mounted < 32) {
@@ -3629,8 +3689,7 @@ static void emu_sync(void) {
                 if (f->d_name[0] == '.' || snprintf(src, sizeof(src), "%s/%s", appsrc, f->d_name) >= (int)sizeof(src) ||
                     !emu_is_dir_now(src))
                     continue;
-                emu_mount_one(src, e->d_name, f->d_name);
-                mounted++;
+                mounted += emu_mount_one(src, e->d_name, f->d_name);
             }
             if (a)
                 closedir(a);
@@ -3640,11 +3699,46 @@ static void emu_sync(void) {
     }
 }
 
+/* Mounted copies can outlive a daemon reload. Detach only PS4Mount's layer, and
+ * wait for a game in progress to close before removing any of its add-ons. */
+static void release_dlc_mounts(void) {
+    if (g_cfg.dlc_mode == DLC_EXTERNAL)
+        return;
+    refresh_sandboxes();
+    if (g_nsandboxes)
+        return;
+    static const char prefix[] = "/user/addcont/";
+    int n = getfsstat(NULL, 0, MNT_NOWAIT);
+    if (n <= 0)
+        return;
+    size_t len = sizeof(struct statfs) * (size_t)(n + 16);
+    struct statfs *list = mem_alloc(len);
+    if (!list)
+        return;
+    n = getfsstat(list, (long)len, MNT_NOWAIT);
+    for (int i = 0; i < n; i++) {
+        const char *on = list[i].f_mntonname, *from = list[i].f_mntfromname;
+        if (strncmp(on, prefix, sizeof(prefix) - 1) || strcmp(list[i].f_fstypename, "nullfs"))
+            continue;
+        const char *tid = on + sizeof(prefix) - 1;
+        char expected[64];
+        snprintf(expected, sizeof(expected), HOLD_DIR "/addcont/%.9s", tid);
+        if (!is_game_id(tid) || strcmp(from, expected) || top_layer(on, from) != 1)
+            continue;
+        if (unmount(on, 0))
+            printf("[dlc] could not unmount %s: %s\n", on, strerror(errno));
+        else
+            printf("[dlc] %s unmounted for mode %s\n", tid, dlc_mode_name(g_cfg.dlc_mode));
+    }
+    mem_free(list);
+}
+
 static void scan_all(void) {
     static int seen[NROOTS], first = 1;
     static time_t nas_scanned;
     char root[PATH_MAX];
     emu_sync();
+    release_dlc_mounts();
     if (!db_ready()) {
         /* every game would look unregistered and be added again: wait for a good read */
         printf("[scan] the system's app.db could not be read: the scan waits\n");
@@ -3961,11 +4055,13 @@ static void clean_holds(const char *tid, char (*dtids)[10], int ndtids) {
         snprintf(hold, sizeof(hold), HOLD_DIR "/addcont/%s", dtids[i]);
         rm_tree(hold);
     }
-    if (!installed_internally(tid) && !db_is_registered(tid)) {
+    if (!installed_internally(tid) && db_confirms_unregistered(tid)) {
         snprintf(hold, sizeof(hold), "/system_data/playgo/%s", tid);
-        if (exists(hold)) {
+        struct stat st;
+        if (!lstat(hold, &st) && S_ISDIR(st.st_mode) && layers_on(hold) == 0) {
             rm_tree(hold);
-            printf("[clean] %s: its PlayGo records were left over (not installed, not registered), deleted\n", tid);
+            if (lstat(hold, &st) && errno == ENOENT)
+                printf("[clean] %s: its PlayGo records were left over (not installed, not registered), deleted\n", tid);
         }
     }
 }
@@ -4608,14 +4704,19 @@ static int restore_pkg(const char *root, const char *game_dir, const char *rel, 
         snprintf(orig, sizeof(orig), "%s", fallback);
         clean_name(orig);
     }
-    if (!orig_safe(orig)) {
+    if (!orig_safe(orig) || snprintf(dir, sizeof(dir), "%s/%s", root, orig) >= (int)sizeof(dir)) {
         printf("[restore] %s: unsafe original path %s\n", src, orig);
         return -1;
     }
-    snprintf(dir, sizeof(dir), "%s/%s", root, orig);
-    char *slash = strrchr(dir, '/');
-    if (slash && slash > dir + strlen(root))
-        *slash = 0, mkdirs(dir, 0777); /* the original folder may be gone */
+    for (char *slash = strchr(dir + strlen(root) + 1, '/'); slash; slash = strchr(slash + 1, '/')) {
+        *slash = 0;
+        struct stat parent;
+        if (lstat(dir, &parent) ? errno != ENOENT || mkdir(dir, 0777) : !S_ISDIR(parent.st_mode)) {
+            printf("[restore] %s: could not use the original folder %s\n", src, dir);
+            return -1;
+        }
+        *slash = '/';
+    }
     if (origin_free_path(root, orig, dst, sizeof(dst)) || rename(src, dst)) {
         printf("[restore] %s: %s\n", src, strerror(errno));
         return -1;
@@ -5259,8 +5360,9 @@ static void config_load(void) {
         else if (!strncmp(line, "dlc=", 4))
             c.dlc = atoi(line + 4) != 0;
         else if (!strncmp(line, "dlc_mode=", 9)) {
-            c.dlc_mode = dlc_mode_parse(line + 9);
-            dlc_mode_seen = 1;
+            int mode = dlc_mode_parse(line + 9);
+            if (mode >= 0)
+                c.dlc_mode = mode, dlc_mode_seen = 1;
         }
         else if (!strncmp(line, "dlc_big=", 8))
             c.dlc_big = atoi(line + 8) != 0;
@@ -5466,6 +5568,10 @@ int app_config_set(const char *body, char *msg, size_t cap) {
             }
             else if (k == 8 && !strncmp(p, "dlc_mode", 8)) {
                 c.dlc_mode = dlc_mode_parse(value);
+                if (c.dlc_mode < 0) {
+                    snprintf(msg, cap, "%s", TR("Not saved: unknown add-on mode", "No se guardó: modo de DLC desconocido"));
+                    return -1;
+                }
                 dlc_mode_seen = 1;
             }
             else if (k == 7 && !strncmp(p, "dlc_big", 7))
@@ -5579,11 +5685,15 @@ int app_config_set(const char *body, char *msg, size_t cap) {
                       strcmp(c.nas_share, g_cfg.nas_share) || strcmp(c.nas_sub, g_cfg.nas_sub) ||
                       strcmp(c.nas_user, g_cfg.nas_user) || strcmp(c.nas_pass, g_cfg.nas_pass);
     int autorun_changed = c.autorun != g_cfg.autorun;
+    if (autorun_changed && autorun_apply(c.autorun)) {
+        printf("[config] autorun %s: could not update payloads.ini\n", c.autorun ? "on" : "off");
+        snprintf(msg, cap, "%s", TR("Not saved: could not update GoldHEN's AutoRun list",
+                                    "No se guardó: no se pudo actualizar la lista de AutoRun de GoldHEN"));
+        return -1;
+    }
     g_cfg = c;
     apply_lang();
     config_save();
-    if (autorun_changed && autorun_apply(c.autorun))
-        printf("[config] autorun %s: could not update payloads.ini\n", c.autorun ? "on" : "off");
     printf("[config] saved: batch=%d batch_size=%d dlc=%d restore_batch=%d organize=%d folders=%d\n", c.batch,
            c.batch_size, c.dlc, c.restore_batch, c.organize, c.npaths);
     if (was_organize && !c.organize) /* turned off: send the organized games back to where they were */
@@ -5738,9 +5848,17 @@ static void upload_done(const char *path) {
  * installed by hand. The copy is deleted once the system has the app. */
 #define INSTALL_DIR STATE_DIR "/install"
 /* (when its files may go: stage.h) */
+static int g_panel_fetching; /* 1 while the panel package is downloading, 2 after it finishes */
 
 static pthread_mutex_t g_inst_mu = PTHREAD_MUTEX_INITIALIZER;
 static char g_inst_path[PATH_MAX]; /* received, for the main loop to install */
+
+static int install_waiting(void) {
+    pthread_mutex_lock(&g_inst_mu);
+    int waiting = g_inst_path[0] != 0;
+    pthread_mutex_unlock(&g_inst_mu);
+    return waiting;
+}
 
 static void upload_install_done(const char *path) {
     pthread_mutex_lock(&g_inst_mu);
@@ -5787,8 +5905,10 @@ static void install_received(void) {
          * would sit on the console's drive for days */
         struct stat rst;
         unsigned long long rbytes = stat(path, &rst) ? 0 : (unsigned long long)rst.st_size;
-        unlink(path);
-        printf("[clean] %s: the system's installer refused it, the copy was deleted (%llu bytes)\n", path, rbytes);
+        if (!unlink(path))
+            printf("[clean] %s: the system's installer refused it, the copy was deleted (%llu bytes)\n", path, rbytes);
+        else
+            printf("[install] could not delete %s: %s\n", path, strerror(errno));
         notify_kind(NOTIFY_WARN, TR("%s could not be installed: the system's installer turned it down (see the log)",
                   "%s no se pudo instalar: el instalador del sistema lo rechazó (mira el log)"),
                title);
@@ -5810,20 +5930,21 @@ static void install_cleanup(void) {
         char path[PATH_MAX], tid[10] = "", title[128], app[64];
         struct stat st, ast;
         snprintf(path, sizeof(path), INSTALL_DIR "/%s", e->d_name);
-        if (stat(path, &st) || !S_ISREG(st.st_mode))
+        if (lstat(path, &st) || !S_ISREG(st.st_mode))
             continue;
-        switch (stage_action(e->d_name, (long)(now - st.st_mtime), upload_active())) {
+        int receiving = upload_active() || __atomic_load_n(&g_panel_fetching, __ATOMIC_ACQUIRE) == 1;
+        switch (stage_action(e->d_name, (long)(now - st.st_mtime), receiving)) {
         case STAGE_KEEP:
             continue;
         case STAGE_DELETE_PART:
-            unlink(path);
-            printf("[clean] %s: unfinished transfer nobody is writing, deleted (%llu bytes)\n", path,
-                   (unsigned long long)st.st_size);
+            if (!unlink(path))
+                printf("[clean] %s: unfinished transfer nobody is writing, deleted (%llu bytes)\n", path,
+                       (unsigned long long)st.st_size);
             continue;
         case STAGE_DELETE_ABANDONED:
-            unlink(path);
-            printf("[clean] %s: never installed by the system, deleted after %ld days (%llu bytes)\n", path,
-                   (long)((now - st.st_mtime) / 86400), (unsigned long long)st.st_size);
+            if (!unlink(path))
+                printf("[clean] %s: abandoned copy, deleted after %ld days (%llu bytes)\n", path,
+                       (long)((now - st.st_mtime) / 86400), (unsigned long long)st.st_size);
             continue;
         case STAGE_VERIFY:
             break;
@@ -5831,10 +5952,11 @@ static void install_cleanup(void) {
         if (pkg_id_title(path, tid, title, sizeof(title)))
             continue;
         snprintf(app, sizeof(app), "/user/app/%s/app.pkg", tid);
-        if (!installed_internally(tid) || !db_is_registered(tid) || stat(app, &ast) || ast.st_size != st.st_size)
+        if (!installed_internally(tid) || !db_is_registered(tid) || lstat(app, &ast) ||
+            !S_ISREG(ast.st_mode) || ast.st_size != st.st_size)
             continue;
-        unlink(path);
-        printf("[install] %s installed: %s deleted\n", tid, path);
+        if (!unlink(path))
+            printf("[clean] %s: %s installed, copy deleted (%llu bytes)\n", path, tid, (unsigned long long)st.st_size);
     }
     if (d)
         closedir(d);
@@ -5852,8 +5974,6 @@ static void install_cleanup(void) {
 typedef struct { uint32_t sz, user_id, app_opt; uint64_t crash_report, check_flag; } lnc_param_t;
 int sceLncUtilLaunchApp(const char *tid, const char *argv[], lnc_param_t *param);
 
-static int g_panel_fetching; /* the download thread runs; done in this load either way */
-
 static int panel_app_sink(void *ctx, const uint8_t *data, size_t len) {
     return fwrite(data, 1, len, ctx) != len;
 }
@@ -5861,7 +5981,7 @@ static int panel_app_sink(void *ctx, const uint8_t *data, size_t len) {
 static void *panel_app_fetch(void *arg) {
     (void)arg;
     char url[2048], err[192] = "";
-    const char *part = INSTALL_DIR "/ps4mount-panel.part", *pkg = INSTALL_DIR "/ps4mount-panel.pkg";
+    const char *part = INSTALL_DIR "/" PANEL_PART_NAME, *pkg = INSTALL_DIR "/ps4mount-panel.pkg";
     snprintf(url, sizeof(url), PANEL_APP_URL, &VERSION[sizeof("PS4Mount ") - 1]);
     mkdir(INSTALL_DIR, 0777);
     FILE *f = fopen(part, "wb");
@@ -5922,12 +6042,13 @@ static void panel_app_step(void) {
             printf("[panel-app] opened for the first start: 0x%x\n", (unsigned)sceLncUtilLaunchApp(PANEL_APP_TID, NULL, &lp));
         }
     }
-    if (have || exists(PANEL_APP_DONE) || g_panel_fetching || time(NULL) - start < PANEL_APP_DELAY)
+    if (have || exists(PANEL_APP_DONE) || __atomic_load_n(&g_panel_fetching, __ATOMIC_ACQUIRE) ||
+        time(NULL) - start < PANEL_APP_DELAY || upload_active() || install_waiting())
         return;
     pthread_t th;
-    g_panel_fetching = 1;
+    __atomic_store_n(&g_panel_fetching, 1, __ATOMIC_RELEASE);
     if (pthread_create(&th, NULL, panel_app_fetch, NULL))
-        g_panel_fetching = 0;
+        __atomic_store_n(&g_panel_fetching, 0, __ATOMIC_RELEASE);
     else
         pthread_detach(th);
 }
@@ -5950,6 +6071,11 @@ int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint6
         p = amp ? amp + 1 : p + l;
     }
     int install = !strcmp(inst, "1");
+    if (install && (upload_active() || __atomic_load_n(&g_panel_fetching, __ATOMIC_ACQUIRE) == 1 || install_waiting())) {
+        snprintf(msg, cap, "%s", TR("An install is being prepared. Try again when it starts.",
+                                    "Se está preparando una instalación. Vuelve a intentarlo cuando empiece."));
+        return -1;
+    }
     if (upload_clean_name(raw, name, sizeof(name))) {
         snprintf(msg, cap, "%s", TR("no file name", "falta el nombre del archivo"));
         return -1;
@@ -5965,7 +6091,7 @@ int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint6
     /* length + margin can wrap: compare without adding */
     if (length > fb || fb - length < margin) {
         snprintf(msg, cap, TR("not enough space in %s: %llu MB free, %llu MB needed", "no hay espacio en %s: %llu MB libres, %llu MB necesarios"), dir,
-                 (unsigned long long)(fb >> 20), (unsigned long long)((length + margin) >> 20));
+                 (unsigned long long)(fb >> 20), (unsigned long long)((length >> 20) + (margin >> 20)));
         return -1;
     }
     if (upload_start(fd, dir, name, length, pre, pre_len, g_fw, install, install ? upload_install_done : upload_done)) {
@@ -6171,11 +6297,12 @@ static void drive_downloaded(const char *tid) {
 }
 
 static void drive_notify(const char *msg) { notify_kind(NOTIFY_DRIVE, "%s", msg); }
+static void drive_notify_private(const char *msg) { notify_private("%s", msg); }
 static void links_notify(const char *msg) { notify_kind(NOTIFY_DOWNLOAD, "%s", msg); }
 
 static void drive_begin(void) {
     static const drive_host_t host = {drive_game_files, drive_library, drive_dest_dir, free_bytes, drive_downloaded,
-                                      drive_notify};
+                                      drive_notify, drive_notify_private};
     drive_start(STATE_DIR, NULL, &host);
 }
 
@@ -6350,26 +6477,39 @@ static const char *payload_file(void) {
 /* Makes payloads.ini list (on) or not list (off) the payload under [AutoRun].
  * 0 when it says what the setting says, -1 when there is no payload file or it fails. */
 static int autorun_apply(int on) {
-    const char *me = payload_file();
-    if (!me)
+    const char *me = on ? payload_file() : NULL;
+    if (on && !me)
         return -1;
     mkdirs("/data/GoldHEN", 0777);
-    size_t len = 0;
-    uint8_t *raw = read_all(AUTORUN_INI, &len);
     const char *ini = AUTORUN_INI;
-    if (!raw) {
-        raw = read_all(AUTORUN_INI_ALT, &len);
-        ini = AUTORUN_INI_ALT;
+    struct stat st;
+    int found = lstat(ini, &st) == 0;
+    if (!found) {
+        if (errno != ENOENT)
+            return -1;
+        if (lstat(AUTORUN_INI_ALT, &st) == 0)
+            ini = AUTORUN_INI_ALT, found = 1;
+        else if (errno != ENOENT)
+            return -1;
     }
-    if (!raw && !on)
+    if (!found && !on)
         return 0; /* nothing was listed: nothing to take off */
+    if (found && !S_ISREG(st.st_mode))
+        return -1;
+    size_t len = 0;
+    uint8_t *raw = found && st.st_size > 0 ? read_all(ini, &len) : NULL;
+    if (found && st.st_size > 0 && (!raw || len != (size_t)st.st_size)) {
+        mem_free(raw);
+        return -1; /* an unreadable file is not an empty file */
+    }
     buf_t out = {0};
     if (autorun_edit_ini(raw, len, me, on, &out)) {
         buf_free(&out);
         mem_free(raw);
         return -1;
     }
-    int rc = autorun_write_atomic(ini, out.len ? out.data : (const uint8_t *)"", out.len);
+    int unchanged = out.len == len && (!len || !memcmp(raw, out.data, len));
+    int rc = unchanged ? 0 : autorun_write_atomic(ini, out.data, out.len);
     buf_free(&out);
     mem_free(raw);
     return rc;
@@ -6506,7 +6646,7 @@ static void notify_running(void);
 static void nas_speak(void) {
     if (!g_quiet)
         return;
-    g_quiet = 0;
+    __atomic_store_n(&g_quiet, 0, __ATOMIC_RELAXED);
     notify_running();
 }
 
@@ -6863,14 +7003,14 @@ int main(void) {
     g_setup_start = time(NULL);
     config_load();
     apply_lang();
-    if (g_cfg.autorun)
-        autorun_apply(1); /* the ini was maybe edited by hand: make it say the setting */
+    if (g_cfg.autorun && autorun_apply(1))
+        printf("[config] autorun on: could not update payloads.ini\n");
     if (g_setup)
         printf("[main] first start: no game is added until the settings are saved\n");
     signal(SIGPIPE, SIG_IGN);
     check_firmware();
     nas_apply(1); /* the share, when the settings have one */
-    g_quiet = nas_need_reload(); /* a load of its own takes over in a few seconds */
+    __atomic_store_n(&g_quiet, nas_need_reload(), __ATOMIC_RELAXED); /* a load of its own takes over */
     if (user_app_masked())
         unmask_leftover();
     /* no Media tab shortcut: it is a PS5 web app (param.json); the panel is opened from

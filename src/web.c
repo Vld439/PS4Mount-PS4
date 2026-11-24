@@ -5,6 +5,7 @@
 #include "web.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -358,30 +359,43 @@ void web_handle(int fd) {
         close(fd);
         return;
     }
-    /* the body of a POST may arrive after the headers; a trickle is cut at the deadline:
-     * this runs on the one thread that also mounts, scans and answers the panel */
-    char *body = strstr(req, "\r\n\r\n");
-    unsigned long long length = 0;
-    for (const char *h = req; (h = strchr(h, '\n'));) {
-        h++;
-        if (*h == '\r' || *h == '\n')
-            break;
-        if (!strncasecmp(h, "Content-Length:", 15)) {
-            length = strtoull(h + 15, NULL, 10);
-            break;
-        }
-    }
-    long want = length > sizeof(req) ? (long)sizeof(req) : (long)length;
-    while (want > 0 && now_ms() < deadline && (size_t)n < sizeof(req) - 1 &&
-           (!body || (long)(n - (body + 4 - req)) < want)) {
+    char *body;
+    while (!(body = strstr(req, "\r\n\r\n")) && (size_t)n < sizeof(req) - 1 && now_ms() < deadline) {
         ssize_t m = read(fd, req + n, sizeof(req) - 1 - (size_t)n);
         if (m <= 0)
             break;
         n += m;
         req[n] = 0;
-        body = strstr(req, "\r\n\r\n");
     }
-    body = body ? body + 4 : req + n;
+    if (!body)
+        goto bad_request;
+    unsigned long long length = 0;
+    int have_length = 0;
+    for (const char *h = strchr(req, '\n'); h && h < body;) {
+        h++;
+        if (!strncasecmp(h, "Transfer-Encoding:", 18))
+            goto bad_request; /* this server only reads bodies with a declared length */
+        if (!strncasecmp(h, "Content-Length:", 15)) {
+            const char *v = h + 15;
+            while (*v == ' ' || *v == '\t')
+                v++;
+            if (have_length || *v < '0' || *v > '9')
+                goto bad_request;
+            char *end;
+            errno = 0;
+            length = strtoull(v, &end, 10);
+            while (*end == ' ' || *end == '\t')
+                end++;
+            if (errno == ERANGE || *end != '\r' || end[1] != '\n')
+                goto bad_request;
+            have_length = 1;
+        }
+        h = strchr(h, '\n');
+    }
+    body += 4;
+    size_t have = (size_t)(req + n - body);
+    if (length < have)
+        have = (size_t)length;
     char method[8] = "", path[1024] = "", tid[10], msg[256];
     sscanf(req, "%7s %1023s", method, path);
     int post = !strcmp(method, "POST");
@@ -391,6 +405,23 @@ void web_handle(int fd) {
         reply(fd, "403 Forbidden", "text/plain", "forbidden\n", 10);
         close(fd);
         return;
+    }
+
+    int form = post && (!strcmp(path, "/api/config") || !strncmp(path, "/api/restore", 12) ||
+                        !strcmp(path, "/api/drive/client") || !strncmp(path, "/api/drive/client?", 18) ||
+                        !strcmp(path, "/api/nas/shares"));
+    if (form) {
+        if (length >= (size_t)(req + sizeof(req) - body))
+            goto bad_request;
+        while (have < length && now_ms() < deadline) {
+            ssize_t m = read(fd, body + have, (size_t)length - have);
+            if (m <= 0)
+                break;
+            have += (size_t)m;
+        }
+        if (have != length || memchr(body, 0, have))
+            goto bad_request;
+        body[have] = 0;
     }
 
     if (!strcmp(path, "/") || !strcmp(path, "/index.html") || !strncmp(path, "/?", 2)) { /* /?app=1: the panel app */
@@ -467,7 +498,7 @@ void web_handle(int fd) {
         uint8_t *data = NULL;
         if (!length || length > CHECK_MAX)
             json_msg(fd, 0, TR("send the first MB of the pkg (at most 16 MB)", "envía el primer MB del pkg (como máximo 16 MB)"));
-        else if (!(data = read_body(fd, body, (size_t)(req + n - body), (size_t)length, deadline)))
+        else if (!(data = read_body(fd, body, have, (size_t)length, deadline)))
             json_msg(fd, 0, TR("the pkg start did not arrive whole", "el comienzo del pkg no llegó entero"));
         else {
             buf_t b = {0};
@@ -479,7 +510,7 @@ void web_handle(int fd) {
     } else if (post && !strncmp(path, "/api/upload", 11) && (path[11] == 0 || path[11] == '?')) {
         if (!length)
             json_msg(fd, 0, TR("nothing was sent", "no se envió nada"));
-        else if (!app_upload(fd, path, body, (size_t)(req + n - body), length, msg, sizeof(msg)))
+        else if (!app_upload(fd, path, body, have, length, msg, sizeof(msg)))
             return; /* the upload answers and closes it */
         else
             json_msg(fd, 0, msg);
@@ -511,7 +542,7 @@ void web_handle(int fd) {
         reply(fd, "200 OK", "application/json; charset=utf-8", b.data, b.len);
         buf_free(&b);
     } else if (post && !strncmp(path, "/api/links/", 11)) {
-        links_action(fd, req, path, body, (size_t)(req + n - body), length, deadline);
+        links_action(fd, req, path, body, have, length, deadline);
     } else if (!strcmp(path, "/api/log")) {
         send_log(fd);
     } else if (!strcmp(path, "/api/nas/scan") && !may_write(fd, req)) {
@@ -539,5 +570,10 @@ void web_handle(int fd) {
     } else {
         reply(fd, "404 Not Found", "text/plain", "not found\n", 10);
     }
+    close(fd);
+    return;
+
+bad_request:
+    reply(fd, "400 Bad Request", "text/plain", "bad request\n", 12);
     close(fd);
 }

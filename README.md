@@ -38,7 +38,7 @@ Probado en una PS4 con firmware **13.52** y GoldHEN; también funciona en **14.0
 | Juegos desde una **NAS** por **SMB o NFS**, solo lectura, con búsqueda en la red | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado (firmware 13.52 y 6.72; de 5.05 a 13.50, experimental) |
 | **Actualizaciones** | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
 | Juegos **donde están**, sin mover ni renombrar los pkgs (cualquier carpeta de la unidad) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
-| **DLC** de cualquier tamaño (casi todos: trajes, packs, licencias) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: por defecto (`external`) se montan desde el disco, sin copiar nada a la consola |
+| **DLC** de cualquier tamaño (casi todos: trajes, packs, licencias) | <img src="docs/icons/warn.svg" width="14" height="14" alt=""> Pendiente de verificar en consola: el modo `external` monta el paquete desde su unidad. Los metadatos se guardan en la consola |
 | DLC **instalados** (`dlc_mode=internal`) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: se instalan con el instalador del sistema, los de hasta 256 MB cada uno (o todos con `dlc_big=1`); ocupan memoria interna |
 | DLC **apagados** (`dlc_mode=off`) | <img src="docs/icons/no.svg" width="14" height="14" alt=""> No se usan |
 | **Enviar juegos desde el PC** por la red, con comprobación previa | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado (unos 16 MB/s por cable) |
@@ -66,13 +66,13 @@ Probado en una PS4 con firmware **13.52** y GoldHEN; también funciona en **14.0
 1. **Descarga** `ps4mount-ps4.bin` de [Releases](https://github.com/Vld439/PS4Mount-PS4/releases) y cópialo en **`/data/payloads/`** de la consola (por FTP, o como copies tus otros payloads).
 2. **Después de cada arranque**, carga PS4Mount (Payloader/Launchpad de GoldHEN, Payload Guest o AutoRun). Aparece la notificación `PS4Mount <versión> en marcha. Panel en http://192.168.1.50:8770`, con la IP de tu consola.
 3. **Pon los juegos**, de una de estas formas:
-   - **En un USB:** copia los pkgs **donde quieras** del disco (por ejemplo en la carpeta `PS4Mount`, o en una carpeta por juego) y conéctalo a la PS4. PS4Mount los busca en todo el disco y los agrupa por el título que llevan dentro (juego, actualización y DLC), sin moverlos ni renombrarlos; las carpetas ocultas y las del sistema no se miran.
+   - **En un USB:** copia los pkgs en la carpeta `PS4Mount` y conecta el USB a la PS4. Si desactivas **Organizar** en Ajustes, puedes guardar los pkgs en cualquier carpeta de la unidad y se usarán desde ahí.
    - **Desde el PC:** con **Enviar juegos** en el panel (ver más abajo).
    - **En la memoria interna:** pkgs en `/data/PS4Mount` (por FTP o con Enviar juegos). `/data/pkg` sigue siendo del instalador normal: PS4Mount no lo toca.
 4. Espera las notificaciones: `usb0: 1 juego(s) de PS4 encontrado(s), 1 nuevo(s) o actualizado(s)` → `Añadiendo 1/1: <juego>` → `<juego> añadido. Reinicia la consola una vez para jugarlo`.
 5. **Reinicia la consola una vez**, vuelve a cargar PS4Mount y juega desde la pantalla de inicio.
 
-Con **Organizar los pkgs en la carpeta ps4** activado (viene apagado), PS4Mount ordena los pkgs que usa en una carpeta por juego, en el mismo disco (es un cambio de nombre, sin copiar nada):
+Con **Organizar los pkgs en la carpeta ps4** activado (el valor inicial), PS4Mount ordena los pkgs que usa en una carpeta por juego, en el mismo disco (es un cambio de nombre, sin copiar nada):
 
 ```
 ps4/CUSAxxxxx/app.pkg                           juego
@@ -82,7 +82,7 @@ ps4/CUSAxxxxx/addcont/CUSAyyyyy/<LABEL>/ac.pkg  DLC
 
 Si lo activas, mantén esa estructura. Para añadir más juegos, vuelve a ponerlos donde se buscan.
 
-Si apagas **Organizar los pkgs en la carpeta ps4** en Ajustes (es lo que viene por defecto), PS4Mount no mueve ni renombra nada: usa los `.pkg` **donde estén**, en cualquier carpeta de la unidad (también los que ya estén en `ps4/`), y los agrupa por el título que llevan dentro (juego, actualización y DLC). Los pkgs **base+actualización fusionados** funcionan: una actualización suelta más vieja que el juego no se usa.
+Si apagas **Organizar los pkgs en la carpeta ps4** en Ajustes, PS4Mount no mueve ni renombra nada: usa los `.pkg` **donde estén**, en cualquier carpeta de la unidad (también los que ya estén en `ps4/`), y los agrupa por el título que llevan dentro (juego, actualización y DLC). Los pkgs **base+actualización fusionados** funcionan: una actualización suelta más vieja que el juego no se usa.
 
 Al apagarlo, los juegos que PS4Mount **ya había organizado** vuelven solos a su sitio y con su nombre originales (lo recuerda en el `origin.txt` de cada juego) y se usan desde ahí; los que organizaste tú a mano se quedan donde están. La primera vez que se devuelven hay que reiniciar la consola una vez, como al añadir un juego.
 
@@ -268,11 +268,11 @@ Ya está: el panel muestra tu correo y tu espacio. La conexión se guarda en la 
 
 | Ajuste | Por defecto | Significa |
 | --- | --- | --- |
-| Carpetas donde buscar pkgs | `/PS4Mount` | Solo se usa con **Organizar** activado: carpetas de cada disco donde se buscan pkgs nuevos, una por línea (`/` es la raíz: todos los pkgs de juegos de la raíz se moverían a `ps4/`). Se miran hasta dos niveles de subcarpetas. `ps4` no se puede usar. Apagado (por defecto), se busca en toda la unidad, sin renombrar ni mover nada. |
+| Carpetas donde buscar pkgs | `/PS4Mount` | Solo se usa con **Organizar** activado: carpetas de cada disco donde se buscan pkgs nuevos, una por línea (`/` es la raíz: todos los pkgs de juegos de la raíz se moverían a `ps4/`). Se miran hasta dos niveles de subcarpetas. `ps4` no se puede usar. Con Organizar apagado se busca en toda la unidad, sin renombrar ni mover nada. |
 | Añadir los juegos nuevos por grupos / Juegos por grupo | Sí / 5 | Añade muchos juegos por grupos, para no saturar la consola. |
-| DLC (add-ons) | external | De dónde se sirven los DLC: **external** (por defecto): todos se montan desde el disco, sin copiar nada a la consola; **internal**: se instalan con el instalador del sistema, los de hasta 256 MB cada uno (los de más, con el ajuste de abajo); **off**: no se usan. En el panel es el selector de DLC; en `config.txt`: `dlc_mode=external|internal|off`. |
+| DLC (add-ons) | external | De dónde se sirven los DLC: **external** (por defecto): se montan desde la unidad de origen sin duplicar los paquetes; **internal**: se instalan con el instalador del sistema, los de hasta 256 MB cada uno (los de más, con el ajuste de abajo); **off**: desactiva los DLC que gestiona PS4Mount. Los que ya instaló el sistema permanecen instalados. En el panel es el selector de DLC; en `config.txt`: `dlc_mode=external|internal|off`. |
 | Instalar también los DLC grandes | Sí | Solo con `dlc_mode=internal`: los DLC de más de 256 MB también se instalan, en segundo plano: un juego solo ve un DLC instalado por el sistema. Ocupan memoria interna; antes se comprueba que haya sitio. Apagado (`dlc_big=0`), no se usan. |
-| Organizar los pkgs en la carpeta ps4 | No | Mueve los pkgs a `ps4/<TITLE_ID>/` para tenerlos ordenados. Apagado (por defecto), los pkgs se usan donde están, con su nombre, sin mover ni renombrar nada; los que PS4Mount ya había organizado vuelven solos a su sitio original (los organizados a mano se quedan en `ps4/`). En la memoria interna se buscan solo `/data/PS4Mount` y `ps4`. |
+| Organizar los pkgs en la carpeta ps4 | Sí | Mueve los pkgs a `ps4/<TITLE_ID>/` para tenerlos ordenados. Apagado, los pkgs se usan donde están, con su nombre, sin mover ni renombrar nada; los que PS4Mount ya había organizado vuelven solos a su sitio original (los organizados a mano se quedan en `ps4/`). En la memoria interna se buscan solo `/data/PS4Mount` y `ps4`. |
 | Usar también los pkgs de /data/PS4Mount | Sí | Usa también los pkgs de la memoria interna (`internal=1` en `config.txt`). |
 | NAS (NFS o SMB) | No | Usa los pkgs de una carpeta compartida en red, **solo lectura** y sin mover ni renombrar nada (con Organizar activado no aparece). Firmware 5.05 a 13.52 (ver abajo). |
 | Idioma | El de la consola | El idioma del panel y de las notificaciones: el de la consola, inglés o español. |
@@ -313,7 +313,7 @@ Los campos se pueden rellenar también a mano:
 
 - **Mejor por cable.** PS4Mount pide los datos por adelantado y varios a la vez, así que aprovecha casi toda la red, pero por Wi-Fi las cargas son lentas y alguna textura tarda en aparecer. **Con cable** se juega como desde el disco interno. Si no tienes switch ni un puerto libre en el router, sirve un **cable directo del PC a la consola**: en el PC, comparte su conexión por ese cable (en Linux con NetworkManager: `nmcli connection add type ethernet ifname <interfaz> con-name ps4 ipv4.method shared`; en Windows, "Conexión compartida a Internet" del adaptador Wi-Fi), y en la PS4 configura la red por cable en modo **Fácil**.
 - **Firmware**: probado en **13.52 y 6.72**. En 5.05, 5.07, 9.00, 9.03, 9.04, 9.50, 9.51, 9.60, 10.00, 10.01, 10.50, 10.70, 10.71, 11.00, 11.02, 11.50, 11.52, 12.00, 12.02, 12.50, 12.52, 13.00, 13.02, 13.04 y 13.50 es **experimental**: el parche que activa FUSE es el de itemzflow, sin probar con PS4Mount (el panel lo avisa). En el resto (por ejemplo 7.xx y 8.xx) el ajuste sale desactivado: no hay parche de FUSE conocido.
-- **Solo con Organizar apagado** (el valor por defecto): el recurso nunca se organiza.
+- **Solo con Organizar apagado**: el recurso nunca se organiza.
 - **SMB** usa SMB2/3. **NFS** prueba NFSv4.2, NFSv4.0 y NFSv3; para que el panel liste las exportaciones, el servidor tiene que tener `rpcbind` (si no, escríbela a mano).
 - Un servidor que **no contesta** (apagado, dirección mal escrita, cortafuegos) se avisa en 3 segundos.
 - **Si se corta la red** en plena partida (un cable desenchufado, el PC reiniciado), el juego se queda en pausa y sigue solo cuando vuelve: PS4Mount reconecta y reabre los ficheros. Espera hasta 2 minutos; pasado ese tiempo el juego recibe el error y puede fallar.
@@ -432,7 +432,7 @@ Tested on a PS4 on firmware **13.52** with GoldHEN; it also works on **14.00** (
 | Games from a **NAS** over **SMB or NFS**, read only, found on the network | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested (firmware 13.52 and 6.72; 5.05 to 13.50 experimental) |
 | **Updates** | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
 | Games **where they are**, without moving or renaming their pkgs (any folder of the drive) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
-| **Add-ons (DLC)** of any size (almost all: costumes, packs, licenses) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: by default (`external`) they are mounted from the drive, with nothing copied to the console |
+| **Add-ons (DLC)** of any size (almost all: costumes, packs, licenses) | <img src="docs/icons/warn.svg" width="14" height="14" alt=""> Pending console verification: `external` mode mounts each package from its source drive. Metadata is stored on the console |
 | Add-ons **installed** (`dlc_mode=internal`) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: installed with the system's installer, those up to 256 MB each (or all with `dlc_big=1`); they take internal space |
 | Add-ons **off** (`dlc_mode=off`) | <img src="docs/icons/no.svg" width="14" height="14" alt=""> Not used |
 | **Sending games from a computer** over the network, checked first | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested (about 16 MB/s over a cable) |
@@ -460,13 +460,13 @@ Tested on a PS4 on firmware **13.52** with GoldHEN; it also works on **14.00** (
 1. **Download** `ps4mount-ps4.bin` from [Releases](https://github.com/Vld439/PS4Mount-PS4/releases) and copy it to **`/data/payloads/`** on the console (over FTP, or however you copy your other payloads).
 2. **After every boot**, load PS4Mount (GoldHEN's Payloader/Launchpad, Payload Guest or AutoRun). The notification `PS4Mount <version> running. Panel at http://192.168.1.50:8770` shows up, with your console's IP.
 3. **Add games**, one of these ways:
-   - **On a USB drive:** copy the pkgs **anywhere on the drive** (for example the `PS4Mount` folder, or one folder per game) and plug it into the PS4. PS4Mount searches the whole drive and groups them by the title they carry inside (game, update and add-ons), without moving or renaming them; hidden and system folders are skipped.
+   - **On a USB drive:** copy the pkgs to the `PS4Mount` folder and plug the drive into the PS4. Turn off **Organize** in Settings to keep pkgs in any folder and use them where they are.
    - **From a computer:** with **Send games** in the panel (see below).
    - **In the console's storage:** pkgs in `/data/PS4Mount` (over FTP or with Send games). `/data/pkg` stays the usual installer's: PS4Mount leaves it alone.
 4. Wait for the notifications: `usb0: 1 PS4 game(s) found, 1 new or updated` → `Adding 1/1: <game>` → `<game> added. Restart the console once to play it`.
 5. **Restart the console once**, load PS4Mount again and play from the home screen.
 
-With **Organize pkgs into the ps4 folder** on (it is off by default), PS4Mount keeps the pkgs it uses in a folder per game on the same drive (a rename, nothing is copied):
+With **Organize pkgs into the ps4 folder** on (the initial setting), PS4Mount keeps the pkgs it uses in a folder per game on the same drive (a rename, nothing is copied):
 
 ```
 ps4/CUSAxxxxx/app.pkg                           game
@@ -476,7 +476,7 @@ ps4/CUSAxxxxx/addcont/CUSAyyyyy/<LABEL>/ac.pkg  add-on
 
 If you turn it on, keep this layout. To add more games, put them where they are searched.
 
-With **Organize pkgs into the ps4 folder** off (in the settings, and the default), PS4Mount moves and renames nothing: it uses the `.pkg` files **where they are**, in any folder of the drive (the ones already in `ps4/` too), grouping them by the title they carry inside (game, update and add-ons). **Merged base+update pkgs** work: a separate update older than the game is not used.
+With **Organize pkgs into the ps4 folder** off in Settings, PS4Mount moves and renames nothing: it uses the `.pkg` files **where they are**, in any folder of the drive (the ones already in `ps4/` too), grouping them by the title they carry inside (game, update and add-ons). **Merged base+update pkgs** work: a separate update older than the game is not used.
 
 Turning it off sends the games PS4Mount **had organized** back to where they were, with their original names (it remembers them in each game's `origin.txt`), and they are used from there; games you organized by hand stay where they are. The first time, restart the console once, as when adding a game.
 
@@ -662,11 +662,11 @@ That is all: the panel shows your email and your space. The connection is kept o
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| Folders to search for pkgs | `/PS4Mount` | Only used with **Organize** on: folders of each drive where new pkgs are picked up, one per line (`/` is the root: every game pkg in the root would be moved into `ps4/`). Two levels of subfolders are looked into. `ps4` cannot be used. Off (the default), the whole drive is searched, without renaming or moving anything. |
+| Folders to search for pkgs | `/PS4Mount` | Only used with **Organize** on: folders of each drive where new pkgs are picked up, one per line (`/` is the root: every game pkg in the root would be moved into `ps4/`). Two levels of subfolders are looked into. `ps4` cannot be used. With Organize off, the whole drive is searched, without renaming or moving anything. |
 | Add new games in groups / Games per group | On / 5 | Adds many games in groups, which keeps the console stable. |
-| Add-ons (DLC) | external | Where add-ons are served from: **external** (the default): every add-on is mounted from the drive, with nothing copied to the console; **internal**: installed with the system's installer, those up to 256 MB each (bigger ones, with the setting below); **off**: none are used. In the panel it is the add-ons selector; in `config.txt`: `dlc_mode=external|internal|off`. |
+| Add-ons (DLC) | external | Where add-ons are served from: **external** (the default): packages are mounted from the source drive without duplicating them; **internal**: installed with the system's installer, those up to 256 MB each (bigger ones, with the setting below); **off**: disables add-ons managed by PS4Mount. Add-ons previously installed by the system stay installed. In the panel it is the add-ons selector; in `config.txt`: `dlc_mode=external|internal|off`. |
 | Also install big add-ons | On | Only with `dlc_mode=internal`: add-ons over 256 MB are installed too, in the background: a game only sees an add-on the system has installed. They take internal space; there has to be room first. Off (`dlc_big=0`), they are not used. |
-| Organize pkgs into the ps4 folder | Off | Moves the pkgs to `ps4/<TITLE_ID>/` to keep them in order. Off (the default), the pkgs are used where they are, with their own names, without moving or renaming anything; the ones PS4Mount had organized go back on their own to where they were (the ones you organized by hand stay in `ps4/`). On the console's storage, only `/data/PS4Mount` and `ps4` are searched. |
+| Organize pkgs into the ps4 folder | On | Moves the pkgs to `ps4/<TITLE_ID>/` to keep them in order. Off, the pkgs are used where they are, with their own names, without moving or renaming anything; the ones PS4Mount had organized go back on their own to where they were (the ones you organized by hand stay in `ps4/`). On the console's storage, only `/data/PS4Mount` and `ps4` are searched. |
 | Also use pkgs in the console's /data/PS4Mount | On | Uses the pkgs in the console's storage too (`internal=1` in `config.txt`). |
 | NAS (NFS or SMB) | Off | Uses the pkgs in a shared network folder, **read only** and without moving or renaming anything (it does not show with Organize on). Firmware 5.05 to 13.52 (see below). |
 | Language | The console's | The language of the panel and the notifications: the console's, English or Spanish. |
@@ -707,7 +707,7 @@ The fields can be filled in by hand too:
 
 - **Wired is best.** PS4Mount asks for the data ahead of time, several pieces at once, so it uses almost all of the network, but over Wi-Fi loading is slow and some textures take a moment. **Over a cable** games play as from the internal drive. With no switch or free router port, a **cable straight from the computer to the console** works too: share the computer's connection on that cable (on Linux with NetworkManager: `nmcli connection add type ethernet ifname <interface> con-name ps4 ipv4.method shared`; on Windows, "Internet Connection Sharing" on the Wi-Fi adapter), and set the PS4's wired network to **Easy**.
 - **Firmware**: tested on **13.52 and 6.72**. On 5.05, 5.07, 9.00, 9.03, 9.04, 9.50, 9.51, 9.60, 10.00, 10.01, 10.50, 10.70, 10.71, 11.00, 11.02, 11.50, 11.52, 12.00, 12.02, 12.50, 12.52, 13.00, 13.02, 13.04 and 13.50 it is **experimental**: the patch that switches FUSE on is itemzflow's, not tried with PS4Mount (the panel says so). On the rest (7.xx and 8.xx, for one) the setting is disabled: there is no known FUSE patch.
-- **Only with Organize off** (the default): the share is never organized.
+- **Only with Organize off**: the share is never organized.
 - **SMB** uses SMB2/3. **NFS** tries NFSv4.2, NFSv4.0 and NFSv3; for the panel to list the exports, the server needs `rpcbind` (otherwise type the export by hand).
 - A server that **does not answer** (off, a mistyped address, a firewall) is reported in 3 seconds.
 - **If the network drops** in the middle of a game (a cable pulled, the PC restarted), the game pauses and goes on by itself when it is back: PS4Mount reconnects and reopens the files. It waits up to 2 minutes; after that the game gets the error and may break.

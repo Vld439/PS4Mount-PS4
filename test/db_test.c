@@ -68,6 +68,7 @@ int main(void) {
     printf("missing database\n");
     CHECK(!db_is_registered("CUSA00001"));
     CHECK(!db_ready()); /* no database read: nothing may be taken as unregistered */
+    CHECK(!db_confirms_unregistered("CUSA00001")); /* STORE-9 */
     CHECK(!exists(APP_DB)); /* opening read-only never creates it */
 
     printf("titles\n");
@@ -82,6 +83,8 @@ int main(void) {
     CHECK(db_ready());
     CHECK(db_is_registered("CUSA00002"));
     CHECK(!db_is_registered("CUSA00003"));
+    CHECK(db_confirms_unregistered("CUSA00003"));
+    CHECK(!db_confirms_unregistered("CUSA00001"));
     CHECK(!db_is_registered(""));
     CHECK(!db_is_registered("CUSA0000")); /* no prefix match */
     CHECK(db_app_ver("CUSA00001") && !strcmp(db_app_ver("CUSA00001"), "01.04"));
@@ -147,7 +150,8 @@ int main(void) {
     }
     file_hash(APP_DB, before);
     next_second();
-    db_is_registered("CUSA00001"); /* keeps the last list, no crash */
+    CHECK(db_is_registered("CUSA00001")); /* keeps the last list, no crash */
+    CHECK(!db_confirms_unregistered("CUSA00003")); /* STORE-9: stale absence cannot justify deletion */
     file_hash(APP_DB, after);
     CHECK(!memcmp(before, after, 32)); /* never "repaired" by us */
 

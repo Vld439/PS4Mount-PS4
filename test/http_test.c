@@ -261,7 +261,7 @@ int main(void) {
     before = g_stub_calls;
     r = DRIVE_POST("/api/drive/connectx");
     CHECK(status(r, "404") && g_stub_calls == before);
-    r = ask("POST /api/drive/client HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 79\r\n\r\n"
+    r = ask("POST /api/drive/client HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 75\r\n\r\n"
             "client_id=123-abc.apps.googleusercontent.com&client_secret=GOCSPX-a%2Bb_c+d");
     CHECK(status(r, "200") && !strcmp(g_stub_call, "drive_client") &&
           !strcmp(g_stub_arg, "123-abc.apps.googleusercontent.com|GOCSPX-a+b_c d"));
@@ -319,15 +319,18 @@ int main(void) {
     CHECK(r[0] == 0); /* nothing sent: closed without an answer */
     r = ask("\r\n\r\n");
     CHECK(status(r, "404"));
+    before = g_stub_calls;
     r = ask("POST /api/config HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: -5\r\n\r\nx=1");
-    CHECK(status(r, "200") || status(r, "400"));
+    CHECK(status(r, "400") && g_stub_calls == before);
     r = ask("POST /api/config HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 999999999999\r\n\r\nx=1");
-    CHECK(status(r, "200") || status(r, "400"));
+    CHECK(status(r, "400") && g_stub_calls == before);
+    r = ask("POST /api/config HTTP/1.1\r\nX-PS4Mount: 1\r\nContent-Length: 15\r\n\r\nx=1");
+    CHECK(status(r, "400") && g_stub_calls == before);
     static char huge[20000];
     memset(huge, 'A', sizeof(huge) - 1);
     memcpy(huge, "GET /", 5);
     r = ask2(huge, sizeof(huge) - 1, NULL);
-    CHECK(status(r, "404"));
+    CHECK(status(r, "400"));
     char nul[] = "GET /\0api/stop HTTP/1.1\r\n\r\n";
     before = g_stub_calls;
     ask2(nul, sizeof(nul) - 1, NULL);

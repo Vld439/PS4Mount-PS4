@@ -34,6 +34,8 @@ typedef struct {
     /* A game's pkgs arrived in the scan folder. */
     void (*downloaded)(const char *tid);
     void (*notify)(const char *msg);
+    /* A short-lived sign-in code goes only to the console notification. */
+    void (*notify_private)(const char *msg);
 } drive_host_t;
 
 typedef struct {

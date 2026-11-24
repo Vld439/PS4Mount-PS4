@@ -904,17 +904,23 @@ static void status_set(const nas_cfg_t *cfg, const char *state) {
 
 #define CTL_WAIT_MS 3000   /* a mount whose loop is gone never answers */
 #define CTL_RETRY_MS 120000 /* a talk still inside the mount this long is taken for dead: the next one may go */
+#define CTL_MAX_OUT 2      /* bound hung threads even when a mount never answers again */
 
 /* One per call: a talk that never comes back keeps its own struct (and its thread)
  * instead of sharing g_talk with the next one. */
 typedef struct {
     char path[PATH_MAX], cmd[1024], ans[512];
     int r;
-    volatile int done, abandoned;
+    int done, refs;
 } talk_t;
 
 static volatile int g_talk_out;        /* talks still inside a mount */
 static volatile long long g_talk_last; /* when the newest one started */
+
+static void talk_release(talk_t *t) {
+    if (__atomic_sub_fetch(&t->refs, 1, __ATOMIC_ACQ_REL) == 0)
+        free(t);
+}
 
 static void *talk_thread(void *arg) {
     talk_t *t = arg;
@@ -933,13 +939,10 @@ static void *talk_thread(void *arg) {
             r = strncmp(t->ans, CTL_MAGIC, strlen(CTL_MAGIC)) ? -1 : 0;
         }
     }
-    if (t->abandoned) { /* the caller gave up: it will not read the answer */
-        free(t);
-    } else {
-        t->r = r;
-        __atomic_store_n(&t->done, 1, __ATOMIC_RELEASE);
-    }
+    t->r = r;
     __atomic_sub_fetch(&g_talk_out, 1, __ATOMIC_ACQ_REL);
+    __atomic_store_n(&t->done, 1, __ATOMIC_RELEASE);
+    talk_release(t);
     return NULL;
 }
 
@@ -950,47 +953,40 @@ static void *talk_thread(void *arg) {
  * talks onto it helps nobody. */
 static int ctl_talk(const char *mnt, const char *cmd) {
     long long now = now_ms();
-    if (__atomic_load_n(&g_talk_out, __ATOMIC_ACQUIRE) &&
-        now - __atomic_load_n(&g_talk_last, __ATOMIC_ACQUIRE) < CTL_RETRY_MS)
+    int outstanding = __atomic_load_n(&g_talk_out, __ATOMIC_ACQUIRE);
+    if (outstanding >= CTL_MAX_OUT ||
+        (outstanding && now - __atomic_load_n(&g_talk_last, __ATOMIC_ACQUIRE) < CTL_RETRY_MS))
         return -1;
     talk_t *t = calloc(1, sizeof(*t));
     if (!t)
         return -1;
     snprintf(t->path, sizeof(t->path), "%s%s", mnt, CTL_PATH);
     snprintf(t->cmd, sizeof(t->cmd), "%s", cmd);
+    t->refs = 2; /* one reference per thread, including when the caller times out */
     pthread_t th;
+    __atomic_add_fetch(&g_talk_out, 1, __ATOMIC_ACQ_REL);
     if (pthread_create(&th, NULL, talk_thread, t)) {
+        __atomic_sub_fetch(&g_talk_out, 1, __ATOMIC_ACQ_REL);
         free(t);
         return -1;
     }
     pthread_detach(th);
     __atomic_store_n(&g_talk_last, now, __ATOMIC_RELEASE);
-    __atomic_add_fetch(&g_talk_out, 1, __ATOMIC_ACQ_REL);
-    int r = -1, got = 0;
-    for (int ms = 0; ms < CTL_WAIT_MS; ms += 10) {
-        if (__atomic_load_n(&t->done, __ATOMIC_ACQUIRE)) {
-            got = 1;
-            break;
-        }
+    for (int ms = 0; ms < CTL_WAIT_MS && !__atomic_load_n(&t->done, __ATOMIC_ACQUIRE); ms += 10)
         usleep(10000);
+    if (!__atomic_load_n(&t->done, __ATOMIC_ACQUIRE)) {
+        printf("[nas] %s does not answer\n", mnt);
+        talk_release(t);
+        return -1;
     }
-    if (!got) {
-        t->abandoned = 1;
-        if (__atomic_load_n(&t->done, __ATOMIC_ACQUIRE))
-            got = 1; /* it landed as we gave up: the thread did not take it */
-        else {
-            printf("[nas] %s does not answer\n", mnt);
-            return -1; /* the thread frees t */
-        }
-    }
-    r = t->r;
+    int r = t->r;
     if (!r) {
         const char *a = t->ans + strlen(CTL_MAGIC), *e = strchr(a, '\n');
         g_adopt_on = *a == '1';
         if (e)
             snprintf(g_status, sizeof(g_status), "%.*s", (int)strcspn(e + 1, "\n"), e + 1);
     }
-    free(t);
+    talk_release(t);
     return r;
 }
 

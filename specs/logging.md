@@ -24,6 +24,7 @@ Source: user (2026-11-24).
 ### LOG-3: the file stays near 2 MiB, and the one before it is kept as `log.txt.old`
 Past 2 MiB, at the next line, the file moves to `log.txt.old` (replacing an older one) and a new one starts;
 the newest line is always in `log.txt`.
+When rotation fails, PS4Mount keeps writing to the open log without truncating it.
 Check: test (keep bar 2: storage). Test: `test/log_test.c` (log rotation). Source: user (2026-11-24: internal storage).
 
 ### LOG-4: the log never keeps PS4Mount from stopping
@@ -41,7 +42,10 @@ It changes no file and uses no network.
 Check: read. Source: AI-WORKFLOW.md rule 8 (nothing private leaves the console's owner).
 
 ### LOG-7: no Google credential is ever written to the log
-Check: read. Source: AI-WORKFLOW.md rule 8.
+Temporary sign-in codes can be shown on the console and in the active Drive sign-in screen. They are
+excluded from the log and the panel's notification history.
+Check: test for Drive's notification routing (`test/drive_test.c`), read for the console notification.
+Source: AI-WORKFLOW.md rule 8.
 
 ## Non-goals
 

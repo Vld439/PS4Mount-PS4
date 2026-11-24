@@ -22,7 +22,10 @@ COMMIT=$(sed -n 's/^ *SDK_COMMIT: *\([0-9a-f]\{40\}\).*/\1/p' .github/workflows/
 SDK=${SDK_HEADERS:-build/sdk-headers}
 if [ ! -d "$SDK/include/ps4" ]; then
     echo "sdkcheck: getting the SDK headers ($COMMIT) into $SDK"
-    rm -rf "$SDK"
+    if [ -n "${SDK_HEADERS:-}" ]; then
+        echo "sdkcheck: SDK_HEADERS has no PS4 SDK headers: $SDK" >&2
+        exit 1
+    fi
     mkdir -p "$SDK"
     git -C "$SDK" init -q
     git -C "$SDK" fetch -q --depth 1 https://github.com/ps4-payload-dev/sdk.git "$COMMIT"

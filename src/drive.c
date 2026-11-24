@@ -376,13 +376,13 @@ static void login_start(void) {
     if (!rc)
         http_resp_free(&r);
     printf("[drive] sign-in %s\n", g_login ? "code shown" : g_login_error);
-    if (relogin && g_host.notify) {
+    if (relogin && g_host.notify_private) {
         /* nobody may be looking at the panel: the code goes to the screen */
         char m[300];
         snprintf(m, sizeof(m), TR("Google Drive asks to connect again: on your phone open %s and type %s",
                                   "Google Drive pide conectar de nuevo: en el móvil abre %s y escribe %s"),
                  url, code);
-        g_host.notify(m);
+        g_host.notify_private(m);
     } else if (relogin_failed && g_host.notify)
         g_host.notify(TR("Google Drive was disconnected: connect it again in the panel",
                          "Google Drive se desconectó: vuelve a conectarlo en el panel"));
@@ -465,6 +465,9 @@ static int api_stall(const char *method, const char *url, const char *ctype, con
                      char *err, size_t n) {
     int refreshed = 0;
     for (int t = 0; t < TRIES; t++) {
+        /* A failure before http_request still returns a response the caller can free. */
+        memset(r, 0, sizeof(*r));
+        r->length = UINT64_MAX;
         if (g_cancel || g_quit) {
             snprintf(err, n, "%s", TR("cancelled", "cancelado"));
             return -1;
@@ -1210,13 +1213,16 @@ static void *dl_worker(void *arg) {
                 printf("[drive] block %llu: %s at %zu of %zu bytes, opening it again\n", (unsigned long long)b, err, pc.at, pc.want);
             /* the status was parsed even when the body transfer failed: a 200 that filled
              * the block is the whole file, not the part asked for */
-            if (r.status && r.status != 206 && !(r.status == 200 && from == 0 && to == d->f->size)) {
+            if (r.status && r.status != 206 && !(r.status == 200 && from == 0 && !before && to == d->f->size)) {
                 gone = r.status == 404;
                 if (r.status == 200)
                     snprintf(err, sizeof(err), "%s", TR("Drive sent the whole file instead of a part", "Drive envió el archivo entero en vez de una parte"));
                 else
                     google_error(&r, err, sizeof(err));
-                pc.at = before = 0; /* nothing of it was taken */
+                pthread_mutex_lock(&d->mu);
+                d->inflight -= pc.at;
+                pthread_mutex_unlock(&d->mu);
+                pc.at = before = 0; /* discard the block before retrying it */
             }
             http_resp_free(&r);
             ok = pc.at == pc.want;
@@ -1381,6 +1387,15 @@ static void run_download(const char *tid, const char *dest) {
         snprintf(err, sizeof(err), "%s", TR("it has no pkgs in Drive", "no tiene pkgs en Drive"));
         goto fail;
     }
+    for (int i = 0; i < nr; i++) {
+        const char *name = rem[i].name, *id = rem[i].id;
+        if (!name[0] || name[0] == '.' || strpbrk(name, "/\\") ||
+            id[strspn(id, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")]) {
+            snprintf(err, sizeof(err), "%s", TR("Drive returned an invalid file name or ID",
+                                                "Drive devolvió un nombre de archivo o ID no válido"));
+            goto fail;
+        }
+    }
     char parts[PATH_MAX], final_dir[PATH_MAX], part[PATH_MAX];
     snprintf(parts, sizeof(parts), "%.4000s/" PART_DIR, scan);
     mkdir(scan, 0777);
@@ -1424,11 +1439,6 @@ static void run_download(const char *tid, const char *dest) {
         for (int i = 0; i < nr; i++) {
             if ((pass == 0) != !strcmp(rem[i].kind, "game"))
                 continue;
-            /* a Drive file name is a name, not a path: never let it leave its folder */
-            if (strchr(rem[i].name, '/') || strchr(rem[i].name, '\\') || strstr(rem[i].name, "..")) {
-                printf("[drive] %s: skipping %s: not a plain name\n", tid, rem[i].name);
-                continue;
-            }
             pthread_mutex_lock(&g_mu);
             snprintf(g_cur_file, sizeof(g_cur_file), "%s", rem[i].name);
             g_file_i++;

@@ -531,11 +531,13 @@ static int request_on(conn_t *c, const http_req_t *q, const http_url_t *u, int k
         }
     }
     head[hl] = 0;
-    if (strncmp(head, "HTTP/1.", 7) || head[7] < '0' || head[7] > '9' || head[8] != ' ' ||
-        !(r->status = atoi(head + 9))) {
+    if (hl < 13 || strncmp(head, "HTTP/1.", 7) || head[7] < '0' || head[7] > '9' || head[8] != ' ' ||
+        head[9] < '1' || head[9] > '5' || head[10] < '0' || head[10] > '9' ||
+        head[11] < '0' || head[11] > '9' || (head[12] != ' ' && head[12] != '\n')) {
         snprintf(err, n, "not an HTTP answer");
         goto out;
     }
+    r->status = (head[9] - '0') * 100 + (head[10] - '0') * 10 + (head[11] - '0');
     *answered = 1;
     char v[64];
     if (!header(head, "Content-Length", v, sizeof(v)))

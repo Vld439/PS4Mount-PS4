@@ -44,11 +44,11 @@ Whatever else is true. A paused install of a big game can wait days; 3 days is t
 Check: test (keep bar 2). Test: `test/unit.c` › `test_stage`. Source: user (2026-11-24), value chosen in this PR.
 
 ### STORE-5: an unfinished transfer is deleted after 2 hours, and never while one runs
-`<name>.pkg.part` belongs to the transfer in progress.
+`.ps4mount-upload.part` and `ps4mount-panel.part` belong to PS4Mount's uploads and panel download.
 Check: test (keep bar 2). Test: `test/unit.c` › `test_stage`. Source: user (2026-11-24), value chosen in this PR.
 
 ### STORE-6: anything else in the install folder is left alone
-A file that is neither `*.pkg` nor `*.part` is not PS4Mount's to delete.
+Keep any file other than a staged `*.pkg` or one of the two temporary names in STORE-5.
 Check: test (keep bar 2). Test: `test/unit.c` › `test_stage`. Source: AI-WORKFLOW.md rule 2.
 
 ### STORE-7: a pkg the system's installer refuses is deleted at once
@@ -63,8 +63,9 @@ Check: read; the analyzer (LOG-5) reports them. Source: user (2026-11-24: "good 
 
 ### STORE-9: a removed game's PlayGo records are deleted only if the game is neither installed nor registered
 `/system_data/playgo/<TID>` is also written by the system for real installs; PS4Mount removes it only
-when the title is not installed on the internal drive and the system's database does not list it.
-Check: read (it needs the console; `test/sdkcheck.sh` proves it compiles). Source: AI-WORKFLOW.md rule 2.
+when the title is not installed on the internal drive and a successful read of the system's database
+confirms the title is absent.
+Check: test for database confirmation (`test/db_test.c`), read for the deletion on console. Source: AI-WORKFLOW.md rule 2.
 
 ### STORE-10: the settings list what PS4Mount keeps on the console's drive, and only measure it
 `GET /api/storage` gives the bytes of: pkgs waiting to be installed, the log, PS4Mount's settings and

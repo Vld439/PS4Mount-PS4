@@ -456,10 +456,15 @@ static void t_downloaded(const char *tid) {
 }
 
 static char g_notes[8192]; /* every notification, one a line */
+static int g_sign_in_displayed;
 static void t_notify(const char *msg) {
     snprintf(g_notified, sizeof(g_notified), "%s", msg);
     size_t l = strlen(g_notes);
     snprintf(g_notes + l, sizeof(g_notes) - l, "%s\n", msg);
+}
+
+static void t_notify_private(const char *msg) {
+    g_sign_in_displayed = strstr(msg, "google.com/device") && strstr(msg, "ABCD-EFGH");
 }
 
 /* --- helpers --- */
@@ -572,7 +577,7 @@ int main(void) {
     snprintf(api, sizeof(api), "http://127.0.0.1:%d/drive", g_port);
     snprintf(up, sizeof(up), "http://127.0.0.1:%d/upload", g_port);
     drive_endpoints_t ep = {oauth, api, up};
-    drive_host_t host = {t_game_files, t_library, t_dest_dir, t_free_bytes, t_downloaded, t_notify};
+    drive_host_t host = {t_game_files, t_library, t_dest_dir, t_free_bytes, t_downloaded, t_notify, t_notify_private};
 
     printf("== no client yet: the user brings their own\n");
     drive_start(state, &ep, &host);
@@ -922,13 +927,8 @@ int main(void) {
     drive_stop();
     drive_start(state, &ep, &host); /* a new start: the access token is asked for again */
     CHECK(drive_upload("CUSA00001", msg, sizeof(msg)) == 0);
-    int saw = 0;
-    for (int i = 0; i < 200 && !saw; i++) {
-        usleep(20000);
-        saw = strstr(g_notified, "google.com/device") && strstr(g_notified, "ABCD-EFGH");
-    }
-    CHECK(saw); /* the code on the console's screen */
     wait_idle();
+    CHECK(g_sign_in_displayed && !strstr(g_notes, "ABCD-EFGH")); /* LOG-7 */
     result(res, sizeof(res), &ok);
     CHECK(ok && strstr(res, "is in Google Drive")); /* after signing in, the cut upload ran */
     b = status();

@@ -54,25 +54,26 @@ int log_write_lines(int fd, int *at_start, const char *buf, size_t len, const ch
 static int g_pipe_read = -1, g_file = -1, g_saved_stdout = -1;
 static pthread_t g_thread;
 static int g_running;
-static volatile int g_done; /* the thread saw the end of the pipe */
+static int g_done; /* the thread saw the end of the pipe */
 static char g_log_path[PATH_MAX];
 static size_t g_log_max = LOG_MAX_BYTES;
 static size_t g_written;
 
 void log_set_max_bytes(size_t max) { g_log_max = max ? max : LOG_MAX_BYTES; }
 
-static void rotate_path(const char *path) {
-    char old[PATH_MAX];
-    if (path[0] && snprintf(old, sizeof(old), "%s.old", path) < (int)sizeof(old))
-        rename(path, old);
-}
-
 static void rotate_if_full(int at_start) {
     if (!at_start || !g_log_path[0] || g_written < g_log_max)
         return;
+    char old[PATH_MAX];
+    if (snprintf(old, sizeof(old), "%s.old", g_log_path) >= (int)sizeof(old) || rename(g_log_path, old))
+        return;
+    int next = open(g_log_path, O_WRONLY | O_CREAT | O_APPEND, 0666);
+    if (next < 0) {
+        rename(old, g_log_path);
+        return; /* the original descriptor is still open */
+    }
     close(g_file);
-    rotate_path(g_log_path);
-    g_file = open(g_log_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    g_file = next;
     g_written = 0;
 }
 
@@ -99,15 +100,13 @@ static void *copy_thread(void *arg) {
             left -= take;
         }
     }
-    g_done = 1;
+    __atomic_store_n(&g_done, 1, __ATOMIC_RELEASE);
     return NULL;
 }
 
 int log_start(const char *path) {
     int fds[2];
     struct stat st;
-    if (!stat(path, &st) && (size_t)st.st_size >= g_log_max)
-        rotate_path(path);
     g_file = open(path, O_WRONLY | O_CREAT | O_APPEND, 0666);
     if (g_file < 0)
         return -1;
@@ -119,7 +118,7 @@ int log_start(const char *path) {
         return -1;
     }
     g_pipe_read = fds[0];
-    g_done = 0;
+    __atomic_store_n(&g_done, 0, __ATOMIC_RELAXED);
     if (pthread_create(&g_thread, NULL, copy_thread, NULL)) {
         /* no thread: the log keeps working, without times */
         close(fds[0]);
@@ -157,9 +156,9 @@ void log_stop(void) {
     /* waited for at most 2 s: on the PS4 the end of the pipe can fail to arrive, and a
      * payload waiting here never exits (it keeps its ports, so it cannot be loaded again
      * until the console restarts) */
-    for (int i = 0; i < 200 && !g_done; i++)
+    for (int i = 0; i < 200 && !__atomic_load_n(&g_done, __ATOMIC_ACQUIRE); i++)
         usleep(10000);
-    if (!g_done)
+    if (!__atomic_load_n(&g_done, __ATOMIC_ACQUIRE))
         return; /* the thread keeps its descriptors; the exit takes them */
     pthread_join(g_thread, NULL);
     close(g_pipe_read);

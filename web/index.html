@@ -198,14 +198,14 @@ button.small{padding:4px 12px;font-size:13px}
   <fieldset><legend>Add-ons (DLC)</legend>
     <label>Add-ons (DLC)
       <select id="s-dlc-mode">
-        <option value="external">External drive (recommended, 0 internal space)</option>
+        <option value="external">Mount from the source drive</option>
         <option value="internal">Console storage (installs add-ons, up to 256 MB)</option>
         <option value="off">Off</option>
       </select>
     </label>
     <label class="check" id="s-dlcbig-row" hidden><input type="checkbox" id="s-dlcbig"> Also install big add-ons (over 256 MB)</label>
-    <span class="hint">External drive mounts every add-on straight from USB with zero internal storage used; console storage
-      installs them on the console (up to 256 MB each, or any size with the big-add-ons option); off disables them.</span>
+    <span class="hint">External mode mounts add-on packages from the source drive. Console storage
+      installs add-ons up to 256 MB each, or any size with the big-add-ons option. Off disables add-ons managed by PS4Mount.</span>
   </fieldset>
   <fieldset><legend>System and GoldHEN</legend>
     <label class="check"><input type="checkbox" id="s-klog"> Read the console's log (game start and stop)</label>
@@ -222,8 +222,8 @@ button.small{padding:4px 12px;font-size:13px}
       <p>Nothing is installed: each game plays straight from its .pkg files on a USB drive, a NAS share, or the console's
         /data/PS4Mount when the internal-storage option is on. PS4Mount only adds it to the home screen; the pkgs are never
         copied for it.</p>
-      <p>Add-ons come from the drive too: external mode mounts them straight from USB, console storage installs them on the
-        console (up to 256 MB each, or any size with the big-add-ons option), off disables them. Removing a game from the
+      <p>Add-ons come from the drive too: external mode mounts their packages from the source drive, console storage installs them on the
+        console (up to 256 MB each, or any size with the big-add-ons option), off disables add-ons managed by PS4Mount. Removing a game from the
         library, or restoring its files, never deletes a .pkg.</p>
     </details>
   </fieldset>
@@ -522,7 +522,12 @@ $('grid').addEventListener('keydown', function (e) {
   var art = e.target.closest('[data-g]');
   if (art) { e.preventDefault(); showGame(art.getAttribute('data-g')); }
 });
-$('restart-filter').onclick = function () { filter = filter === 'restart' ? '' : 'restart'; render(); };
+$('restart-filter').onclick = function () {
+  filter = filter === 'restart' ? '' : 'restart';
+  pfilter = '';
+  $('q').value = '';
+  render();
+};
 
 /* The notifications the console was sent: the bell toggles the popover, a click
  * anywhere else or Escape closes it (unless a dialog is open and handles Escape). */
@@ -546,10 +551,12 @@ document.addEventListener('keydown', function (e) {
  * in a background tab. The list costs the console a look at every pkg (over a share, that
  * is the whole library), so piling requests up made it read without pause. */
 function poll(ms, fn, when) {
+  function delay() { return typeof ms === 'function' ? ms() : ms; }
   setTimeout(function step() {
-    if (document.hidden || (when && !when())) { setTimeout(step, ms); return; }
-    Promise.resolve().then(fn).then(function () { setTimeout(step, ms); }, function () { setTimeout(step, ms); });
-  }, ms);
+    if (document.hidden || (when && !when())) { setTimeout(step, delay()); return; }
+    function schedule() { setTimeout(step, delay()); }
+    Promise.resolve().then(fn).then(schedule, schedule);
+  }, delay());
 }
 /* The drives in use, their label, fill and free space: where the pkgs live. */
 function gbs(n) { return (n / 1073741824).toFixed(n >= 10737418240 ? 0 : 1); }
@@ -715,7 +722,7 @@ $('settingsbtn').onclick = function () {
     $('s-internal').checked = !!c.internal;
     $('s-klog').checked = c.klog;
     $('s-autorun').checked = !!c.autorun;
-    $('s-autorun').disabled = !c.autorun_ok;
+    $('s-autorun').disabled = !c.autorun_ok && !c.autorun;
     $('autorun-hint').textContent = c.autorun_ok ?
       t('Payload found: {0}. Enable Settings > GoldHEN > PayLoader > Enable AutoRun. Hold L1 at boot to skip AutoRun.', c.autorun_path) :
       t('Payload file not found. Copy ps4mount-ps4.bin to /data/payloads/ or /data/GoldHEN/payloads/ to enable AutoRun.');
@@ -1116,8 +1123,7 @@ $('stop').onclick = function () {
 load();
 /* While the console is busy (scanning, registering, restoring, installing add-ons) the
  * list is asked every 1.5 s so the activity dock and the games follow it; idle, every 5 s. */
-poll(1500, load, function () { return actBusy; });
-poll(5000, load, function () { return !actBusy; });
+poll(function () { return actBusy ? 1500 : 5000; }, load);
 
 /* Inside the panel app (panel-app/, opened on /?app=1): a TV a few metres away, so all of
  * it larger. Its Back button comes as Escape: it closes the open window by itself, and on

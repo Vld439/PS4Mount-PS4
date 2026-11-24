@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "logts.h"
@@ -127,6 +128,22 @@ int main(void) {
         CHECK(rsz > 0 && rsz < 8192);
         unlink(rpath);
         unlink(old);
+
+        /* A rotation failure must keep the current file writable without losing its lines. */
+        CHECK(!mkdir(old, 0700));
+        log_set_max_bytes(1);
+        CHECK(!log_start(rpath));
+        printf("[rot] kept before rotation\n");
+        printf("[rot] kept after rotation failed\n");
+        log_stop();
+        log_set_max_bytes(0);
+        rf = fopen(rpath, "r");
+        CHECK(rf && fgets(line, sizeof(line), rf) && strstr(line, "kept before rotation"));
+        CHECK(rf && fgets(line, sizeof(line), rf) && strstr(line, "kept after rotation failed"));
+        if (rf)
+            fclose(rf);
+        unlink(rpath);
+        rmdir(old);
     }
 
     fprintf(stderr, "%d checks, %d failed\n", g_checks, g_failed);

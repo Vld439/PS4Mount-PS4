@@ -518,12 +518,15 @@ static void test_autorun(void) {
     CHECK(ini_ours("ps4mount-ps4.bin"));
     CHECK(ini_ours("/x/PS4MOUNT-PS4.BIN\r"));
     CHECK(ini_ours("/x/ps4mount-ps4.bin\t= 1"));
+    CHECK(ini_ours("  ps4mount-ps4.bin = 1"));
     CHECK(!ini_ours("# /data/payloads/ps4mount-ps4.bin = 1"));
     CHECK(!ini_ours("   ; ps4mount-ps4.elf was here"));
     CHECK(!ini_ours("/x/myps4mount-ps4.bin = 1"));
     CHECK(!ini_ours("/x/ps4mount-ps4.binfoo = 1"));
     CHECK(!ini_ours("/x/ps4mount-ps4.bin.bak = 1"));
     CHECK(!ini_ours("/x/other.bin = 1"));
+    CHECK(!ini_ours("backup = /x/ps4mount-ps4.bin"));
+    CHECK(!ini_ours("/x/ps4mount-ps4.bin/other.bin = 1"));
     CHECK(!ini_ours("[AutoRun]"));
 
     /* on with nothing there: a new section; off: nothing */
@@ -646,13 +649,15 @@ static void test_stage(void) {
         {"game.pkg", 3 * 86400, 1, STAGE_DELETE_ABANDONED}, /* another pkg arriving does not protect it */
         {"game.pkg", -5, 0, STAGE_KEEP},                     /* the clock went back: never deleted */
         /* the part being received: only when nothing is being received, and not at once */
-        {"game.pkg.part", 7199, 0, STAGE_KEEP},
-        {"game.pkg.part", 7200, 0, STAGE_DELETE_PART},
-        {"game.pkg.part", 7200, 1, STAGE_KEEP},
-        {"game.pkg.part", 100 * 86400, 1, STAGE_KEEP},
+        {".ps4mount-upload.part", 7199, 0, STAGE_KEEP},
+        {".ps4mount-upload.part", 7200, 0, STAGE_DELETE_PART},
+        {".ps4mount-upload.part", 7200, 1, STAGE_KEEP},
+        {"ps4mount-panel.part", 100 * 86400, 1, STAGE_KEEP},
+        {"ps4mount-panel.part", 7200, 0, STAGE_DELETE_PART},
         /* anything else in the folder is not PS4Mount's to delete */
         {"notes.txt", 100 * 86400, 0, STAGE_KEEP},
         {"game.pkg.bak", 100 * 86400, 0, STAGE_KEEP},
+        {"other-tool.part", 100 * 86400, 0, STAGE_KEEP},
     };
     for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
         stage_action_t got = stage_action(rows[i].name, rows[i].age, rows[i].receiving);

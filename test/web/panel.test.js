@@ -501,6 +501,8 @@ function tKeys(file) {
     ok(rb.textContent.includes('1 game needs a one-time console restart to start: Moving Out 2') &&
       rb.textContent.includes('The PS4 loads new game tasks at boot.'), 'banner says which game and why');
     ok(d.querySelectorAll('.card').length === 6, 'the grid still shows everything');
+    d.getElementById('q').value = 'a search with no results';
+    d.getElementById('q').dispatchEvent(new w.Event('input'));
     d.getElementById('restart-filter').click();
     ok(d.querySelectorAll('.card').length === 1 && d.querySelector('.card').textContent.includes('Moving Out 2'),
       'Show games filters to the restart game');
@@ -608,6 +610,11 @@ function tKeys(file) {
     d.getElementById('settingsbtn').click(); await tick(); await tick();
     ok(d.getElementById('autorun-hint').textContent.includes('Payload file not found') && d.getElementById('s-autorun').disabled,
       'no payload: the hint says where to copy it and AutoRun is off');
+    CFG.autorun = true;
+    d.getElementById('settingsbtn').click(); await tick(); await tick();
+    ok(d.getElementById('s-autorun').checked && !d.getElementById('s-autorun').disabled,
+      'an existing AutoRun entry can be turned off after the payload file is gone');
+    CFG.autorun = false;
     CFG.autorun_ok = true;
   }
 

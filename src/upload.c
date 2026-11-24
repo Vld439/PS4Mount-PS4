@@ -3,6 +3,7 @@
  * Pkgs sent from the panel: received in a thread of their own, checked as soon as their
  * first bytes are in, and renamed into the scan folder only when complete. */
 #include "upload.h"
+#include "stage.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -21,7 +22,6 @@
 #include "lang.h"
 #include "mem.h"
 
-#define PART_NAME ".ps4mount-upload.part"
 #define CHUNK (1u << 20)
 
 enum { ST_IDLE, ST_RECEIVING, ST_DONE, ST_FAILED };
@@ -161,12 +161,12 @@ static int check_part(const job_t *j, char *msg, size_t n) {
 static int free_name(const char *dir, const char *name, char *out, size_t n) {
     struct stat st;
     snprintf(out, n, "%.3800s/%.250s", dir, name);
-    if (stat(out, &st))
+    if (lstat(out, &st) && errno == ENOENT)
         return 0;
     size_t l = strlen(name) - 4;
     for (int i = 1; i < 1000; i++) {
         snprintf(out, n, "%.3800s/%.*s (%d).pkg", dir, (int)(l > 240 ? 240 : l), name, i);
-        if (stat(out, &st))
+        if (lstat(out, &st) && errno == ENOENT)
             return 0;
     }
     return -1;
@@ -249,10 +249,10 @@ static void *receive(void *arg) {
     } else {
         snprintf(msg, sizeof(msg), TR("%s received (%llu bytes)", "%s recibido (%llu bytes)"), j->name, (unsigned long long)got);
         printf("[upload] %s -> %s\n", msg, j->final);
-        set_state(ST_DONE, msg);
-        answer(j->fd, 1, msg);
         if (j->done)
             j->done(j->final);
+        set_state(ST_DONE, msg);
+        answer(j->fd, 1, msg);
     }
     close(j->fd);
     mem_free(j->pre);
@@ -279,7 +279,6 @@ int upload_start(int fd, const char *dir, const char *name, uint64_t length, con
         pthread_mutex_lock(&g_mu);
         g_state = ST_IDLE;
         pthread_mutex_unlock(&g_mu);
-        close(fd);
         return -1;
     }
     j->fd = fd;
@@ -288,7 +287,7 @@ int upload_start(int fd, const char *dir, const char *name, uint64_t length, con
     j->install = install;
     j->done = done;
     snprintf(j->name, sizeof(j->name), "%s", name);
-    snprintf(j->part, sizeof(j->part), "%s/" PART_NAME, dir);
+    snprintf(j->part, sizeof(j->part), "%s/" UPLOAD_PART_NAME, dir);
     snprintf(j->final, sizeof(j->final), "%s", dir);
     if (pre_len) {
         j->pre = mem_alloc(pre_len);
@@ -296,7 +295,6 @@ int upload_start(int fd, const char *dir, const char *name, uint64_t length, con
             pthread_mutex_lock(&g_mu);
             g_state = ST_IDLE;
             pthread_mutex_unlock(&g_mu);
-            close(fd);
             free(j);
             return -1;
         }

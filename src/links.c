@@ -20,8 +20,8 @@
 #include <strings.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <stdint.h>
-#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -352,7 +352,7 @@ static int resolve_location(const char *base, const char *loc, char *out, size_t
     http_url_t u;
     int w;
     if (!strncmp(loc, "http://", 7) && !strncmp(base, "https://", 8))
-        printf("[links] redirect changes https to http: %.200s\n", loc);
+        printf("[links] redirect changes https to http\n");
     if (!strncmp(loc, "http://", 7) || !strncmp(loc, "https://", 8))
         w = snprintf(out, n, "%s", loc);
     else if (http_parse_url(base, &u))
@@ -454,8 +454,8 @@ static int probe(int i, const char *link, int *kind, char *err, size_t n) {
         http_resp_t r;
         int rc = get(v->url, sizeof(v->url), "0-15", probe_sink, &pr, NULL, 30, &r, err, n);
         int st = r.status;
-        http_resp_free(&r);
         if (rc && !(pr.stopped && st)) {
+            http_resp_free(&r);
             if (halted() || attempt + 1 >= TRIES || pause_s(g_links_retry_seconds << attempt))
                 return -1;
             snprintf(v->url, sizeof(v->url), "%s", link);
@@ -472,6 +472,7 @@ static int probe(int i, const char *link, int *kind, char *err, size_t n) {
             v->size = 0; /* an empty file: there is no byte 0 */
             v->ranges = 0;
         } else {
+            http_resp_free(&r);
             if ((st == 429 || st >= 500) && attempt + 1 < TRIES && !pause_s(g_links_retry_seconds << attempt)) {
                 snprintf(v->url, sizeof(v->url), "%s", link);
                 continue;
@@ -719,14 +720,17 @@ static void *dl_worker(void *arg) {
             if (q && pc.at < pc.want && !halted() && !d->stop)
                 printf("[links] %s block %llu: %s at %zu of %zu bytes, opening it again\n", d->part, (unsigned long long)b, err,
                        pc.at, pc.want);
-            if (st && st != 206 && !(st == 200 && from == 0 && to == d->v->size)) {
+            if (st && st != 206 && !(st == 200 && from == 0 && !before && to == d->v->size)) {
                 if (st == 200)
                     snprintf(err, sizeof(err), "%s", TR("the server sent the whole file instead of a part", "el servidor envió el archivo entero en vez de una parte"));
                 else
                     status_error(st, err, sizeof(err));
                 throttled = st == 429 || st == 503;
                 gone = st == 401 || st == 403 || st == 404 || st == 410;
-                pc.at = before = 0; /* nothing of it was taken */
+                pthread_mutex_lock(&d->mu);
+                d->inflight -= pc.at;
+                pthread_mutex_unlock(&d->mu);
+                pc.at = before = 0; /* discard the block before retrying it */
             }
             ok = pc.at == pc.want;
             if (ok || halted())
@@ -931,11 +935,8 @@ static void *relay_thread(void *arg) {
     while (!g_relay_quit) {
         /* a bare accept() sleeps through links_stop: shutdown() on a listening socket
          * does not reach it (ENOTCONN on BSD/macOS), so it is waited on at most 100 ms */
-        fd_set fs;
-        FD_ZERO(&fs);
-        FD_SET(g_relay_fd, &fs);
-        struct timeval tv = {0, 100000};
-        if (select(g_relay_fd + 1, &fs, NULL, NULL, &tv) <= 0)
+        struct pollfd listener = {g_relay_fd, POLLIN, 0};
+        if (poll(&listener, 1, 100) <= 0 || !(listener.revents & POLLIN))
             continue;
         int fd = accept(g_relay_fd, NULL, NULL);
         if (fd < 0) {
@@ -1065,16 +1066,14 @@ static int download_whole(int vi, int fd, char *err, size_t n) {
         snprintf(url, sizeof(url), "%s", v->url);
         http_resp_t r;
         int q = get(url, sizeof(url), NULL, whole_sink, &w, NULL, 60, &r, err, n);
+        int st = r.status;
+        http_resp_free(&r);
         if (w.failed) {
             snprintf(err, n, TR("write failed (%s): is the drive full?", "falló la escritura (%s): ¿está llena la unidad?"), strerror(w.failed));
             return -1;
         }
-        if (q) {
-            http_resp_free(&r);
+        if (q)
             continue;
-        }
-        int st = r.status;
-        http_resp_free(&r);
         if (st != 200) {
             status_error(st, err, n);
             if (st != 429 && st < 500)
