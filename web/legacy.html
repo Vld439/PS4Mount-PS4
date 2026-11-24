@@ -9,8 +9,8 @@
      ES5 and XMLHttpRequest only, no CSS variables or grid. -->
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#060d1c;background-image:linear-gradient(180deg,#09152c 0%,#060d1c 420px);color:#eef3fb;font:15px/1.45 sans-serif}
-header{padding:12px 16px;background:#0c1830;border-bottom:1px solid #1e355c}
+body{margin:0;background:#060d1c;background-image:radial-gradient(ellipse at 92% 0%,#103a77 0%,transparent 55%),linear-gradient(155deg,#0a2352 0%,#07162f 50%,#050d21 100%);background-attachment:fixed;color:#eef3fb;font:15px/1.45 sans-serif}
+header{padding:14px 4%;background:#0a1c3c;border-bottom:1px solid #1e355c}
 h1{font-size:20px;margin:0 0 8px;font-weight:600}
 h1 small{color:#93a7c7;font-weight:normal;font-size:13px;margin-left:8px}
 h2{font-size:18px;margin:0 0 12px;font-weight:600}
@@ -24,17 +24,36 @@ input,textarea,select{font:inherit;background:#040914;color:#eef3fb;border:1px s
 select{max-width:100%}
 label select{display:block;margin-top:4px}
 textarea{width:100%;min-height:90px;font-family:monospace}
-.view{padding:16px;display:none}
+.view{padding:24px 4% 36px;display:none}
 .view.on{display:block}
 .summary span{display:inline-block;background:#0c1830;border:1px solid #1e355c;border-radius:999px;padding:3px 10px;margin:0 6px 6px 0;color:#93a7c7}
-.card{display:inline-block;vertical-align:top;width:250px;margin:0 12px 12px 0;background:#0c1830;border:1px solid #1e355c;border-radius:12px;overflow:hidden}
-.card img{display:block;width:250px;height:250px;background:#040914}
-.info{padding:10px 12px}
-.name{font-weight:600;font-size:16px}
-.meta{color:#93a7c7;font-size:13px;word-wrap:break-word}
-.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;background:#2c4a7c;margin-bottom:4px}
-.b-ready{background:#22985a}.b-running{background:#0070d1}.b-internal,.b-pending,.b-restart{background:#d08c1e}
-.actions{padding:0 12px 8px}
+body:before{content:"";position:fixed;z-index:-1;pointer-events:none;top:150px;right:-145px;width:520px;height:520px;border:1px solid rgba(119,184,255,.17);border-radius:28%;-webkit-transform:rotate(-32deg);transform:rotate(-32deg);box-shadow:0 0 0 30px rgba(88,160,255,.035),0 0 0 70px rgba(88,160,255,.025)}
+.library-heading{font-size:28px;letter-spacing:-.03em}
+.shelf{display:table;width:100%;table-layout:fixed}
+.shelf-games,.inspector{display:table-cell;vertical-align:top}
+.shelf-games{width:64%;padding-right:18px}
+.card{display:inline-block;vertical-align:top;width:32%;margin:0 1% 10px 0}
+.art{display:block;width:100%;padding:5px;margin:0;text-align:left;background:#0c2042;border:1px solid #2a4d7e;border-radius:7px}
+.art[aria-pressed=true]{border-color:#90caff;background:#153962}
+.cover,.shelf-art{display:block;background:#0b1832 center/cover no-repeat}
+.cover{width:100%;padding-top:75%;border-radius:4px}
+.info{display:block;padding:6px 3px 3px;overflow:hidden}
+.name{display:block;font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta{color:#b8c9e3;font-size:13px;word-wrap:break-word}
+.badge{display:block;color:#b8c9e3;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge:before{content:"";display:inline-block;width:6px;height:6px;margin:0 6px 2px 0;border-radius:50%;background:#a5b9d9}
+.b-ready:before,.b-running:before{background:#79dfaf}.b-restart:before,.b-pending:before{background:#ffcb81}
+.inspector-box{border:1px solid #345b91;border-radius:9px;overflow:hidden;background:#0d2346}
+.shelf-art{padding-top:50%}
+.inspector-body{padding:14px 17px 18px}
+.inspector h3{font-size:26px;line-height:1.14;margin:6px 0;word-wrap:break-word}
+.inspector p{margin:6px 0}
+.actions{margin-top:13px}
+.tv button,.tv select{min-height:42px}
+.tv .name{font-size:16px}.tv .badge{font-size:13px}
+.tv :focus{outline:3px solid #a5d6ff;outline-offset:3px}
+@media(max-width:850px){.card{width:48%}.shelf-games{width:61%}}
+@media(max-width:580px){.shelf,.shelf-games,.inspector{display:block;width:100%}.shelf-games{padding:0}.inspector{margin-top:8px}}
 .warn{color:#d08c1e;font-size:13px;background:rgba(208,140,30,.12);border:1px solid rgba(208,140,30,.45);border-radius:8px;padding:6px 8px;margin-top:4px}
 #restart-banner{border:1px solid #d08c1e;background:rgba(208,140,30,.12);border-radius:12px;padding:12px 16px;margin:0 0 12px}
 #restart-banner .rb-main{font-weight:600}
@@ -77,8 +96,12 @@ pre{white-space:pre-wrap;font-size:12px;background:#040914;padding:12px;border-r
     <progress id="act-prog" max="1" value="0" hidden></progress>
     <span class="db-sub" id="ab-sub"></span>
   </div>
+  <h2 class="library-heading">Library</h2>
   <div class="summary" id="summary"></div>
-  <div id="grid"></div>
+  <div class="shelf">
+    <div class="shelf-games" id="grid"></div>
+    <aside id="inspector" class="inspector" hidden></aside>
+  </div>
   <p class="meta" id="empty" style="display:none">No PS4 games found. Put the .pkg files (game, update and add-ons) in the PS4Mount folder of a USB drive.</p>
 </div>
 
@@ -162,36 +185,61 @@ function api(path, method, body, done) {
   };
   x.send(body === undefined ? null : body);
 }
+var currentView = 'v-games';
 function show(view) {
+  currentView = view;
   var v = ['v-games', 'v-settings', 'v-pick', 'v-log'];
   for (var i = 0; i < v.length; i++) $(v[i]).className = 'view' + (v[i] === view ? ' on' : '');
   window.scrollTo(0, 0);
+  if (tv) {
+    var first = $(view).querySelector('button:not([disabled])');
+    if (first) first.focus();
+  }
 }
 function addons(g) { return g.dlc ? (g.dlc === 1 ? t('1 add-on') : t('{0} add-ons', g.dlc)) : t('no add-ons'); }
 function movedBack(g) { return t('Game{0}{1}', g.has_patch ? t(', update') : '', g.dlc ? t(' and {0}', addons(g)) : ''); }
 
+var shelfSelection = '', shelfGrid = '', shelfDetails = '';
+function selectCover(tid) {
+  shelfSelection = tid;
+  var covers = $('grid').querySelectorAll('[data-g]'), g, i, act = '', view = '';
+  for (i = 0; i < covers.length; i++) covers[i].setAttribute('aria-pressed', String(covers[i].getAttribute('data-g') === tid));
+  for (i = 0; i < games.length; i++) if (games[i].title_id === tid) { g = games[i]; break; }
+  var pane = $('inspector');
+  pane.hidden = !g;
+  if (g) {
+    if (g.state === 'removed') act = '<button class="primary" data-a="mount" data-t="' + tid + '">' + t('Add to library') + '</button>';
+    else if (g.state === 'ready' || g.state === 'restart') act = '<button class="danger" data-a="unmount" data-t="' + tid + '">' + t('Remove from library') + '</button>';
+    else if (g.state === 'running') act = '<button disabled>' + t('Close the game to remove it') + '</button>';
+    if (busy[tid]) act = '<button disabled>' + t('Please wait...') + '</button>';
+    view = '<div class="inspector-box"><div class="shelf-art" style="background-image:url(/pic/' + tid + '),url(/icon/' + tid + ')"></div>' +
+      '<div class="inspector-body"><span class="badge b-' + esc(g.state) + '">' + esc(label(g.state)) + '</span>' +
+      '<h3>' + esc(g.name) + '</h3><p class="meta">' + esc(tid) + (g.version ? ' · v' + esc(g.version) : '') + (g.has_patch ? t(' (with update)') : '') +
+      (g.dlc ? ' · ' + esc(addons(g)) : '') + (g.size ? ' · ' + gb(g.size) : '') + '</p>' +
+      '<p class="meta">' + esc(g.source || '') + (g.mount ? ' · ' + esc(t('mounted {0}', g.mount)) : '') + '</p>' +
+      (g.state === 'restart' ? '<p class="warn">' + t('Added. Restart the console once to play it.') + '</p>' : '') +
+      (g.state === 'offline' ? '<p class="warn">' + esc(t('On {0}, which is not connected. Connect it to play.', g.storage)) + '</p>' : '') +
+      (g.update_issue ? '<p class="warn">' + esc(g.update_issue) + '</p>' : '') +
+      (act ? '<div class="actions">' + act + '</div>' : '') + '</div></div>';
+  }
+  if (view !== shelfDetails) { pane.innerHTML = view; shelfDetails = view; }
+}
 function render() {
-  var html = '', counts = {}, i, g, act;
+  var html = '', counts = {}, i, g, selected = '', focus = document.activeElement.getAttribute('data-g');
   for (i = 0; i < games.length; i++) {
     g = games[i];
+    if (g.title_id === shelfSelection) selected = shelfSelection;
     counts[g.state] = (counts[g.state] || 0) + 1;
-    act = '';
-    if (g.state === 'removed') act = '<button class="primary" data-a="mount" data-t="' + g.title_id + '">' + t('Add to library') + '</button>';
-    else if (g.state === 'ready' || g.state === 'restart') act = '<button class="danger" data-a="unmount" data-t="' + g.title_id + '">' + t('Remove from library') + '</button>';
-    else if (g.state === 'running') act = '<button disabled>' + t('Close the game to remove it') + '</button>';
-    if (busy[g.title_id]) act = '<button disabled>' + t('Please wait...') + '</button>';
-    html += '<div class="card"><img src="/icon/' + g.title_id + '" alt="">' +
-      '<div class="info"><span class="badge b-' + g.state + '">' + esc(label(g.state)) + '</span>' +
-      '<div class="name">' + esc(g.name) + '</div>' +
-      '<div class="meta">' + g.title_id + (g.version ? ' · v' + esc(g.version) : '') + (g.has_patch ? t(' (with update)') : '') +
-        (g.dlc ? ' · ' + esc(addons(g)) : '') + (g.size ? ' · ' + gb(g.size) : '') + '</div>' +
-      '<div class="meta">' + esc(g.source) + (g.mount ? ' · ' + esc(t('mounted {0}', g.mount)) : '') + '</div>' +
-      (g.state === 'restart' ? '<div class="warn">' + t('Added. Restart the console once to play it.') + '</div>' : '') +
-      (g.state === 'offline' ? '<div class="warn">' + esc(t('On {0}, which is not connected. Connect it to play.', g.storage)) + '</div>' : '') +
-      (g.update_issue ? '<div class="warn">' + esc(g.update_issue) + '</div>' : '') + '</div>' +
-      '<div class="actions">' + act + '</div></div>';
+    html += '<div class="card"><button type="button" class="art" data-g="' + g.title_id +
+      '"><span class="cover" style="background-image:url(/icon/' + g.title_id + ')"></span><span class="info"><span class="name">' +
+      esc(g.name) + '</span><span class="badge b-' + esc(g.state) + '">' + esc(label(g.state)) + '</span></span></button></div>';
   }
-  $('grid').innerHTML = html;
+  if (html !== shelfGrid) { $('grid').innerHTML = html; shelfGrid = html; }
+  selectCover(selected || (games.length ? games[0].title_id : ''));
+  if (focus && document.activeElement === document.body && shelfSelection) {
+    var replacement = $('grid').querySelector('[data-g="' + shelfSelection + '"]');
+    if (replacement) replacement.focus();
+  }
   $('empty').style.display = games.length ? 'none' : 'block';
   var s = '<span>' + t('{0} game(s)', games.length) + '</span>';
   for (var k in counts) s += '<span>' + esc(label(k)) + ': ' + counts[k] + '</span>';
@@ -266,6 +314,14 @@ function load(done) {
 }
 
 $('grid').onclick = function (e) {
+  var cover = e.target || e.srcElement;
+  while (cover && cover !== this && !cover.getAttribute('data-g')) cover = cover.parentNode;
+  if (cover && cover !== this) {
+    selectCover(cover.getAttribute('data-g'));
+    if (window.matchMedia && window.matchMedia('(max-width:580px)').matches) $('inspector').scrollIntoView();
+  }
+};
+$('inspector').onclick = function (e) {
   var b = e.target || e.srcElement;
   if (!b || !b.getAttribute || !b.getAttribute('data-a')) return;
   var tid = b.getAttribute('data-t'), a = b.getAttribute('data-a');
@@ -428,6 +484,13 @@ $('p-go').onclick = function () {
 
 load();
 poll(5000, load, function () { return $('v-games').className.indexOf('on') >= 0; });
+var tv = location.hash === '#app=1';
+if (tv) document.documentElement.className += ' tv';
+bindShelfNavigation($('grid'), tv, selectCover, function () {
+  if (currentView === 'v-pick') show('v-settings');
+  else if (currentView !== 'v-games') show('v-games');
+  else api('/api/app/close', 'POST');
+});
 </script>
 </body>
 </html>

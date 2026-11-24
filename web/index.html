@@ -7,17 +7,24 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23060d1c'/%3E%3Crect x='25' y='5' width='14' height='11' rx='2' fill='%23c9d3e6'/%3E%3Crect x='16' y='14' width='32' height='44' rx='8' fill='%230070d1'/%3E%3Cpath d='M27 26v20l15-10z' fill='%23f4f6fb' stroke='%23f4f6fb' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E">
 <script>
 /* The browser of older firmwares has no <dialog>: it gets its own page. */
-if (typeof document.createElement('dialog').showModal !== 'function') location.replace('/legacy');
+if (typeof document.createElement('dialog').showModal !== 'function') location.replace('/legacy' + (/[?&]app=1(?:&|$)/.test(location.search) ? '#app=1' : ''));
 </script>
 <style>
 :root{--bg:#060d1c;--bg-deep:#040914;--panel:#0c1830;--surface:#132342;--surface-hover:#1a2f56;--line:#1e355c;--line-strong:#2c4a7c;--fg:#eef3fb;--muted:#93a7c7;--accent:#0070d1;--accent-hover:#1482e3;--focus:#38bdf8;--ok:#22985a;--warn:#d08c1e;--bad:#d14343;--ease-out:cubic-bezier(0.23,1,0.32,1);--ease-in-out:cubic-bezier(0.77,0,0.175,1)}
 *{box-sizing:border-box}
-html.tv{zoom:1.75}
-body{margin:0;color:var(--fg);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background-color:var(--bg);background-image:linear-gradient(180deg,#09152c 0%,#060d1c 420px);background-attachment:fixed}
-header{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:16px 20px;background:rgba(6,13,28,.94);border-bottom:1px solid var(--line)}
+html{color-scheme:dark}
+body{margin:0;color:var(--fg);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background-color:var(--bg);background-image:radial-gradient(ellipse at 92% 0%,#103a77 0%,transparent 55%),linear-gradient(155deg,#0a2352 0%,#07162f 50%,#050d21 100%);background-attachment:fixed}
+header{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:14px max(24px,calc((100% - 1320px)/2));background:#0a1c3c;border-bottom:1px solid var(--line)}
 h1{font-size:20px;margin:0;font-weight:600}
 h1 small{color:var(--muted);font-weight:400;font-size:13px;margin-left:8px}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.toolbar-more{position:relative}
+.toolbar-more summary{list-style:none;cursor:pointer;padding:8px 13px;border:1px solid var(--line-strong);border-radius:6px;color:var(--fg);background:var(--panel)}
+.toolbar-more summary::-webkit-details-marker{display:none}
+.toolbar-more[open] summary{border-color:var(--focus)}
+.toolbar-menu{position:absolute;right:0;top:calc(100% + 8px);width:max-content;min-width:208px;max-width:calc(100vw - 24px);display:grid;gap:4px;padding:6px;background:#11294e;border:1px solid #345b91;border-radius:8px}
+.toolbar-menu button{text-align:left}
+.tv .toolbar-more summary{min-height:41px;padding-block:9px}
 button{font:inherit;font-weight:500;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 16px;cursor:pointer;transition:background-color 150ms var(--ease-out),border-color 150ms var(--ease-out),color 150ms var(--ease-out),transform 140ms var(--ease-out)}
 button:focus{outline:none}
 @media (hover:hover) and (pointer:fine){button:hover{background:var(--surface-hover);border-color:var(--line-strong)}}
@@ -27,8 +34,8 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 button.danger{background:rgba(209,67,67,.14);border-color:rgba(209,67,67,.55)}
 @media (hover:hover) and (pointer:fine){button.danger:hover{background:rgba(209,67,67,.26);border-color:var(--bad)}}
 button:disabled{opacity:.45;cursor:default}
-button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible,.summary span:focus-visible,.art:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-main{padding:20px;max-width:1400px;margin:0 auto}
+summary:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible,.summary span:focus-visible,.art:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+main{padding:28px 24px 40px;max-width:1368px;margin:0 auto}
 .summary{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px;color:var(--muted)}
 .summary span{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:13px;cursor:pointer;transition:border-color 150ms var(--ease-out),color 150ms var(--ease-out)}
 .summary span.on{border-color:var(--accent);color:var(--fg)}
@@ -47,18 +54,40 @@ main{padding:20px;max-width:1400px;margin:0 auto}
 #g-name{margin:0 0 0 124px;min-height:30px}
 .facts{display:grid;grid-template-columns:max-content 1fr;gap:8px 16px;margin:24px 0 16px;font-size:14px}
 .facts dt{color:var(--muted)}.facts dd{margin:0;word-break:break-all}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;transition:border-color 150ms var(--ease-out)}
-@media (hover:hover) and (pointer:fine){.card:hover{border-color:var(--accent)}}
-.card:focus-within{border-color:var(--accent)}
-.art{aspect-ratio:1/1;background:var(--bg-deep) center/cover no-repeat;position:relative}
-.art:focus-visible{outline-offset:-2px}
-.badge{position:absolute;left:12px;top:12px;padding:4px 12px;border-radius:999px;font-size:12px;font-weight:600;background:rgba(0,0,0,.55)}
-.b-restart{background:var(--warn)}.b-ready{background:var(--ok)}.b-running{background:var(--accent)}.b-removed{background:var(--line-strong)}.b-internal{background:var(--warn)}.b-pending{background:var(--warn)}.b-duplicate{background:var(--line-strong)}.b-offline{background:var(--line-strong)}
-.info{padding:12px 16px;display:flex;flex-direction:column;gap:4px;flex:1}
-.name{font-weight:600;font-size:16px}
-.meta{color:var(--muted);font-size:13px;word-break:break-all}
-.actions{display:flex;gap:8px;padding:0 16px 16px;flex-wrap:wrap}
+body:before{content:"";position:fixed;z-index:-1;pointer-events:none;top:150px;right:-145px;width:520px;height:520px;border:1px solid rgba(119,184,255,.17);border-radius:28%;transform:rotate(-32deg);box-shadow:0 0 0 30px rgba(88,160,255,.035),0 0 0 70px rgba(88,160,255,.025)}
+.library-heading{margin:0 0 16px;font-size:30px;font-weight:600;letter-spacing:-.035em}
+.shelf{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(250px,1fr);gap:26px;align-items:start}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.card{min-width:0}
+.card .art{display:block;width:100%;padding:5px;text-align:left;background:#0c2042;border:1px solid #2a4d7e;border-radius:8px}
+.card .art[aria-pressed=true]{border-color:#90caff;background:#153962}
+.art:focus-visible{outline-offset:2px}
+.cover{display:block;aspect-ratio:4/3;border-radius:4px;background:#0b1832 center/cover no-repeat;position:relative}
+.badge{display:flex;align-items:center;gap:6px;font-size:12px;color:#b8cee8}
+.badge:before{content:"";width:6px;height:6px;border-radius:50%;background:#a5b9d9;flex:none}
+.b-ready:before,.b-running:before{background:#79dfaf}.b-restart:before,.b-pending:before{background:#ffcb81}
+.card .b-drive{top:6px;right:6px;border-radius:4px}
+.info{display:block;padding:7px 4px 3px}
+.badge{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.name{display:block;font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta{color:var(--muted);font-size:13px;overflow-wrap:anywhere}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.inspector{position:sticky;top:85px;min-width:0;border:1px solid #345b91;border-radius:10px;overflow:hidden;background:#0d2346}
+.shelf-art{aspect-ratio:2/1;background:#0b1832 center/cover no-repeat}
+.inspector-body{padding:17px 18px 20px}
+.inspector h3{margin:6px 0;font-size:28px;line-height:1.12;letter-spacing:-.035em;overflow-wrap:anywhere}
+.inspector .actions{margin-top:13px}
+.inspector .file-action{margin-top:8px}.inspector .file-action:empty{display:none}
+.inspector .meta{margin:5px 0 0}
+.storage{margin-bottom:12px}
+.storage[hidden]{margin:0}
+.tv main{padding:28px 4% 40px}
+.tv header{padding-left:4%;padding-right:4%}
+.tv button,.tv input,.tv select{min-height:41px}
+.tv button:focus,.tv input:focus,.tv select:focus,.tv textarea:focus,.tv [tabindex]:focus{outline:3px solid #a5d6ff;outline-offset:3px}
+.tv .name{font-size:17px}.tv .badge{font-size:13px}
+@media(max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.inspector{position:static}}
+@media(max-width:620px){.toolbar-more{position:static}.toolbar-menu{right:14px;top:calc(100% - 3px)}main{padding:20px 14px}.shelf{display:block}.inspector{display:none}.library-heading{font-size:25px}header{position:relative;padding:12px 14px}.top{flex-wrap:wrap}}
 .empty{color:var(--muted);text-align:center;padding:48px 0}
 .warn{color:var(--warn);font-size:13px;background:rgba(208,140,30,.12);border:1px solid rgba(208,140,30,.45);border-radius:8px;padding:8px 12px;margin-top:4px}
 dialog{background:var(--panel);color:var(--fg);border:1px solid var(--line-strong);border-radius:12px;max-width:95vw;max-width:min(900px,95vw);width:900px;padding:20px;transform-origin:center;opacity:1;transform:none;transition:opacity 180ms var(--ease-out),transform 200ms var(--ease-out)}
@@ -144,15 +173,20 @@ button.small{padding:4px 12px;font-size:13px}
   <div class="bar">
     <input id="q" type="search" placeholder="Search game or CUSA">
     <button id="rescan" class="primary">Scan for games</button>
-    <button id="removebtn">Remove several</button>
     <button id="sendbtn" hidden>Send games</button>
-    <button id="linkbtn" hidden>Download links</button>
-    <button id="backupbtn" hidden>Back up to Drive</button>
     <button id="settingsbtn">Settings</button>
-    <button id="logbtn">Log</button>
-    <button id="notifbtn">Notifications<span id="notif-count" class="ncount" hidden></span></button>
-    <button id="stop" class="danger">Stop</button>
-    <button id="drivebtn" class="small gd" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#0f9d58" d="M7.7 3h8.6l5.4 9.3-4.3 7.5z" opacity=".9"/><path fill="#fbbc04" d="M2.3 12.3 7.7 3l4.3 7.4-5.4 9.4z"/><path fill="#4285f4" d="M6.6 19.8 12 10.4h9.7l-4.3 9.4z"/></svg><span id="drivelabel">Connect Google Drive</span></button>
+    <details id="panel-tools" class="toolbar-more">
+      <summary tabindex="0">More</summary>
+      <div class="toolbar-menu">
+        <button id="removebtn">Remove several</button>
+        <button id="linkbtn" hidden>Download links</button>
+        <button id="backupbtn" hidden>Back up to Drive</button>
+        <button id="logbtn">Log</button>
+        <button id="notifbtn">Notifications<span id="notif-count" class="ncount" hidden></span></button>
+        <button id="stop" class="danger">Stop</button>
+        <button id="drivebtn" class="small gd" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#0f9d58" d="M7.7 3h8.6l5.4 9.3-4.3 7.5z" opacity=".9"/><path fill="#fbbc04" d="M2.3 12.3 7.7 3l4.3 7.4-5.4 9.4z"/><path fill="#4285f4" d="M6.6 19.8 12 10.4h9.7l-4.3 9.4z"/></svg><span id="drivelabel">Connect Google Drive</span></button>
+      </div>
+    </details>
   </div>
   <div id="notifpop" class="notifpop" hidden><div id="notif-list"></div></div>
 </header>
@@ -167,10 +201,15 @@ button.small{padding:4px 12px;font-size:13px}
     <button type="button" id="restart-filter" class="small"></button>
   </div>
   <div class="warn" id="setupnote" hidden>First start: check the settings (which folders, games per group, add-ons) and press Save in Settings. While this page is open no game is added; closed for 2 minutes without saving, the default settings are used.</div>
+  <h2 class="library-heading">Library</h2>
   <div class="summary" id="summary"></div>
   <div class="summary" id="platforms" hidden></div>
   <div class="storage" id="storage" hidden></div>
-  <div class="grid" id="grid"></div>
+  <div class="shelf">
+    <div class="grid" id="grid"></div>
+    <aside id="inspector" class="inspector" hidden></aside>
+  </div>
+  <p class="empty" id="no-matches" hidden>No matching games</p>
   <div class="empty" id="empty" hidden>
     <p id="empty-t">No PS4 games found. Put the .pkg files (game, update and add-ons) on a USB drive or a NAS share, then Scan for games or send them from this page.</p>
     <div class="bar" id="empty-btns" style="justify-content:center" hidden>
@@ -432,7 +471,30 @@ function actions(g, page) {
   return act;
 }
 function byName(a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0; }
+var shelfSelection = '', shelfGrid = '', shelfDetails = '', shelfStates = '', shelfPlatforms = '';
+function selectCover(tid) {
+  shelfSelection = tid;
+  var covers = $('grid').querySelectorAll('[data-g]');
+  for (var i = 0; i < covers.length; i++)
+    covers[i].setAttribute('aria-pressed', String(covers[i].getAttribute('data-g') === tid));
+  var g = gameBy(tid), panel = $('inspector'), view = '';
+  panel.hidden = !g;
+  if (g) {
+    view = '<div class="shelf-art" style="background-image:url(/pic/' + tid + '),url(/icon/' + tid + ')"></div>' +
+      '<div class="inspector-body"><span class="badge b-' + esc(g.state) + '">' + esc(label(g.state)) + '</span>' +
+      '<h3>' + esc(g.name) + '</h3><p class="meta">' + esc(g.title_id) + (g.version ? ' · v' + esc(g.version) : '') +
+      (g.dlc ? ' · ' + esc(addons(g)) : '') + (g.size ? ' · ' + gb(g.size) : '') + '</p>' +
+      '<p class="meta">' + esc(g.source || '') + (g.mount ? ' · ' + esc(t('mounted {0}', g.mount)) : '') + '</p>' +
+      (g.state === 'restart' ? '<p class="warn">' + t('Added. Restart the console once to play it.') + '</p>' : '') +
+      (g.state === 'offline' ? '<p class="warn">' + esc(t('On {0}, which is not connected. Connect it to play.', g.storage)) + '</p>' : '') +
+      (g.update_issue ? '<p class="warn">' + esc(g.update_issue) + '</p>' : '') +
+      '<div class="actions"><button class="primary" data-details>' + t('Details') + '</button></div>' +
+      '<div class="actions file-action">' + actions(g) + '</div></div>';
+  }
+  if (view !== shelfDetails) { panel.innerHTML = view; shelfDetails = view; }
+}
 function render() {
+  var visible = [];
   var q = $('q').value.toLowerCase(), html = '', shown = 0, counts = {}, pcounts = {};
   games.slice().sort(byName).forEach(function (g) {
     counts[g.state] = (counts[g.state] || 0) + 1;
@@ -442,20 +504,21 @@ function render() {
     if (filter && g.state !== filter) return;
     if (pfilter && (g.platform || 'ps4') !== pfilter) return;
     shown++;
-    var act = actions(g);
-    html += '<div class="card"><div class="art" data-g="' + g.title_id + '" role="button" tabindex="0" aria-label="' + esc(g.name) + '" style="background-image:url(/icon/' + g.title_id + ')">' +
-      '<span class="badge b-' + g.state + '">' + esc(label(g.state)) + '</span>' +
-      (driveGame(g.title_id) ? '<span class="b-drive" title="' + esc(t('In Google Drive')) + '">Drive</span>' : '') + '</div>' +
-      '<div class="info"><div class="name">' + esc(g.name) + '</div>' +
-      '<div class="meta">' + g.title_id + (g.version ? ' · v' + esc(g.version) : '') + (g.has_patch ? t(' (with update)') : '') +
-        (g.dlc ? ' · ' + esc(addons(g)) : '') + (g.size ? ' · ' + gb(g.size) : '') + '</div>' +
-      '<div class="meta">' + esc(g.source) + (g.mount ? ' · ' + esc(t('mounted {0}', g.mount)) : '') + '</div>' +
-      (g.state === 'restart' ? '<div class="warn">' + t('Added. Restart the console once to play it.') + '</div>' : '') +
-      (g.state === 'offline' ? '<div class="warn">' + esc(t('On {0}, which is not connected. Connect it to play.', g.storage)) + '</div>' : '') +
-      (g.update_issue ? '<div class="warn">' + esc(g.update_issue) + '</div>' : '') + '</div>' +
-      '<div class="actions">' + act + '</div></div>';
+    visible.push(g.title_id);
+    html += '<div class="card"><button type="button" class="art" data-g="' + g.title_id +
+      '"><span class="cover" style="background-image:url(/icon/' + g.title_id + ')">' +
+      (driveGame(g.title_id) ? '<span class="b-drive" title="' + esc(t('In Google Drive')) + '">Drive</span>' : '') +
+      '</span><span class="info"><span class="name">' + esc(g.name) + '</span><span class="badge b-' + esc(g.state) + '">' +
+      esc(label(g.state)) + '</span></span></button></div>';
   });
-  $('grid').innerHTML = html;
+  var focus = document.activeElement.getAttribute('data-g');
+  if (html !== shelfGrid) { $('grid').innerHTML = html; shelfGrid = html; }
+  selectCover(visible.indexOf(shelfSelection) >= 0 ? shelfSelection : visible[0] || '');
+  if (focus && document.activeElement === document.body) {
+    var replacement = $('grid').querySelector('[data-g="' + shelfSelection + '"]');
+    if (replacement) replacement.focus();
+  }
+  $('no-matches').hidden = shown > 0 || !games.length;
   $('empty').hidden = games.length > 0;
   /* the empty state's buttons offer what this console can do right now */
   var eb = $('empty-btns');
@@ -466,7 +529,7 @@ function render() {
   }
   var s = '<span data-f="" tabindex="0" role="button"' + (filter ? '' : ' class="on"') + '>' + t('{0} game(s)', games.length) + '</span>';
   for (var k in counts) s += '<span data-f="' + k + '" tabindex="0" role="button"' + (filter === k ? ' class="on"' : '') + '>' + esc(label(k)) + ': ' + counts[k] + '</span>';
-  $('summary').innerHTML = s;
+  if (s !== shelfStates) { $('summary').innerHTML = s; shelfStates = s; }
   /* the platform chips show only when the library has more than one kind of title */
   var ps = '', pn = 0;
   for (var pk in pcounts) pn++;
@@ -474,7 +537,7 @@ function render() {
     ps = '<span data-p="" tabindex="0" role="button"' + (pfilter ? '' : ' class="on"') + '>' + t('All platforms') + '</span>';
     for (var pp in pcounts) ps += '<span data-p="' + pp + '" tabindex="0" role="button"' + (pfilter === pp ? ' class="on"' : '') + '>' + esc(plabel(pp)) + ': ' + pcounts[pp] + '</span>';
   }
-  $('platforms').innerHTML = ps;
+  if (ps !== shelfPlatforms) { $('platforms').innerHTML = ps; shelfPlatforms = ps; }
   $('platforms').hidden = !ps;
   if (pfilter && !pcounts[pfilter]) { pfilter = ''; render(); return; }
   if (filter && !counts[filter]) { filter = ''; render(); }
@@ -517,11 +580,6 @@ $('summary').addEventListener('keydown', function (e) {
   var c = e.target.closest('span[data-f]');
   if (c) { e.preventDefault(); filter = c.getAttribute('data-f'); render(); }
 });
-$('grid').addEventListener('keydown', function (e) {
-  if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
-  var art = e.target.closest('[data-g]');
-  if (art) { e.preventDefault(); showGame(art.getAttribute('data-g')); }
-});
 $('restart-filter').onclick = function () {
   filter = filter === 'restart' ? '' : 'restart';
   pfilter = '';
@@ -533,6 +591,7 @@ $('restart-filter').onclick = function () {
  * anywhere else or Escape closes it (unless a dialog is open and handles Escape). */
 $('notifbtn').onclick = function (e) {
   e.stopPropagation();
+  $('panel-tools').open = false;
   $('notifpop').hidden = !$('notifpop').hidden;
 };
 document.addEventListener('click', function (e) {
@@ -689,7 +748,13 @@ function load() {
 
 function onAction(e) {
   var art = e.target.closest('[data-g]');
-  if (art) { showGame(art.getAttribute('data-g')); return; }
+  if (art) {
+    var selected = art.getAttribute('data-g'), wasSelected = selected === shelfSelection;
+    selectCover(selected);
+    if (wasSelected || window.matchMedia && window.matchMedia('(max-width:620px)').matches) showGame(selected);
+    return;
+  }
+  if (e.target.closest('[data-details]')) { showGame(shelfSelection); return; }
   var d = e.target.closest('button[data-d]');
   if (d) { driveAct('upload', 'title_id=' + d.getAttribute('data-t')); return; }
   var b = e.target.closest('button[data-a]');
@@ -705,7 +770,11 @@ function onAction(e) {
     .catch(function (err) { toast(t('Error: {0}', err.message)); })
     .then(function () { delete busy[tid]; load(); });
 }
+$('panel-tools').addEventListener('click', function (e) {
+  if (e.target.closest('button')) this.open = false;
+});
 $('grid').addEventListener('click', onAction);
+$('inspector').addEventListener('click', onAction);
 $('g-actions').addEventListener('click', onAction);
 $('q').addEventListener('input', render);
 $('rescan').onclick = function () { api('/api/rescan', 'POST').then(function (j) { toast(j.message); setTimeout(load, 3000); }); };
@@ -1125,15 +1194,15 @@ load();
  * list is asked every 1.5 s so the activity dock and the games follow it; idle, every 5 s. */
 poll(function () { return actBusy ? 1500 : 5000; }, load);
 
-/* Inside the panel app (panel-app/, opened on /?app=1): a TV a few metres away, so all of
- * it larger. Its Back button comes as Escape: it closes the open window by itself, and on
- * the first page it asks PS4Mount to close the app (the app shows no bar to leave it). */
-if (/[?&]app=1/.test(location.search)) {
-  document.documentElement.classList.add('tv');
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && !document.querySelector('dialog[open]')) fetch('/api/app/close', {method: 'POST', headers: {'X-PS4Mount': '1'}});
-  });
-}
+var tv = /[?&]app=1(?:&|$)/.test(location.search);
+if (tv) document.documentElement.classList.add('tv');
+bindShelfNavigation($('grid'), tv, selectCover, function () {
+  var dlg = document.querySelector('dialog[open]');
+  if (dlg) dlg.close();
+  else if (!$('notifpop').hidden) $('notifpop').hidden = true;
+  else if ($('panel-tools').open) { $('panel-tools').open = false; $('panel-tools').querySelector('summary').focus(); }
+  else api('/api/app/close', 'POST').catch(function () {});
+});
 
 /* --- Google Drive --- */
 var drive = {}, driveBusyBefore = false;

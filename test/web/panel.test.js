@@ -5,6 +5,7 @@
 const fs = require('fs');
 const { JSDOM, VirtualConsole } = require('jsdom');
 const W = require('path').join(__dirname, '..', '..', 'web') + '/';
+const INLINE = fs.readFileSync(W + 'lang.js', 'utf8') + '\n' + fs.readFileSync(W + 'shelf.js', 'utf8');
 const GAMES = [
   { title_id: 'CUSA00791', name: 'N++', version: '01.10', has_patch: true, size: 4e9, state: 'ready', mount: 'rw', source: '/mnt/usb0/ps4/CUSA00791', dlc: 0, update_issue: '' },
   { title_id: 'CUSA28732', name: 'Civ VII', version: '01.16', has_patch: true, size: 9e9, state: 'running', mount: 'rw', source: '/mnt/usb0/ps4/CUSA28732', dlc: 35, update_issue: '' },
@@ -39,9 +40,9 @@ function page(file, opts) {
   const reqs = [], vc = new VirtualConsole(), nav = [];
   vc.on('jsdomError', e => { if (/navigation/i.test(e.message)) nav.push(e.message); else console.log('jsdomError', e.message); });
   // as build.sh does: the language tables where the page says <!--LANG-->
-  const html = fs.readFileSync(W + file, 'utf8').replace('<!--LANG-->', () => '<script>' + fs.readFileSync(W + 'lang.js', 'utf8') + '</script>');
+  const html = fs.readFileSync(W + file, 'utf8').replace('<!--LANG-->', () => '<script>' + INLINE + '</script>');
   const dom = new JSDOM(html, {
-    url: 'http://ps5:8770/', runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc,
+    url: 'http://ps5:8770/' + (opts.suffix || ''), runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc,
     beforeParse(w) {
       w.setInterval = () => 0;
       w.scrollTo = () => {};
@@ -100,6 +101,7 @@ function tKeys(file) {
   // the language tables: ES5 (the old browser reads them), every text of the pages translated
   { const e = parses(fs.readFileSync(W + 'lang.js', 'utf8'), 5); ok(!e, 'lang.js is ES5' + (e ? ': ' + e : '')); }
   const L = new JSDOM('<script>' + fs.readFileSync(W + 'lang.js', 'utf8') + '</script>', { runScripts: 'dangerously' }).window.LANGS;
+  ok(!parses(fs.readFileSync(W + 'shelf.js', 'utf8'), 5), 'shared shelf controls are ES5');
   ['index.html', 'legacy.html'].forEach((f) => {
     const { keys, built } = tKeys(f);
     const missing = keys.filter((k) => !L.es[k]);
@@ -126,7 +128,7 @@ function tKeys(file) {
   let p = page('index.html', { dialog: false });
   await tick();
   ok(p.nav.length > 0, 'index without <dialog> navigates away (to /legacy)');
-  ok(fs.readFileSync(W + 'index.html', 'utf8').includes("location.replace('/legacy')"), 'redirect target is /legacy');
+  ok(fs.readFileSync(W + 'index.html', 'utf8').includes("location.replace('/legacy'"), 'redirect target is /legacy');
 
   // --- modern page
   p = page('index.html', { dialog: true });
@@ -135,18 +137,25 @@ function tKeys(file) {
   ok(p.nav.length === 0, 'index with <dialog> stays');
   ok(d.querySelectorAll('.card').length === 6, 'six game cards');
   ok(d.querySelector('.card .name').textContent === 'Civ VII', 'cards sorted by name');
-  { const c = [...d.querySelectorAll('.card')].find(x => x.textContent.includes('Moving Out 2'));
-    ok(c && c.querySelector('.badge').textContent === 'Restart to play' && c.textContent.includes('Restart the console once'), 'a game added in this boot says to restart');
-    ok(c && c.querySelector('[data-a="unmount"]') !== null, 'it can be removed from the library'); }
-  { const c = [...d.querySelectorAll('.card')].find(x => x.textContent.includes('Rayman Legends'));
-    ok(c && c.querySelector('.badge').textContent === 'Drive not connected' && c.textContent.includes('On usb1, which is not connected'), 'a game of a drive that is away says so');
-    ok(c && !c.textContent.includes(' · v ·') && !c.querySelector('button[data-a]'), 'no empty version, nothing to do with it'); }
+  { const c = d.querySelector('[data-g="CUSA34284"]'), pane = d.getElementById('inspector');
+    const writes = reqs.filter(r => r.method === 'POST').length;
+    c.click();
+    ok(c.querySelector('.badge').textContent === 'Restart to play' && c.getAttribute('aria-pressed') === 'true' &&
+      pane.textContent.includes('Moving Out 2') && pane.textContent.includes('Restart the console once'), 'selecting a cover shows the restart warning in the inspector');
+    ok(pane.querySelector('[data-a="unmount"]') !== null, 'the selected game can be removed from the library');
+    c.focus(); await w.load();
+    ok(d.activeElement === c && c.getAttribute('aria-pressed') === 'true' && reqs.filter(r => r.method === 'POST').length === writes,
+      'refresh keeps the selected cover and focus without writing to the console'); }
+  { const c = d.querySelector('[data-g="CUSA00069"]'), pane = d.getElementById('inspector');
+    c.click();
+    ok(c.querySelector('.badge').textContent === 'Drive not connected' && pane.textContent.includes('On usb1, which is not connected'), 'a game of a drive that is away says so');
+    ok(!pane.textContent.includes(' · v ·') && !pane.querySelector('button[data-a]'), 'no empty version, nothing to do with it'); }
   d.querySelector('.summary span[data-f="restart"]').click();
   ok(d.querySelectorAll('.card').length === 1, 'the state chips filter the cards');
   d.querySelector('.summary span[data-f=""]').click();
   ok(d.querySelectorAll('.card').length === 6, 'all games again');
-  d.querySelector('.art[data-g="CUSA34284"]').click(); await tick();
-  ok(d.getElementById('gamedlg').hasAttribute('open') && d.getElementById('g-name').textContent === 'Moving Out 2', 'a cover opens the game');
+  d.querySelector('#inspector [data-details]').click(); await tick();
+  ok(d.getElementById('gamedlg').hasAttribute('open') && d.getElementById('g-name').textContent === 'Moving Out 2', 'the inspector opens the full game details');
   ok(d.getElementById('g-hero').style.backgroundImage.includes('/pic/CUSA34284'), 'with its background art');
   { const t = d.getElementById('g-facts').textContent;
     ok(t.includes('EP4064-CUSA34284_00-MOVINGOUT2000000') && t.includes('game v01.00 with its update') && t.includes('9.00'), 'details: content id, versions, firmware'); }
@@ -625,12 +634,13 @@ function tKeys(file) {
   ok(d.documentElement.lang === 'es', 'the page takes the language the console reports');
   ok(d.getElementById('rescan').textContent === 'Buscar juegos' && d.getElementById('settingsbtn').textContent === 'Ajustes', 'fixed texts in Spanish');
   ok(d.getElementById('q').placeholder === 'Buscar juego o CUSA', 'placeholders in Spanish');
-  { const c = [...d.querySelectorAll('.card')].find(x => x.textContent.includes('Moving Out 2'));
-    ok(c && c.querySelector('.badge').textContent === 'Reinicia para jugar' && c.textContent.includes('Reinicia la consola una vez'), 'states and notes in Spanish');
-    ok(c && c.querySelector('[data-a="unmount"]').textContent === 'Quitar de la biblioteca', 'buttons in Spanish'); }
+  { const pane = d.getElementById('inspector');
+    const c = d.querySelector('[data-g="CUSA34284"]'); c.click();
+    ok(c.querySelector('.badge').textContent === 'Reinicia para jugar' && pane.textContent.includes('Reinicia la consola una vez'), 'states and notes in Spanish');
+    ok(pane.querySelector('[data-a="unmount"]').textContent === 'Quitar de la biblioteca', 'buttons in Spanish');
+    d.querySelector('[data-g="CUSA00069"]').click();
+    ok(pane.textContent.includes('En usb1, que no está conectado'), 'a value inside a translated text'); }
   ok(d.getElementById('summary').textContent.includes('6 juego(s)'), 'the summary in Spanish');
-  { const c = [...d.querySelectorAll('.card')].find(x => x.textContent.includes('Rayman'));
-    ok(c && c.textContent.includes('En usb1, que no está conectado'), 'a value inside a translated text'); }
   w.showGame('CUSA34284');
   ok(d.getElementById('g-facts').textContent.includes('Necesita firmware') && d.getElementById('g-facts').textContent.includes('v01.04 (juego v01.00 con su actualización)'), 'the game page in Spanish');
   d.getElementById('settingsbtn').click(); await tick();
@@ -693,6 +703,30 @@ function tKeys(file) {
     ok(asked === 0 && ticks >= 3, 'a page in a background tab asks nothing');
   }
 
+  // App back must return from the current view before calling the panel's close route.
+  p = page('index.html', { dialog: true, suffix: '?app=1' }); ({ w, d, reqs } = p); await w.load();
+  const covers = [...d.querySelectorAll('[data-g]')];
+  covers.forEach((cover, i) => {
+    cover.getClientRects = () => [{}];
+    cover.getBoundingClientRect = () => ({left: (i % 3) * 100, top: Math.floor(i / 3) * 100, width: 90, height: 90});
+  });
+  covers[0].focus(); reqs.length = 0;
+  const key = (keyName, keyCode) => d.activeElement.dispatchEvent(new w.KeyboardEvent('keydown', {key: keyName, keyCode, bubbles: true, cancelable: true}));
+  key('ArrowRight', 39);
+  ok(d.activeElement === covers[1] && covers[1].getAttribute('aria-pressed') === 'true' && reqs.length === 0, 'PS4 arrows move focus and select the neighboring game without a request');
+  d.querySelector('#inspector [data-details]').click();
+  key('Escape', 27);
+  ok(!d.getElementById('gamedlg').hasAttribute('open') && !reqs.length, 'PS4 back closes details before exiting');
+  key('Escape', 27);
+  ok(reqs[0] && reqs[0].url === '/api/app/close' && reqs[0].method === 'POST', 'PS4 back from the shelf closes the app');
+
+  p = page('legacy.html', { suffix: '#app=1' }); ({ w, d, reqs } = p);
+  await tick(); d.getElementById('nav-log').click(); await tick(); reqs.length = 0;
+  key('Escape', 27);
+  ok(d.getElementById('v-games').className.includes('on') && !reqs.length, 'legacy PS4 back returns from the log to the shelf');
+  key('Escape', 27);
+  ok(reqs[0] && reqs[0].url === '/api/app/close' && reqs[0].method === 'POST', 'legacy PS4 back exits from the shelf');
+
   // --- legacy page
   p = page('legacy.html', {}); ({ w, d, reqs } = p);
   await tick();
@@ -724,7 +758,8 @@ function tKeys(file) {
   d.getElementById('nav-log').click(); await tick();
   ok(d.getElementById('v-log').className.includes('on') && d.getElementById('log').textContent === 'a\nb', 'legacy log page');
   d.getElementById('l-back').click();
-  reqs.length = 0; d.querySelector('[data-a="unmount"][data-t="CUSA00791"]').click(); await tick();
+  d.querySelector('[data-g="CUSA00791"]').click();
+  reqs.length = 0; d.querySelector('#inspector [data-a="unmount"][data-t="CUSA00791"]').click(); await tick();
   ok(reqs[0].url === '/api/unmount?title_id=CUSA00791' && reqs[0].method === 'POST', 'legacy card action posts');
   ok(d.getElementById('restart-banner').style.display === 'block' && d.getElementById('restart-banner').textContent.includes('Moving Out 2'),
     'legacy shows the restart banner');

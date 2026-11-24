@@ -25,10 +25,11 @@ par() {
 }
 mkdir -p build
 # Embedded data: panel page, Media tab icon, playgo record templates.
-# The pages with their texts in other languages (web/lang.js) where they say <!--LANG-->.
+# Inline the translations and shared shelf controls so each page is self-contained.
 mkdir -p build/web
 for page in index legacy; do
-    awk -v js=web/lang.js '/^<!--LANG-->$/ { print "<script>"; while ((getline l < js) > 0) print l; close(js);
+    awk -v lang=web/lang.js -v shelf=web/shelf.js '/^<!--LANG-->$/ { print "<script>"; while ((getline l < lang) > 0) print l; close(lang);
+                                              while ((getline l < shelf) > 0) print l; close(shelf);
                                               print "</script>"; next } { print }' web/$page.html > build/web/$page.html
 done
 {
