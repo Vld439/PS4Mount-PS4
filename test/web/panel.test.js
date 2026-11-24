@@ -12,18 +12,24 @@ const GAMES = [
   { title_id: 'CUSA41712', name: 'Soulstice', version: '01.03', has_patch: false, size: 9e9, state: 'ready', mount: 'rw', source: '/mnt/usb0/PS4Mount/Soulstice', dlc: 1, update_issue: '', in_place: true },
   { title_id: 'CUSA34284', name: 'Moving Out 2', version: '01.04', game_version: '01.00', has_patch: true, size: 2.6e9, state: 'restart', mount: 'rw', source: '/mnt/usb0/ps4/CUSA34284', dlc: 0, update_issue: '', content_id: 'EP4064-CUSA34284_00-MOVINGOUT2000000', system_ver: '9.00', storage: 'usb0' },
   { title_id: 'CUSA00069', name: 'Rayman Legends', version: '', has_patch: false, size: 0, state: 'offline', mount: '', source: '/mnt/usb1/ps4/CUSA00069', dlc: 0, update_issue: '', content_id: '', game_version: '', system_ver: '', storage: 'usb1' }];
-const CFG = { batch: true, batch_size: 5, dlc: true, restore_batch: 5, max_restore_batch: 10, paths: ['/'], organize: false };
+const CFG = { batch: true, batch_size: 5, dlc: true, dlc_mode: 'external', dlc_big: false, internal: false,
+  autorun: false, autorun_ok: true, autorun_path: '/data/payloads/ps4mount-ps4.bin',
+  restore_batch: 5, max_restore_batch: 10, paths: ['/'], organize: false };
 let REPLY_LANG; // the language the console reports (undefined: none, English)
 let GAMES_VERSION = 'PS4Mount test';
 let DRIVE = { configured: false }; // GET /api/drive (an object: the tests change it)
 let LINKS = { configured: false }; // GET /api/links
+let DRIVES = [{ label: 'usb0', free: 120.5 * 1073741824, total: 500 * 1073741824 }]; // GET /api/games drives
+let NOTICES = []; // GET /api/games notices
+let ACTIVITY = { busy: false, phase: '', drive: '', title: '', title_id: '', done: 0, total: 0, group: 0, groups: 0, dlc_pending: [] };
 const DESTS = { dests: [{ id: 'usb0', label: 'usb0', folder: '/mnt/usb0/PS4Mount', free: 5e11, fits: true }] };
 function reply(url) {
   if (url === '/api/drive') return DRIVE;
   if (url === '/api/links') return LINKS;
   if (url === '/api/dests') return DESTS;
   return url.indexOf('/api/log') === 0 ? { log: 'a\nb' } : url.indexOf('/api/config') === 0 ? CFG :
-    url.indexOf('/api/games') === 0 ? { version: GAMES_VERSION, lang: REPLY_LANG, games: GAMES } : { ok: true, message: 'ok ' + url };
+    url.indexOf('/api/games') === 0 ? { version: GAMES_VERSION, lang: REPLY_LANG, games: GAMES, drives: DRIVES,
+      notices: NOTICES, activity: ACTIVITY, dlc_mode: CFG.dlc_mode || 'external' } : { ok: true, message: 'ok ' + url };
 }
 const tick = () => new Promise(r => setTimeout(r, 30));
 const ok = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) process.exitCode = 1; };
@@ -202,7 +208,7 @@ function tKeys(file) {
   const sent = [], checks = [];
   let hold = false; // the next upload stays in flight until cancelled
   const DESTS = [{ id: 'usb0', label: 'usb0', folder: '/mnt/usb0/pmscan', free: 67108864 + 1500, fits: true },
-    { id: 'internal', label: 'internal storage', folder: '/data/pkg', free: 1e12, fits: true }];
+    { id: 'usb1', label: 'usb1', folder: '/mnt/usb1/PS4Mount', free: 1e12, fits: true }];
   w.fetch = (url, o) => {
     if (url.indexOf('/api/check') === 0) {
       checks.push({ url, headers: (o && o.headers) || {} });
@@ -240,14 +246,15 @@ function tKeys(file) {
   ok(items[1].textContent.includes('Cannot be used') && items[1].textContent.includes('not a fake pkg'), 'an unusable pkg is refused with the reason');
   ok(items[2].textContent.includes('not enough space in usb0'), 'a pkg that does not fit the chosen drive is refused');
   ok(d.getElementById('dest').options.length === 2 && d.getElementById('dest').value === 'usb0', 'the places come from the check, first one chosen');
-  d.getElementById('dest').value = 'internal'; d.getElementById('dest').onchange(); await tick();
+  ok(d.getElementById('dest').options[1].textContent.includes('usb1') && d.getElementById('dest').options[1].textContent.includes('/mnt/usb1/PS4Mount'), 'a place shows its label, folder and free space');
+  d.getElementById('dest').value = 'usb1'; d.getElementById('dest').onchange(); await tick();
   items = d.querySelectorAll('#queue .item');
-  ok(items[2].textContent.includes('Ready to send'), 'it fits the console storage');
+  ok(items[2].textContent.includes('Ready to send'), 'it fits the other drive');
   ok(!d.getElementById('send-go').disabled, 'Send is enabled');
   d.getElementById('send-go').click();
   for (let i = 0; i < 10; i++) await tick();
   ok(sent.length === 2, 'only the two usable pkgs are sent');
-  ok(sent[0].url === '/api/upload?dest=internal&name=Good.pkg' && sent[0].method === 'POST' && sent[0].headers['X-PS4Mount'] === '1', 'upload goes to the chosen place, with the panel header');
+  ok(sent[0].url === '/api/upload?dest=usb1&name=Good.pkg' && sent[0].method === 'POST' && sent[0].headers['X-PS4Mount'] === '1', 'upload goes to the chosen place, with the panel header');
   ok(sent[1].url.includes('name=Upd.pkg') && sent[1].size === 2000, 'then the next one, the whole file');
   items = d.querySelectorAll('#queue .item');
   ok(items[0].textContent.includes('Sent') && items[2].textContent.includes('Sent') && items[1].textContent.includes('Cannot be used'), 'both sent, the refused one stays refused');
@@ -271,9 +278,10 @@ function tKeys(file) {
   d.getElementById('send-go').click();
   for (let i = 0; i < 10; i++) await tick();
   ok(sent.length === 3 && sent[1].url.includes('name=Game2.pkg') && sent[2].url.includes('name=Upd2.pkg'), 'then the game, then its update');
-  // the settings have the internal storage switch
+  // the settings offer the add-on modes, not the removed internal-storage or big-DLC switches
   d.getElementById('settingsbtn').click(); await tick();
-  ok(d.getElementById('s-internal') !== null, 'settings have the /data/pkg switch');
+  ok(d.getElementById('s-internal') === null && d.getElementById('s-dlcbig') === null && d.getElementById('s-dlc') === null, 'no internal-storage or big-DLC switches');
+  ok(d.getElementById('s-dlc-mode') !== null && d.getElementById('s-dlc-mode').value === 'external', 'a dlc_mode select, external by default');
 
   // a new PS4Mount loaded while the page is open: the page reloads itself
   {
@@ -464,6 +472,109 @@ function tKeys(file) {
   ok(reqs.some((r) => r.url === '/api/links/cancel?id=4'), 'the bar cancels the download');
   LINKS = { configured: false };
 
+  // --- restart banner, live activity, notifications, dlc_mode settings
+  p = page('index.html', { dialog: true }); ({ w, d, reqs } = p);
+  await tick();
+  {
+    const rb = d.getElementById('restart-banner');
+    ok(rb && !rb.hidden, 'restart banner is up while a game waits for the restart');
+    ok(rb.textContent.includes('1 game needs a one-time console restart to start: Moving Out 2') &&
+      rb.textContent.includes('The PS4 loads new game tasks at boot.'), 'banner says which game and why');
+    ok(d.querySelectorAll('.card').length === 6, 'the grid still shows everything');
+    d.getElementById('restart-filter').click();
+    ok(d.querySelectorAll('.card').length === 1 && d.querySelector('.card').textContent.includes('Moving Out 2'),
+      'Show games filters to the restart game');
+    ok(d.getElementById('restart-filter').textContent === 'Show all', 'the button offers the way back');
+    d.getElementById('restart-filter').click();
+    ok(d.querySelectorAll('.card').length === 6, 'Show all restores the grid');
+    GAMES[4].state = 'ready'; w.load(); await tick(); await tick();
+    ok(d.getElementById('restart-banner').hidden, 'banner hides when no game needs the restart');
+    GAMES[4].state = 'restart'; w.load(); await tick(); await tick();
+    ok(!d.getElementById('restart-banner').hidden, 'and is back when one does');
+  }
+  {
+    const phases = [
+      [{ busy: true, phase: 'scanning', drive: 'usb0', done: 3, total: 10 }, 'Scanning usb0', '3 of 10'],
+      [{ busy: true, phase: 'registering', drive: 'usb0', title: 'Civ VII', title_id: 'CUSA28732', done: 2, total: 5, group: 1, groups: 3 }, 'Adding 2 of 5: Civ VII', 'Group 1/3'],
+      [{ busy: true, phase: 'waiting_db' }, 'Waiting for PS4 system database', ''],
+      [{ busy: true, phase: 'restoring', drive: 'usb0', title: 'Old Game', title_id: 'CUSA00001', done: 1, total: 4 }, 'Restoring 1 of 4: Old Game', ''],
+      [{ busy: true, phase: '', dlc_pending: [{ content_id: 'X', name: 'Map Pack', size: 1073741824, elapsed: 60 }] }, 'Installing add-ons', 'Map Pack (1.0 GB)']
+    ];
+    for (let i = 0; i < phases.length; i++) {
+      ACTIVITY = Object.assign({ drive: '', title: '', title_id: '', done: 0, total: 0, group: 0, groups: 0, dlc_pending: [] }, phases[i][0]);
+      w.load(); await tick(); await tick();
+      const ab = d.getElementById('actbar');
+      ok(ab.style.display === 'flex' && d.getElementById('ab-text').textContent.includes(phases[i][1]) &&
+        (!phases[i][2] || ab.textContent.includes(phases[i][2])),
+        'actbar ' + phases[i][1]);
+    }
+    ACTIVITY = Object.assign({ drive: '', title: '', title_id: '', done: 0, total: 0, group: 0, groups: 0, dlc_pending: [] },
+      { busy: true, phase: 'scanning', drive: 'usb0', done: 3, total: 10 });
+    w.load(); await tick(); await tick();
+    ok(!d.getElementById('act-prog').hidden && +d.getElementById('act-prog').value === 3 && +d.getElementById('act-prog').max === 10,
+      'progress follows done of total');
+    ACTIVITY = { busy: true, phase: 'waiting_db', drive: '', title: '', title_id: '', done: 0, total: 0, group: 0, groups: 0, dlc_pending: [] };
+    w.load(); await tick(); await tick();
+    ok(d.getElementById('act-prog').hidden, 'no progress bar without a total');
+    ACTIVITY = { busy: false, phase: '', drive: '', title: '', title_id: '', done: 0, total: 0, group: 0, groups: 0, dlc_pending: [] };
+    w.load(); await tick(); await tick();
+    ok(d.getElementById('actbar').style.display === 'none', 'actbar hides when idle');
+  }
+  {
+    NOTICES = [
+      { ts: 1760000000, kind: 'ready', text: 'Civ VII ready to play' },
+      { ts: 1760000100, kind: 'warn', text: 'usb0: 2 new or updated PS4 game(s)' },
+      { ts: 1760000200, kind: 'drive', text: 'Scanning usb1 for PS4 games...' }];
+    w.load(); await tick(); await tick();
+    const nb = d.getElementById('notif-count');
+    ok(!nb.hidden && nb.textContent === '3', 'the bell counts the notices');
+    d.getElementById('notifbtn').click();
+    ok(!d.getElementById('notifpop').hidden, 'the popover opens');
+    ok(d.querySelectorAll('#notifpop .nitem').length === 3, 'one row per notice');
+    const np = d.getElementById('notifpop').textContent;
+    ok(np.includes('Civ VII ready to play') && np.includes('Warning') && np.includes('Drive'), 'kind labels are words');
+    ok(/\d{2}:\d{2}/.test(np), 'each notice has its local time');
+    d.getElementById('notifbtn').click();
+    ok(d.getElementById('notifpop').hidden, 'a second click closes it');
+    d.getElementById('notifbtn').click();
+    d.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape' }));
+    ok(d.getElementById('notifpop').hidden, 'Escape closes it too');
+    NOTICES = [];
+    w.load(); await tick(); await tick();
+    ok(d.getElementById('notif-count').hidden, 'no badge when there are none');
+    d.getElementById('notifbtn').click();
+    ok(d.getElementById('notifpop').textContent.includes('No notifications yet.'), 'the empty state says so');
+    d.getElementById('notifbtn').click();
+  }
+  {
+    d.getElementById('settingsbtn').click(); await tick(); await tick();
+    ok(d.getElementById('autorun-hint').textContent.includes('/data/payloads/ps4mount-ps4.bin'), 'the AutoRun hint names the found payload');
+    CFG.dlc_mode = 'compat';
+    d.getElementById('settingsbtn').click(); await tick(); await tick();
+    ok(d.getElementById('s-dlc-mode').value === 'compat', 'dlc_mode compat loads');
+    CFG.dlc_mode = 'off';
+    d.getElementById('settingsbtn').click(); await tick(); await tick();
+    ok(d.getElementById('s-dlc-mode').value === 'off', 'dlc_mode off loads');
+    CFG.dlc_mode = 'external';
+    reqs.length = 0;
+    d.getElementById('s-dlc-mode').value = 'compat';
+    d.getElementById('setform').dispatchEvent(new w.Event('submit', { cancelable: true })); await tick(); await tick();
+    let cfgReq = reqs.find(r => r.url === '/api/config' && r.method === 'POST');
+    ok(cfgReq && cfgReq.body.includes('dlc_mode=compat') && /&dlc=1(&|$)/.test(cfgReq.body) &&
+      !cfgReq.body.includes('internal=') && !cfgReq.body.includes('dlc_big='),
+      'saving sends dlc_mode and dlc, never internal or dlc_big: ' + (cfgReq && cfgReq.body));
+    d.getElementById('s-dlc-mode').value = 'off';
+    reqs.length = 0;
+    d.getElementById('setform').dispatchEvent(new w.Event('submit', { cancelable: true })); await tick(); await tick();
+    cfgReq = reqs.find(r => r.url === '/api/config' && r.method === 'POST');
+    ok(cfgReq && cfgReq.body.includes('dlc_mode=off') && /&dlc=0(&|$)/.test(cfgReq.body), 'off means dlc=0');
+    CFG.autorun_ok = false;
+    d.getElementById('settingsbtn').click(); await tick(); await tick();
+    ok(d.getElementById('autorun-hint').textContent.includes('Payload file not found') && d.getElementById('s-autorun').disabled,
+      'no payload: the hint says where to copy it and AutoRun is off');
+    CFG.autorun_ok = true;
+  }
+
   // --- in Spanish: the console says "es"
   REPLY_LANG = 'es';
   p = page('index.html', { dialog: true }); ({ w, d, reqs } = p);
@@ -572,6 +683,21 @@ function tKeys(file) {
   d.getElementById('l-back').click();
   reqs.length = 0; d.querySelector('[data-a="unmount"][data-t="CUSA00791"]').click(); await tick();
   ok(reqs[0].url === '/api/unmount?title_id=CUSA00791' && reqs[0].method === 'POST', 'legacy card action posts');
+  ok(d.getElementById('restart-banner').style.display === 'block' && d.getElementById('restart-banner').textContent.includes('Moving Out 2'),
+    'legacy shows the restart banner');
+  ACTIVITY = { busy: true, phase: 'scanning', drive: 'usb0', done: 1, total: 4, title: '', title_id: '', group: 0, groups: 0, dlc_pending: [] };
+  w.load(); await tick(); await tick();
+  ok(d.getElementById('actbar').style.display === 'block' && d.getElementById('ab-text').textContent.includes('Scanning usb0'), 'legacy actbar shows the scan');
+  ACTIVITY = { busy: false, phase: '', drive: '', title: '', title_id: '', done: 0, total: 0, group: 0, groups: 0, dlc_pending: [] };
+  w.load(); await tick(); await tick();
+  ok(d.getElementById('actbar').style.display === 'none', 'legacy actbar hides when idle');
+  d.getElementById('nav-settings').click(); await tick(); await tick();
+  ok(d.getElementById('s-dlc-mode') !== null && d.getElementById('s-dlc-mode').value === 'external', 'legacy dlc_mode select, external');
+  d.getElementById('s-dlc-mode').value = 'compat';
+  reqs.length = 0; d.getElementById('s-save').click(); await tick(); await tick();
+  const lcfg = reqs.find(r => r.url === '/api/config' && r.method === 'POST');
+  ok(lcfg && lcfg.body.includes('dlc_mode=compat') && /&dlc=1(&|$)/.test(lcfg.body) && !lcfg.body.includes('internal='),
+    'legacy saves dlc_mode without internal: ' + (lcfg && lcfg.body));
 })()
   /* jsdom keeps the windows' own timers: end the process, with the code ok() left */
   .then(() => process.exit(process.exitCode || 0), (e) => { console.error(e); process.exit(1); });

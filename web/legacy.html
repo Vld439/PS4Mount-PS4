@@ -4,45 +4,56 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PS4Mount</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230e1116'/%3E%3Crect x='25' y='5' width='14' height='11' rx='2' fill='%23c9d3e6'/%3E%3Crect x='16' y='14' width='32' height='44' rx='8' fill='%233d7bfd'/%3E%3Cpath d='M27 26v20l15-10z' fill='%23f4f6fb' stroke='%23f4f6fb' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23060d1c'/%3E%3Crect x='25' y='5' width='14' height='11' rx='2' fill='%23c9d3e6'/%3E%3Crect x='16' y='14' width='32' height='44' rx='8' fill='%230070d1'/%3E%3Cpath d='M27 26v20l15-10z' fill='%23f4f6fb' stroke='%23f4f6fb' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E">
 <!-- Panel for the browser of older firmwares (no <dialog>): plain pages instead of dialogs,
      ES5 and XMLHttpRequest only, no CSS variables or grid. -->
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#0e1116;color:#e8eaed;font:15px/1.45 sans-serif}
-header{padding:12px 16px;background:#141820;border-bottom:1px solid #262c36}
-h1{font-size:20px;margin:0 0 8px}
-h1 small{color:#97a0ab;font-weight:normal;font-size:13px;margin-left:8px}
-h2{font-size:18px;margin:0 0 12px}
-button{font:inherit;color:#e8eaed;background:#262d38;border:1px solid #262c36;border-radius:8px;padding:8px 14px;margin:0 6px 6px 0;cursor:pointer}
-button:focus{border-color:#3d7bfd;outline:none}
-button.primary{background:#3d7bfd;border-color:#3d7bfd}
-button.danger{background:#3a1f1d;border-color:#5c2c28}
+body{margin:0;background:#060d1c;background-image:linear-gradient(180deg,#09152c 0%,#060d1c 420px);color:#eef3fb;font:15px/1.45 sans-serif}
+header{padding:12px 16px;background:#0c1830;border-bottom:1px solid #1e355c}
+h1{font-size:20px;margin:0 0 8px;font-weight:600}
+h1 small{color:#93a7c7;font-weight:normal;font-size:13px;margin-left:8px}
+h2{font-size:18px;margin:0 0 12px;font-weight:600}
+h3{font-size:16px;margin:0 0 8px;font-weight:600}
+button{font:inherit;font-weight:500;color:#eef3fb;background:#132342;border:1px solid #1e355c;border-radius:8px;padding:8px 14px;margin:0 6px 6px 0;cursor:pointer}
+button:focus{border-color:#38bdf8;outline:2px solid #38bdf8;outline-offset:2px}
+button.primary{background:#0070d1;border-color:#0070d1}
+button.danger{background:rgba(209,67,67,.14);border-color:rgba(209,67,67,.55)}
 button[disabled]{opacity:.45}
-input,textarea{font:inherit;background:#0b0d11;color:#e8eaed;border:1px solid #262c36;border-radius:8px;padding:8px 10px}
+input,textarea,select{font:inherit;background:#040914;color:#eef3fb;border:1px solid #1e355c;border-radius:8px;padding:8px 10px}
+select{max-width:100%}
+label select{display:block;margin-top:4px}
 textarea{width:100%;min-height:90px;font-family:monospace}
 .view{padding:16px;display:none}
 .view.on{display:block}
-.summary span{display:inline-block;background:#171b22;border:1px solid #262c36;border-radius:12px;padding:3px 10px;margin:0 6px 6px 0;color:#97a0ab}
-.card{display:inline-block;vertical-align:top;width:250px;margin:0 12px 12px 0;background:#171b22;border:1px solid #262c36;border-radius:12px;overflow:hidden}
-.card img{display:block;width:250px;height:250px;background:#0b0d11}
+.summary span{display:inline-block;background:#0c1830;border:1px solid #1e355c;border-radius:999px;padding:3px 10px;margin:0 6px 6px 0;color:#93a7c7}
+.card{display:inline-block;vertical-align:top;width:250px;margin:0 12px 12px 0;background:#0c1830;border:1px solid #1e355c;border-radius:12px;overflow:hidden}
+.card img{display:block;width:250px;height:250px;background:#040914}
 .info{padding:10px 12px}
-.name{font-weight:bold;font-size:16px}
-.meta{color:#97a0ab;font-size:13px;word-wrap:break-word}
-.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:bold;background:#555;margin-bottom:4px}
-.b-ready{background:#2f9e57}.b-running{background:#3d7bfd}.b-internal,.b-pending,.b-restart{background:#c98b1f}
+.name{font-weight:600;font-size:16px}
+.meta{color:#93a7c7;font-size:13px;word-wrap:break-word}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;background:#2c4a7c;margin-bottom:4px}
+.b-ready{background:#22985a}.b-running{background:#0070d1}.b-internal,.b-pending,.b-restart{background:#d08c1e}
 .actions{padding:0 12px 8px}
-.warn{color:#f0c060;font-size:13px;background:#3a2e12;border:1px solid #5c4818;border-radius:8px;padding:6px 8px;margin-top:4px}
-.box{border:1px solid #262c36;border-radius:10px;padding:12px 14px;margin:0 0 14px}
+.warn{color:#d08c1e;font-size:13px;background:rgba(208,140,30,.12);border:1px solid rgba(208,140,30,.45);border-radius:8px;padding:6px 8px;margin-top:4px}
+#restart-banner{border:1px solid #d08c1e;background:rgba(208,140,30,.12);border-radius:12px;padding:12px 16px;margin:0 0 12px}
+#restart-banner .rb-main{font-weight:600}
+#restart-banner .rb-sub{color:#93a7c7;font-size:13px;display:block;margin-top:4px}
+#actbar{border:1px solid #1e355c;background:#0c1830;border-radius:12px;padding:10px 14px;margin:0 0 12px;font-size:14px}
+#actbar .db-main{font-weight:600;display:block}
+#actbar .db-sub{color:#93a7c7;font-size:13px;display:block;margin-top:4px}
+#act-prog{display:block;width:100%;height:10px;margin-top:8px;accent-color:#0070d1}
+.box{border:1px solid #1e355c;border-radius:12px;padding:12px 14px;margin:0 0 14px}
 .box h3{margin:0 0 8px;font-size:16px}
-.hint{color:#97a0ab;font-size:13px;display:block;margin:4px 0 8px}
-.note{color:#f0c060;font-size:13px;margin:0 0 10px}
+.hint{color:#93a7c7;font-size:13px;display:block;margin:4px 0 8px}
+.note{color:#d08c1e;font-size:13px;margin:0 0 10px}
 label{display:block;margin:0 0 10px}
 table{width:100%;border-collapse:collapse;font-size:14px;margin:0 0 10px}
-th,td{border-bottom:1px solid #262c36;padding:8px 6px;text-align:left;vertical-align:top}
+th,td{border-bottom:1px solid #1e355c;padding:8px 6px;text-align:left;vertical-align:top}
 td.c,th.c{width:36px;text-align:center}
-pre{white-space:pre-wrap;font-size:12px;background:#0b0d11;padding:12px;border-radius:8px}
-#msg{display:none;margin:8px 0 0;padding:8px 12px;border:1px solid #262c36;border-radius:8px;background:#171b22}
+pre{white-space:pre-wrap;font-size:12px;background:#040914;padding:12px;border-radius:8px}
+#msg{display:none;margin:8px 0 0;padding:8px 12px;border:1px solid #1e355c;border-radius:8px;background:#0c1830}
+[hidden]{display:none!important}
 </style>
 </head>
 <body>
@@ -57,6 +68,15 @@ pre{white-space:pre-wrap;font-size:12px;background:#0b0d11;padding:12px;border-r
 </header>
 
 <div class="view on" id="v-games">
+  <div id="restart-banner" style="display:none">
+    <div class="rb-main" id="rb-main"></div>
+    <span class="rb-sub" id="rb-sub"></span>
+  </div>
+  <div id="actbar" style="display:none">
+    <span class="db-main" id="ab-text"></span>
+    <progress id="act-prog" max="1" value="0" hidden></progress>
+    <span class="db-sub" id="ab-sub"></span>
+  </div>
   <div class="summary" id="summary"></div>
   <div id="grid"></div>
   <p class="meta" id="empty" style="display:none">No PS4 games found. Put the .pkg files (game, update and add-ons) in the PS4Mount folder of a USB drive.</p>
@@ -72,7 +92,7 @@ pre{white-space:pre-wrap;font-size:12px;background:#0b0d11;padding:12px;border-r
     </label>
     <label><input type="checkbox" id="s-batch"> Add new games in groups</label>
     <label>Games per group <input type="number" id="s-size" inputmode="numeric" pattern="[0-9]*" min="1" max="50" style="width:6em"></label>
-    <label><input type="checkbox" id="s-dlc"> Install add-ons (DLC)</label>
+    <label>Add-ons (DLC) <select id="s-dlc-mode"><option value="external">External drive (recommended, 0 internal space)</option><option value="compat">Compatibility (tiny unlock licenses up to 16 MB)</option><option value="off">Off</option></select></label>
     <label>Language
       <select id="s-lang"><option value="auto">The console's</option><option value="en">English</option><option value="es">Español</option></select>
     </label>
@@ -110,7 +130,7 @@ pre{white-space:pre-wrap;font-size:12px;background:#0b0d11;padding:12px;border-r
 
 <!--LANG-->
 <script>
-var games = [], busy = {}, maxRestore = 10, msgTimer = 0;
+var games = [], busy = {}, maxRestore = 10, msgTimer = 0, activity = {};
 var labels = {ready: 'Ready', restart: 'Restart to play', running: 'Running', removed: 'Not in library', internal: 'On console storage', pending: 'Adding', duplicate: 'On another drive', offline: 'Drive not connected'};
 function label(state) { return labels[state] ? t(labels[state]) : state; }
 
@@ -161,9 +181,9 @@ function render() {
     html += '<div class="card"><img src="/icon/' + g.title_id + '" alt="">' +
       '<div class="info"><span class="badge b-' + g.state + '">' + esc(label(g.state)) + '</span>' +
       '<div class="name">' + esc(g.name) + '</div>' +
-      '<div class="meta">' + g.title_id + (g.version ? ' - v' + esc(g.version) : '') + (g.has_patch ? t(' (with update)') : '') +
-        (g.dlc ? ' - ' + esc(addons(g)) : '') + (g.size ? ' - ' + gb(g.size) : '') + '</div>' +
-      '<div class="meta">' + esc(g.source) + (g.mount ? ' - ' + esc(t('mounted {0}', g.mount)) : '') + '</div>' +
+      '<div class="meta">' + g.title_id + (g.version ? ' · v' + esc(g.version) : '') + (g.has_patch ? t(' (with update)') : '') +
+        (g.dlc ? ' · ' + esc(addons(g)) : '') + (g.size ? ' · ' + gb(g.size) : '') + '</div>' +
+      '<div class="meta">' + esc(g.source) + (g.mount ? ' · ' + esc(t('mounted {0}', g.mount)) : '') + '</div>' +
       (g.state === 'restart' ? '<div class="warn">' + t('Added. Restart the console once to play it.') + '</div>' : '') +
       (g.state === 'offline' ? '<div class="warn">' + esc(t('On {0}, which is not connected. Connect it to play.', g.storage)) + '</div>' : '') +
       (g.update_issue ? '<div class="warn">' + esc(g.update_issue) + '</div>' : '') + '</div>' +
@@ -183,13 +203,62 @@ function poll(ms, fn, when) {
     fn(function () { setTimeout(tick, ms); });
   }, ms);
 }
+function mb(n) { return n >= 1073741824 ? (n / 1073741824).toFixed(n >= 10737418240 ? 0 : 1) + ' GB' : Math.max(1, Math.round(n / 1048576)) + ' MB'; }
+/* Games that wait for the one restart a new task needs: said at the top of the list. */
+function renderRestart() {
+  var rb = $('restart-banner'), rn = [], i, g, names;
+  for (i = 0; i < games.length; i++) {
+    g = games[i];
+    if (g.state === 'restart') rn.push(g);
+  }
+  rb.style.display = rn.length ? 'block' : 'none';
+  if (!rn.length) return;
+  names = rn.slice(0, 4).map(function (x) { return x.name; }).join(', ') + (rn.length > 4 ? t(' +{0} more', rn.length - 4) : '');
+  $('rb-main').textContent = rn.length === 1 ?
+    t('1 game needs a one-time console restart to start: {0}', rn[0].name) :
+    t('{0} games need a one-time console restart to start: {1}', rn.length, names);
+  $('rb-sub').textContent = t('The PS4 loads new game tasks at boot.');
+}
+/* What the console is doing now: a scan, a group being registered, a restore or pending add-ons. */
+function renderAct() {
+  var a = activity || {}, bar = $('actbar'), who, main, pend, pr, i, s;
+  bar.style.display = a.busy ? 'block' : 'none';
+  if (!a.busy) return;
+  who = a.title || a.title_id || a.drive || '';
+  pend = a.dlc_pending || [];
+  if (a.phase === 'scanning') {
+    main = t('Scanning {0}', a.drive || '');
+    if (a.total > 0) main += ' · ' + t('{0} of {1}', a.done, a.total);
+  } else if (a.phase === 'registering') {
+    main = t('Adding {0} of {1}: {2}', a.done, a.total, who);
+    if (a.groups > 1) main += ' · ' + t('Group {0}/{1}', a.group, a.groups);
+  } else if (a.phase === 'waiting_db') {
+    main = t('Waiting for PS4 system database…');
+  } else if (a.phase === 'restoring') {
+    main = t('Restoring {0} of {1}: {2}', a.done, a.total, who);
+  } else if (pend.length) {
+    main = t('Installing add-ons…');
+  } else {
+    main = t('Working…');
+  }
+  $('ab-text').textContent = main;
+  s = '';
+  for (i = 0; i < pend.length; i++) s += (i ? ' · ' : '') + pend[i].name + ' (' + mb(pend[i].size) + ')';
+  $('ab-sub').textContent = s;
+  pr = $('act-prog');
+  pr.hidden = !(a.total > 0);
+  if (a.total > 0) { pr.max = a.total; pr.value = a.done; }
+}
 function load(done) {
   api('/api/games', 'GET', null, function (err, j) {
     if (err) { say(t('Could not read the list: {0}', err)); if (done) done(); return; }
     setLang(j.lang);
     games = j.games;
+    activity = j.activity || {};
     $('ver').innerHTML = esc(j.version);
     render();
+    renderAct();
+    renderRestart();
     if (done) done();
   });
 }
@@ -235,7 +304,7 @@ $('nav-settings').onclick = function () {
     $('s-batch').checked = c.batch;
     $('s-size').value = c.batch_size;
     $('s-size').disabled = !c.batch;
-    $('s-dlc').checked = c.dlc;
+    $('s-dlc-mode').value = c.dlc_mode || (c.dlc ? 'external' : 'off');
     $('s-lang').value = c.lang || 'auto';
     maxRestore = c.max_restore_batch || 10;
     $('rmax').innerHTML = maxRestore;
@@ -275,8 +344,9 @@ $('s-save').onclick = function () {
   if (!restoreSize()) return;
   var size = $('s-size').value;
   if (!/^[0-9]+$/.test(size) || +size < 1 || +size > 50) { say(t('Games per group must be a number from 1 to {0}', 50)); return; }
+  var dlcMode = $('s-dlc-mode').value;
   var body = 'batch=' + ($('s-batch').checked ? 1 : 0) + '&batch_size=' + encodeURIComponent($('s-size').value) +
-    '&dlc=' + ($('s-dlc').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value);
+    '&dlc_mode=' + dlcMode + '&dlc=' + (dlcMode !== 'off' ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value);
   api('/api/config', 'POST', body, function (err, j) {
     say(err ? (j && j.error ? j.error : t('Error: {0}', err)) : j.message);
     if (!err) { show('v-games'); load(); }
@@ -321,7 +391,7 @@ $('s-pick').onclick = function () {
     g = games[i];
     if (g.state === 'internal' || g.state === 'offline') continue;
     rows += '<tr><td class="c"><input type="checkbox" value="' + g.title_id + '"></td>' +
-      '<td>' + esc(g.name) + '<div class="meta">' + g.title_id + ' - ' + esc(g.source) + '</div></td>' +
+      '<td>' + esc(g.name) + '<div class="meta">' + g.title_id + ' · ' + esc(g.source) + '</div></td>' +
       '<td>' + esc(movedBack(g)) + '</td></tr>';
   }
   $('p-rows').innerHTML = rows || '<tr><td colspan="3">' + t('No PS4Mount games on the connected drives') + '</td></tr>';

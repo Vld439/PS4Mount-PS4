@@ -10,16 +10,17 @@ var LANGS = {
     'Send games': 'Enviar juegos',
     'Settings': 'Ajustes',
     'Log': 'Log',
+    'Notifications': 'Notificaciones',
     'Stop': 'Detener',
     'Games': 'Juegos',
     'Back': 'Volver',
     'Save': 'Guardar',
     'Cancel': 'Cancelar',
     'Close': 'Cerrar',
-    'No PS4 games found. Put the .pkg files (game, update and add-ons) in the PS4Mount folder of a USB drive, or send them with Send games.':
-      'No hay juegos de PS4. Pon los .pkg (juego, actualización y DLC) en la carpeta PS4Mount de un USB, o envíalos con Enviar juegos.',
     'No PS4 games found. Put the .pkg files (game, update and add-ons) in the PS4Mount folder of a USB drive.':
       'No hay juegos de PS4. Pon los .pkg (juego, actualización y DLC) en la carpeta PS4Mount de un USB.',
+    'No PS4 games found. Put the .pkg files (game, update and add-ons) on a USB drive or a NAS share, then Scan for games or send them from this page.':
+      'No hay juegos de PS4. Pon los .pkg (juego, actualización y DLC) en un USB o un recurso de red, y pulsa Buscar juegos o envíalos desde esta página.',
     'Adding games': 'Añadir juegos',
     'Folders to search for pkgs (one per line, relative to each drive)':
       'Carpetas donde buscar pkgs (una por línea, dentro de cada unidad)',
@@ -31,18 +32,22 @@ var LANGS = {
     'Games per group': 'Juegos por grupo',
     'Smaller groups are gentler on the system when many games are added at once.':
       'Los grupos pequeños cargan menos el sistema cuando se añaden muchos juegos a la vez.',
-    'Install add-ons (DLC)': 'Instalar DLC',
     'Organize pkgs into the ps4 folder': 'Organizar los pkgs en la carpeta ps4',
     'On (the default): the .pkg files are moved into ps4/<title ID>/ on the drive, so the console\'s own installer does not find them again. Off: they are used where they are, anywhere on the drive, and are not renamed or moved.':
       'Activado (por defecto): los .pkg se mueven a ps4/<ID del título>/ en la unidad, así el instalador de la consola no los encuentra otra vez. Desactivado: se usan donde están, en cualquier parte de la unidad, sin renombrarlos ni moverlos.',
+    'External drives and scan folders': 'Unidades externas y carpetas de búsqueda',
+    'Add-ons (DLC)': 'DLC',
+    'External drive (recommended, 0 internal space)': 'Unidad externa (recomendada, 0 espacio interno)',
+    'Compatibility (tiny unlock licenses up to 16 MB)': 'Compatibilidad (pequeñas licencias de desbloqueo de hasta 16 MB)',
+    'Off': 'Apagado',
+    'External drive mounts every add-on straight from USB with zero internal storage used.':
+      'La unidad externa monta cada DLC directamente desde el USB sin usar espacio interno.',
+    'System and GoldHEN': 'Sistema y GoldHEN',
     'Off (the default): the .pkg files are used where they are, anywhere on the drive, grouped by their title ID. They are not renamed or moved; the games PS4Mount organized before go back to where they were.':
       'Apagado (por defecto): los .pkg se usan donde están, en cualquier parte de la unidad, agrupados por su título. No se renombran ni se mueven; los juegos que PS4Mount organizó antes vuelven a su sitio.',
     "Read the console's log (game start and stop)": 'Leer el log de la consola (inicio y fin de juego)',
     "On by default. Turn it off to leave the log to another payload: AnyPad needs it to tell its virtual pad apart, and only one payload can read it. Games in play are then noticed a few seconds later, from their mount.":
       'Activado por defecto. Desactivalo para dejarle el log a otro payload: AnyPad lo necesita para distinguir su pad virtual, y solo un payload puede leerlo. Los juegos en marcha se notan unos segundos más tarde, por su montaje.',
-    "Also use pkgs in the console's /data/PS4Mount": 'Usar también los pkgs de /data/PS4Mount de la consola',
-    "Pkgs sent to the console's storage are added from there, with no install to wait for. They still take internal space.":
-      'Los pkgs enviados a la memoria de la consola se añaden desde ahí, sin esperar una instalación. Ocupan espacio interno.',
     'NAS (NFS or SMB)': 'NAS (NFS o SMB)',
     'Not available on this firmware: there is no FUSE patch for it.': 'No disponible en este firmware: no hay parche de FUSE para él.',
     "Experimental on this firmware: its FUSE patch is itemzflow's and was not tried with PS4Mount (it was on 13.52 and 6.72). If the console freezes when the share is mounted, restart it and turn the NAS off.":
@@ -58,8 +63,6 @@ var LANGS = {
     'User (SMB)': 'Usuario (SMB)',
     'Password (SMB)': 'Contraseña (SMB)',
     'Remove several': 'Quitar varios',
-    "Console storage: turn on \"Also use pkgs in the console's /data/PS4Mount\" in Settings":
-      'Memoria de la consola: activa "Usar también los pkgs de /data/PS4Mount de la consola" en Ajustes',
     'Remove games from the library': 'Quitar juegos de la biblioteca',
     "The chosen games leave the console's home screen. Their pkgs stay where they are: nothing is deleted, and Add to library brings each one back.":
       'Los juegos elegidos salen de la pantalla de inicio de la consola. Sus pkgs se quedan donde están: no se borra nada, y Añadir a la biblioteca devuelve cada uno.',
@@ -231,17 +234,15 @@ var LANGS = {
     'Nothing is installed: the game plays straight from its .pkg files.':
       'No está instalado: el juego se juega directamente desde sus .pkg.',
     'Where the games are': 'Dónde están los juegos',
-    'Nothing is installed: each game plays straight from its .pkg files, where they already are — a USB drive, a NAS share, or the console\'s /data/PS4Mount. PS4Mount only adds it to the home screen; the pkgs are never copied for it.':
-      'No se instala nada: cada juego se juega directamente desde sus .pkg, donde ya están — un USB, un recurso de red o el /data/PS4Mount de la consola. PS4Mount solo lo añade a la pantalla de inicio; los pkgs nunca se copian para ello.',
-    'The only things that take console storage are big add-ons (DLC over 256 MB, if enabled) and the panel app. Removing a game from the library, or restoring its files, never deletes a .pkg.':
-      'Lo único que ocupa la memoria de la consola son los DLC grandes (más de 256 MB, si están activados) y la app del panel. Quitar un juego de la biblioteca, o devolver sus archivos, nunca borra un .pkg.',
+    'Nothing is installed: each game plays straight from its .pkg files on a USB drive or a NAS share. PS4Mount only adds it to the home screen; the pkgs are never copied for it.':
+      'No se instala nada: cada juego se juega directamente desde sus .pkg en un USB o un recurso de red. PS4Mount solo lo añade a la pantalla de inicio; los pkgs nunca se copian para ello.',
+    'Add-ons come from the drive too: external mode uses them straight from USB, compatibility mode keeps only tiny unlock licenses (up to 16 MB each) on the console. Removing a game from the library, or restoring its files, never deletes a .pkg.':
+      'Los DLC también vienen de la unidad: el modo externo los usa directamente desde el USB y el modo compatibilidad solo guarda en la consola pequeñas licencias de desbloqueo (de hasta 16 MB cada una). Quitar un juego de la biblioteca, o devolver sus archivos, nunca borra un .pkg.',
     'Start with the console (GoldHEN AutoRun)': 'Arrancar con la consola (AutoRun de GoldHEN)',
-    'Adds PS4Mount\'s line to GoldHEN\'s payloads.ini, so it starts by itself after the jailbreak: no need to send it each time. Needs GoldHEN 2.4b18.10+ with PayLoader and the .bin in /data/payloads. The jailbreak itself is still needed after a full shutdown.':
-      'Añade la línea de PS4Mount al payloads.ini de GoldHEN, para que arranque solo tras el jailbreak: no hay que enviarlo cada vez. Necesita GoldHEN 2.4b18.10+ con PayLoader y el .bin en /data/payloads. El jailbreak sigue siendo necesario tras un apagado completo.',
-    'Not available: the payload file was not found in /data/payloads (it is needed to write its AutoRun line).':
-      'No disponible: no se encontró el archivo del payload en /data/payloads (hace falta para escribir su línea de AutoRun).',
-    'No PS4 games found. Put the .pkg files (game, update and add-ons) anywhere on a USB drive or in the console\'s /data/PS4Mount, then Scan for games — or send them from this page.':
-      'No hay juegos de PS4. Pon los .pkg (juego, actualización y DLC) en cualquier parte de un USB o en el /data/PS4Mount de la consola, y pulsa Buscar juegos — o envíalos desde esta página.',
+    'Payload found: {0}. Enable Settings > GoldHEN > PayLoader > Enable AutoRun. Hold L1 at boot to skip AutoRun.':
+      'Payload encontrado: {0}. Activa Ajustes > GoldHEN > PayLoader > Enable AutoRun. Mantén L1 al arrancar para saltar AutoRun.',
+    'Payload file not found. Copy ps4mount-ps4.bin to /data/payloads/ or /data/GoldHEN/payloads/ to enable AutoRun.':
+      'No se encontró el archivo del payload. Copia ps4mount-ps4.bin a /data/payloads/ o /data/GoldHEN/payloads/ para activar AutoRun.',
     'Adding': 'Añadiéndose',
     'On another drive': 'En otra unidad',
     'Drive not connected': 'Unidad no conectada',
@@ -277,11 +278,7 @@ var LANGS = {
     'other': 'otro',
     /* messages */
     'Error: {0}': 'Error: {0}',
-    "Also install big add-ons (over 256 MB)":
-      "Instalar también los DLC grandes (más de 256 MB)",
-    "A game only sees an add-on the system has installed: big ones are copied to the console's storage, in the background (a few minutes). Off, they are not used.":
-      "Un juego solo ve un DLC que el sistema ha instalado: los grandes se copian a la memoria de la consola, en segundo plano (unos minutos). Apagado, no se usan.",
-    "Ready to install":
+    'Ready to install':
       "Lista para instalar",
     "A homebrew app: it is sent to the console and installed with the system's installer, as by hand. The copy is deleted once it is installed.":
       "Una app homebrew: se envía a la consola y se instala con el instalador del sistema, como a mano. La copia se borra cuando queda instalada.",
@@ -336,7 +333,27 @@ var LANGS = {
     'Try again': 'Reintentar',
     'paste at least one link': 'pega al menos un enlace',
     'Remove this download? What it downloaded so far is deleted.': '¿Quitar esta descarga? Se borra lo que ya bajó.',
-    'Cancel the download of {0}? What it downloaded so far is deleted.': '¿Cancelar la descarga de {0}? Se borra lo que ya bajó.'
+    'Cancel the download of {0}? What it downloaded so far is deleted.': '¿Cancelar la descarga de {0}? Se borra lo que ya bajó.',
+    /* live activity, restart banner and notifications */
+    'Scanning {0}': 'Buscando juegos en {0}',
+    'Adding {0} of {1}: {2}': 'Añadiendo {0} de {1}: {2}',
+    'Group {0}/{1}': 'Grupo {0}/{1}',
+    'Waiting for PS4 system database…': 'Esperando la base de datos del sistema PS4…',
+    'Restoring {0} of {1}: {2}': 'Restaurando {0} de {1}: {2}',
+    'Installing add-ons…': 'Instalando DLC…',
+    'Working…': 'Trabajando…',
+    '1 game needs a one-time console restart to start: {0}':
+      '1 juego necesita un reinicio único de la consola para empezar: {0}',
+    '{0} games need a one-time console restart to start: {1}':
+      '{0} juegos necesitan un reinicio único de la consola para empezar: {1}',
+    ' +{0} more': ' +{0} más',
+    'The PS4 loads new game tasks at boot.': 'La PS4 carga las tareas de juego nuevas al arrancar.',
+    'Show games': 'Mostrar juegos',
+    'Show all': 'Mostrar todos',
+    'Warning': 'Aviso',
+    'Drive': 'Unidad',
+    'Info': 'Info',
+    'No notifications yet.': 'Aún no hay notificaciones.'
   }
 };
 var LANG = 'en';
