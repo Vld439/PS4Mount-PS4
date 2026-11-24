@@ -215,6 +215,8 @@ button.small{padding:4px 12px;font-size:13px}
     <label>Language
       <select id="s-lang"><option value="auto">The console's</option><option value="en">English</option><option value="es">Español</option></select>
     </label>
+    <label class="check"><input type="checkbox" id="s-lightmeta"> Light game data (skip each game's background sound and DDS images)</label>
+    <span class="hint">Saves from 3 to 10 MB of the console's drive per game. The home screen shows the same icon and background. Applies to games added or registered again from now on.</span>
     <label class="check"><input type="checkbox" id="s-internal"> Also use pkgs in the console's /data/PS4Mount</label>
     <span class="hint">Pkgs sent to the console's storage are added from there, with no install to wait for. They still take internal space.</span>
     <details class="nashelp"><summary>Where the games are</summary>
@@ -686,6 +688,7 @@ $('settingsbtn').onclick = function () {
     $('s-size').value = c.batch_size;
     $('s-dlc-mode').value = c.dlc_mode || (c.dlc ? 'internal' : 'off');
     $('s-dlcbig').checked = !!c.dlc_big;
+    $('s-lightmeta').checked = !!c.light_meta;
     dlcFields();
     $('s-organize').checked = c.organize;
     $('s-internal').checked = !!c.internal;
@@ -943,7 +946,7 @@ $('setform').onsubmit = function (e) {
   var dlcMode = $('s-dlc-mode').value;
   var body = 'batch=' + ($('s-batch').checked ? 1 : 0) + '&batch_size=' + encodeURIComponent($('s-size').value) +
     '&dlc_mode=' + dlcMode + '&dlc=' + (dlcMode !== 'off' ? 1 : 0) + '&dlc_big=' + ($('s-dlcbig').checked ? 1 : 0) +
-    '&internal=' + ($('s-internal').checked ? 1 : 0) + '&organize=' + ($('s-organize').checked ? 1 : 0) + '&klog=' + ($('s-klog').checked ? 1 : 0) + '&autorun=' + ($('s-autorun').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value) +
+    '&internal=' + ($('s-internal').checked ? 1 : 0) + '&organize=' + ($('s-organize').checked ? 1 : 0) + '&klog=' + ($('s-klog').checked ? 1 : 0) + '&autorun=' + ($('s-autorun').checked ? 1 : 0) + '&light_meta=' + ($('s-lightmeta').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value) +
     '&nas=' + ($('s-nas').checked ? 1 : 0) + '&nas_proto=' + $('s-nas-proto').value +
     '&nas_port=' + encodeURIComponent($('s-nas-port').value) +
     '&nas_rescan=' + $('s-nas-rescan').value +
