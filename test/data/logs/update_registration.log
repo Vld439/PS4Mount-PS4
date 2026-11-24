@@ -1,0 +1,6 @@
+2026-11-24 18:15:23.254 [main] firmware 14.00 (0x14008001), AppInstallTitleDir present, registration: AppInstallAll
+2026-11-24 18:15:24.143 [scan] skip /mnt/usb0/PS4Mount/prueba/._CUSA08992.pkg (cannot read the pkg header: not a PS4 pkg, or unreadable)
+2026-11-24 18:15:24.150 [scan] skip /mnt/usb0/PS4Mount/unreadable.pkg (cannot read the pkg header: not a PS4 pkg, or unreadable)
+2026-11-24 18:17:02.434 [notify] DRAGON BALL FighterZ añadido. Reinicia la consola una vez para jugarlo
+2026-11-24 18:17:12.462 [reg] CUSA08992: registrado como 01.00, la actualización es 01.42
+2026-11-24 18:17:13.462 [reg] CUSA12345: registered as 01.01, the update is 01.10

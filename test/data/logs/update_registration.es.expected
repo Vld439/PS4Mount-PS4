@@ -1,0 +1,23 @@
+Archivo: test/data/logs/update_registration.log  (6 líneas)
+Desde 2026-11-24 18:15:23 hasta 2026-11-24 18:17:13
+
+== Versión y consola
+  [main] firmware 14.00 (0x14008001), AppInstallTitleDir present, registration: AppInstallAll
+  0 arranque(s) de PS4Mount en este log
+
+== Líneas por módulo
+  [scan] 2  [reg] 2  [main] 1  [notify] 1
+
+== Qué hay que mirar
+  [WARN] La PS4 aún tiene registrada otra versión. PS4Mount programó volver a añadir el juego, lo que puede reinstalar sus DLC.
+        2 vez/veces; primera línea: [reg] CUSA08992: registrado como 01.00, la actualización es 01.42
+  [INFO] El escaneo omitió un archivo de metadatos de macOS junto a un paquete.
+        1 vez/veces; primera línea: [scan] skip /mnt/usb0/PS4Mount/prueba/._CUSA08992.pkg (cannot read the pkg header: not a PS4 pkg, or unreadable)
+
+== Otros avisos sin explicación conocida (primeros 1)
+  [scan] skip /mnt/usb0/PS4Mount/unreadable.pkg (cannot read the pkg header: not a PS4 pkg, or unreadable)
+
+== Archivos temporales que PS4Mount borró de la memoria interna
+  Ninguno.
+
+Resultado: 0 error(es) y 2 aviso(s) conocidos. Léelos arriba.
