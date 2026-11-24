@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "autorun.h"
 #include "build.h"
 #include "check.h"
 #include "crypto.h"
@@ -457,6 +458,132 @@ static void test_origin(void) {
     CHECK(system(cmd) == 0);
 }
 
+static int ini_ours(const char *s) { return autorun_is_ours(s, strlen(s)); }
+
+/* autorun_edit_ini(raw, on) must give want, byte for byte (raw NULL: empty). */
+static void ini_result(const char *raw, const char *path, int on, const char *want) {
+    buf_t b = {0};
+    CHECK(autorun_edit_ini((const uint8_t *)raw, raw ? strlen(raw) : 0, path, on, &b) == 0);
+    size_t wl = strlen(want);
+    int same = b.len == wl && !memcmp(b.data ? b.data : (const uint8_t *)"", want, wl);
+    CHECK(same);
+    if (!same)
+        printf("    wanted %zu bytes \"%s\", got %zu\n", wl, want, b.len);
+    buf_free(&b);
+}
+
+static size_t slurp(const char *path, char *out, size_t cap) {
+    FILE *f = fopen(path, "rb");
+    if (!f)
+        return 0;
+    size_t n = fread(out, 1, cap - 1, f);
+    fclose(f);
+    out[n] = 0;
+    return n;
+}
+
+static void test_autorun(void) {
+    printf("autorun ini\n");
+    const char *me = "/data/payloads/PS4Mount-PS4.bin";
+
+    /* the matcher: our file, any path and case; not comments nor look-alikes */
+    CHECK(ini_ours("/data/payloads/ps4mount-ps4.bin = 1"));
+    CHECK(ini_ours("/data/GoldHEN/payloads/ps4mount-ps4.elf=1"));
+    CHECK(ini_ours("ps4mount-ps4.bin"));
+    CHECK(ini_ours("/x/PS4MOUNT-PS4.BIN\r"));
+    CHECK(ini_ours("/x/ps4mount-ps4.bin\t= 1"));
+    CHECK(!ini_ours("# /data/payloads/ps4mount-ps4.bin = 1"));
+    CHECK(!ini_ours("   ; ps4mount-ps4.elf was here"));
+    CHECK(!ini_ours("/x/myps4mount-ps4.bin = 1"));
+    CHECK(!ini_ours("/x/ps4mount-ps4.binfoo = 1"));
+    CHECK(!ini_ours("/x/ps4mount-ps4.bin.bak = 1"));
+    CHECK(!ini_ours("/x/other.bin = 1"));
+    CHECK(!ini_ours("[AutoRun]"));
+
+    /* on with nothing there: a new section; off: nothing */
+    ini_result(NULL, me, 1, "[AutoRun]\n/data/payloads/PS4Mount-PS4.bin = 1\n");
+    ini_result("", me, 1, "[AutoRun]\n/data/payloads/PS4Mount-PS4.bin = 1\n");
+    ini_result(NULL, NULL, 0, "");
+    ini_result("", NULL, 0, "");
+    {
+        buf_t b = {0};
+        CHECK(autorun_edit_ini(NULL, 0, NULL, 1, &b) == -1);
+        CHECK(autorun_edit_ini(NULL, 0, "", 1, &b) == -1);
+        CHECK(b.len == 0);
+        buf_free(&b);
+    }
+
+    /* an existing [AutoRun]: ours goes right under the header, the rest stays */
+    ini_result("[AutoRun]\n/data/payloads/other.bin = 1\n", me, 1,
+               "[AutoRun]\n/data/payloads/PS4Mount-PS4.bin = 1\n/data/payloads/other.bin = 1\n");
+
+    /* [autorun] any case, spaces round it, CRLF endings */
+    ini_result("  [AuToRun]  \r\n/data/other/x.bin = 1\r\n", me, 1,
+               "  [AuToRun]  \r\n/data/payloads/PS4Mount-PS4.bin = 1\n/data/other/x.bin = 1\r\n");
+
+    /* an older entry, any path, case or extension: replaced, not duplicated */
+    ini_result("[AutoRun]\n/data/payloads/PS4Mount-PS4.bin = 1\n"
+               "/data/GoldHEN/payloads/ps4mount-ps4.elf = 1\n"
+               "/data/payloads/other.bin = 1\n",
+               me, 1,
+               "[AutoRun]\n/data/payloads/PS4Mount-PS4.bin = 1\n/data/payloads/other.bin = 1\n");
+
+    /* other sections and comments stay verbatim; ours goes even from another section */
+    ini_result("# mine\n[Other]\n/foo.bin = 1\n/old/ps4mount-ps4.bin = 1\n"
+               "[AutoRun]\n# /data/ps4mount-ps4.bin = 1\n   ; ps4mount-ps4.elf\n/x.bin = 1\n",
+               me, 1,
+               "# mine\n[Other]\n/foo.bin = 1\n[AutoRun]\n/data/payloads/PS4Mount-PS4.bin = 1\n"
+               "# /data/ps4mount-ps4.bin = 1\n   ; ps4mount-ps4.elf\n/x.bin = 1\n");
+
+    /* off: ours goes, everything else stays */
+    ini_result("[AutoRun]\n/data/payloads/ps4mount-ps4.bin = 1\n"
+               "/data/GoldHEN/payloads/PS4MOUNT-PS4.ELF = 1\n"
+               "/data/payloads/other.bin = 1\n[Other]\n# c\n",
+               NULL, 0,
+               "[AutoRun]\n/data/payloads/other.bin = 1\n[Other]\n# c\n");
+
+    /* a last line without a line end stays without one; a bare header gets one */
+    ini_result("[AutoRun]\n/x.bin = 1", NULL, 0, "[AutoRun]\n/x.bin = 1");
+    ini_result("[AutoRun]", me, 1, "[AutoRun]\n/data/payloads/PS4Mount-PS4.bin = 1\n");
+    ini_result("tail", me, 1, "tail\n\n[AutoRun]\n/data/payloads/PS4Mount-PS4.bin = 1\n");
+    ini_result("[X]\n", me, 1, "[X]\n\n[AutoRun]\n/data/payloads/PS4Mount-PS4.bin = 1\n");
+
+    /* applying it twice changes nothing the second time */
+    {
+        static const char *const raws[] = {"# c\n[Other]\n/o.bin = 1\n[AutoRun]\n/old/ps4mount-ps4.bin = 1\n/p.bin = 1\n",
+                                           "/x.bin = 1\n"};
+        for (size_t i = 0; i < sizeof(raws) / sizeof(raws[0]); i++) {
+            buf_t a = {0}, b = {0};
+            CHECK(autorun_edit_ini((const uint8_t *)raws[i], strlen(raws[i]), me, 1, &a) == 0);
+            CHECK(autorun_edit_ini(a.data, a.len, me, 1, &b) == 0);
+            CHECK(a.len == b.len && !memcmp(a.data, b.data, a.len));
+            buf_free(&a);
+            buf_free(&b);
+        }
+    }
+
+    /* the file is replaced whole: tmp + rename, nothing left behind */
+    {
+        char root[] = "/tmp/ps4mount-autorun-XXXXXX", ini[256], tmp[256], got[64];
+        if (!mkdtemp(root)) {
+            CHECK(0);
+            return;
+        }
+        snprintf(ini, sizeof(ini), "%s/payloads.ini", root);
+        snprintf(tmp, sizeof(tmp), "%s/payloads.ini.tmp", root);
+        CHECK(autorun_write_atomic(ini, "first\n", 6) == 0);
+        CHECK(access(tmp, F_OK) != 0);
+        CHECK(slurp(ini, got, sizeof(got)) == 6 && !memcmp(got, "first\n", 6));
+        CHECK(autorun_write_atomic(ini, "second, longer\n", 15) == 0);
+        CHECK(access(tmp, F_OK) != 0);
+        CHECK(slurp(ini, got, sizeof(got)) == 15 && !memcmp(got, "second, longer\n", 15));
+        CHECK(autorun_write_atomic("/nonexistent-ps4mount-dir/f.ini", "x", 1) == -1);
+        char cmd[300];
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", root);
+        CHECK(system(cmd) == 0);
+    }
+}
+
 static void test_lang(void) {
     printf("languages\n");
     CHECK(g_lang == LANG_EN && !strcmp(TR("Yes", "Sí"), "Yes"));
@@ -483,6 +610,7 @@ int main(void) {
     test_license();
     test_sfo();
     test_origin();
+    test_autorun();
     printf("%d checks, %d failed\n", g_checks, g_failed);
     return g_failed ? 1 : 0;
 }

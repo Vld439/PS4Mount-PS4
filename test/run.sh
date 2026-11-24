@@ -77,7 +77,7 @@ fi
 LAF="-Ithird_party/libarchive"
 
 echo "== unit"
-$CC $FLAGS -o "$B/unit" test/unit.c src/build.c src/mem.c src/lang.c src/check.c src/crypto.c src/pkg.c src/origin.c
+$CC $FLAGS -o "$B/unit" test/unit.c src/build.c src/mem.c src/lang.c src/check.c src/crypto.c src/pkg.c src/origin.c src/autorun.c
 "$B/unit"
 
 echo "== pkg catalog"
