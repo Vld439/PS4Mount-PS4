@@ -14,7 +14,7 @@ const GAMES = [
   { title_id: 'CUSA00069', name: 'Rayman Legends', version: '', has_patch: false, size: 0, state: 'offline', mount: '', source: '/mnt/usb1/ps4/CUSA00069', dlc: 0, update_issue: '', content_id: '', game_version: '', system_ver: '', storage: 'usb1' }];
 const CFG = { batch: true, batch_size: 5, dlc: true, dlc_mode: 'external', dlc_big: false, internal: true,
   autorun: false, autorun_ok: true, autorun_path: '/data/payloads/ps4mount-ps4.bin',
-  restore_batch: 5, max_restore_batch: 10, paths: ['/'], organize: false, light_meta: false };
+  restore_batch: 5, max_restore_batch: 10, paths: ['/'], organize: false };
 let REPLY_LANG; // the language the console reports (undefined: none, English)
 let GAMES_VERSION = 'PS4Mount test';
 let DRIVE = { configured: false }; // GET /api/drive (an object: the tests change it)
@@ -302,8 +302,6 @@ function tKeys(file) {
   d.getElementById('s-dlc-mode').value = 'internal';
   d.getElementById('s-dlc-mode').dispatchEvent(new w.Event('change'));
   ok(d.getElementById('s-dlcbig-row').hidden === false, 'console-storage mode shows the big-add-ons switch');
-  // light game data: an option, off by default, sent with the settings (config.txt: light_meta)
-  ok(d.getElementById('s-lightmeta') !== null && d.getElementById('s-lightmeta').checked === false, 'light game data is an option, off by default');
 
   // a new PS4Mount loaded while the page is open: the page reloads itself
   {
@@ -601,15 +599,6 @@ function tKeys(file) {
     cfgReq = reqs.find(r => r.url === '/api/config' && r.method === 'POST');
     ok(cfgReq && cfgReq.body.includes('dlc_mode=external&dlc=1&dlc_big=0&internal=1'),
       'external still sends dlc_big and internal: ' + (cfgReq && cfgReq.body));
-    // light game data (config.txt light_meta): loaded from the settings, saved with them
-    CFG.light_meta = true;
-    d.getElementById('settingsbtn').click(); await tick(); await tick();
-    ok(d.getElementById('s-lightmeta').checked === true, 'light_meta loads from the settings');
-    reqs.length = 0;
-    d.getElementById('setform').dispatchEvent(new w.Event('submit', { cancelable: true })); await tick(); await tick();
-    cfgReq = reqs.find(r => r.url === '/api/config' && r.method === 'POST');
-    ok(cfgReq && /(^|&)light_meta=1(&|$)/.test(cfgReq.body), 'light game data is saved as light_meta=1');
-    CFG.light_meta = false;
     d.getElementById('s-dlc-mode').value = 'off';
     reqs.length = 0;
     d.getElementById('setform').dispatchEvent(new w.Event('submit', { cancelable: true })); await tick(); await tick();

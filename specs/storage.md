@@ -75,26 +75,14 @@ Check: test for the page (`test/web/panel.test.js` › "settings list what PS4Mo
 measuring in `app_storage_json` (it needs the console; `test/sdkcheck.sh` compiles it).
 Source: user (2026-11-24: idea 3, the storage panel). The old page (`/legacy`) does not show it.
 
-### STORE-11: with "light game data" on, a game's heavy appmeta files are not written
-The background sound (`snd0.at9`), the DDS copies of the icon and background, and `pic1.png` are skipped;
-`icon0.png`, `pic0.png`, `pronunciation.xml`, `shareparam.json` and the change notes are written as always.
-Off by default. It applies when a game is registered; files already written stay until the game is registered
-again or removed. The setting is `light_meta` in `config.txt`, added last in the config so no other default shifts.
-Check: test for the setting in the panel (`test/web/panel.test.js` › "light_meta"); read for `write_meta`.
-Source: user (2026-11-24: idea 2). The sizes (3 to 10 MB per game) are the earlier estimate of this audit: unmeasured.
-
 ## Non-goals
 
 - Freeing the space of installed games, or choosing where a game is installed.
-- Deleting the heavy appmeta files of games already registered (a purge was left out: those files are visible to
-  the system; it needs a console to try).
 - Deleting anything in `/user/app`, `/user/patch` or `/user/addcont`.
 - Keeping a refused copy for a retry (see open questions).
 
 ## Open questions
 
-- Does the home screen really do without the sound and DDS files for a game PS4Mount serves? The same absence
-  is normal for pkgs that lack those entries, but it was not tried on a console. (2026-11-24)
 - The 10 minutes, 3 days and 2 hours are choices made in this PR (the first is older). Are they right
   for the people who use it? (2026-11-24)
 - STORE-7 deletes a copy after one refusal. If BGFT can refuse for a passing reason (a busy service),

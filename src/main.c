@@ -136,9 +136,7 @@ typedef struct {
     int klog;          /* the console's kernel log is read (game start/stop); off leaves it to
                         * another payload (AnyPad needs it to identify its virtual pad) */
     int autorun;       /* the .bin is listed in GoldHEN's payloads.ini: it starts with the console */
-    int light_meta;    /* a game's heavy appmeta files (sound, DDS textures, pic1) are not written: they take
-                        * the console's own drive, and the home screen does not need them */
-} config_t; /* g_cfg is initialized by position: a new field goes last, with its default there */
+} config_t;
 
 #define MAX_RESTORE_BATCH 10
 
@@ -146,7 +144,7 @@ typedef struct {
  * moved until the user puts it there (the drive root, "", is still a choice). */
 #define DEFAULT_SCAN_PATH "PS4Mount"
 
-static config_t g_cfg = {1, 5, 1, DLC_EXTERNAL, {DEFAULT_SCAN_PATH}, 1, 5, 1, 1, -1, 0, NAS_NFS, 0, "", "", "", "", "", 1, 1, 1, 0, 0};
+static config_t g_cfg = {1, 5, 1, DLC_EXTERNAL, {DEFAULT_SCAN_PATH}, 1, 5, 1, 1, -1, 0, NAS_NFS, 0, "", "", "", "", "", 1, 1, 1, 0};
 #define NAS_RESCAN_MAX 1440 /* minutes: once a day */
 static int g_setup; /* a first start: no game is added until the settings are saved (first_start) */
 /* A first start with nobody at the panel for this long goes on with the default settings:
@@ -577,10 +575,6 @@ static const meta_entry_t k_user_meta[] = {
     {0x1280, "icon0.dds"}, {0x12a0, "pic0.dds"},  {0x1004, "pronunciation.xml"}, {0x100b, "shareparam.json"},
     {0, NULL},
 };
-
-/* The appmeta entries that are big and that the home screen does without: the background
- * sound, the DDS copies of the icon and the background, and the second background. */
-static int meta_is_heavy(uint32_t id) { return id == 0x1240 || id == 0x1280 || id == 0x12a0 || id == 0x1006; }
 
 static int write_entry(pkg_t *pkg, uint32_t id, const char *path) {
     size_t len;
@@ -1121,8 +1115,6 @@ static const title_info_t *title_info(const char *root, const char *tid) {
 static void write_meta(pkg_t *pkg, const char *meta_dir, int *rc) {
     char q[PATH_MAX];
     for (const meta_entry_t *m = k_user_meta; m->name; m++) {
-        if (g_cfg.light_meta && meta_is_heavy(m->id))
-            continue;
         snprintf(q, sizeof(q), "%s/%s", meta_dir, m->name);
         *rc |= write_entry(pkg, m->id, q) < 0;
     }
@@ -5099,9 +5091,9 @@ static int first_start(void) {
 static void config_save(void) {
     g_setup = 0; /* the settings were chosen: games are added from now on */
     buf_t b = {0};
-    buf_printf(&b, "ver=3\nbatch=%d\nbatch_size=%d\ndlc=%d\ndlc_mode=%s\ndlc_big=%d\nrestore_batch=%d\ninternal=%d\norganize=%d\nlight_meta=%d\nlang=%s\n",
+    buf_printf(&b, "ver=3\nbatch=%d\nbatch_size=%d\ndlc=%d\ndlc_mode=%s\ndlc_big=%d\nrestore_batch=%d\ninternal=%d\norganize=%d\nlang=%s\n",
                g_cfg.batch, g_cfg.batch_size, g_cfg.dlc, dlc_mode_name(g_cfg.dlc_mode), g_cfg.dlc_big, g_cfg.restore_batch,
-               g_cfg.internal, g_cfg.organize, g_cfg.light_meta, g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto");
+               g_cfg.internal, g_cfg.organize, g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto");
     buf_printf(&b, "nas=%d\nnas_proto=%d\nnas_port=%d\nnas_server=%s\nnas_share=%s\nnas_sub=%s\nnas_user=%s\nnas_pass=%s\n",
                g_cfg.nas, g_cfg.nas_proto, g_cfg.nas_port, g_cfg.nas_server, g_cfg.nas_share,
                g_cfg.nas_sub, g_cfg.nas_user, g_cfg.nas_pass);
@@ -5139,8 +5131,6 @@ static void config_load(void) {
         }
         else if (!strncmp(line, "dlc_big=", 8))
             c.dlc_big = atoi(line + 8) != 0;
-        else if (!strncmp(line, "light_meta=", 11))
-            c.light_meta = atoi(line + 11) != 0;
         else if (!strncmp(line, "restore_batch=", 14))
             c.restore_batch = atoi(line + 14);
         else if (!strncmp(line, "internal=", 9))
@@ -5210,12 +5200,11 @@ static int autorun_apply(int on);
 void app_config_json(buf_t *out) {
     const char *pf = payload_file();
     buf_printf(out,
-               "{\"batch\":%s,\"batch_size\":%d,\"dlc\":%s,\"dlc_mode\":\"%s\",\"dlc_big\":%s,\"light_meta\":%s,\"internal\":%s,\"organize\":%s,"
+               "{\"batch\":%s,\"batch_size\":%d,\"dlc\":%s,\"dlc_mode\":\"%s\",\"dlc_big\":%s,\"internal\":%s,\"organize\":%s,"
                "\"restore_batch\":%d,\"max_restore_batch\":%d,"
                "\"lang\":\"%s\",\"ui_lang\":\"%s\",\"klog\":%s,\"autorun\":%s,\"autorun_ok\":%s,\"autorun_path\":",
                g_cfg.batch ? "true" : "false", g_cfg.batch_size, g_cfg.dlc ? "true" : "false",
-               dlc_mode_name(g_cfg.dlc_mode), g_cfg.dlc_big ? "true" : "false", g_cfg.light_meta ? "true" : "false",
-               g_cfg.internal ? "true" : "false",
+               dlc_mode_name(g_cfg.dlc_mode), g_cfg.dlc_big ? "true" : "false", g_cfg.internal ? "true" : "false",
                g_cfg.organize ? "true" : "false", g_cfg.restore_batch, MAX_RESTORE_BATCH,
                g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto", lang_tag(g_lang), g_cfg.klog ? "true" : "false",
                g_cfg.autorun ? "true" : "false", pf ? "true" : "false");
@@ -5348,8 +5337,6 @@ int app_config_set(const char *body, char *msg, size_t cap) {
             }
             else if (k == 7 && !strncmp(p, "dlc_big", 7))
                 c.dlc_big = atoi(value) != 0;
-            else if (k == 10 && !strncmp(p, "light_meta", 10))
-                c.light_meta = atoi(value) != 0;
             else if (k == 8 && !strncmp(p, "internal", 8))
                 c.internal = atoi(value) != 0;
             else if (k == 8 && !strncmp(p, "organize", 8))
