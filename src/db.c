@@ -113,14 +113,16 @@ int db_is_registered(const char *title_id) {
 }
 
 const char *db_app_ver(const char *title_id) {
+    static _Thread_local char ver_buf[8];
+    int found = 0;
     pthread_mutex_lock(&g_mu);
     refresh();
-    const char *ver = NULL;
     for (int i = 0; i < g_ntitles; i++)
         if (!strcmp(g_titles[i].tid, title_id)) {
-            ver = g_titles[i].ver;
+            snprintf(ver_buf, sizeof(ver_buf), "%s", g_titles[i].ver);
+            found = 1;
             break;
         }
     pthread_mutex_unlock(&g_mu);
-    return ver;
+    return found ? ver_buf : NULL;
 }

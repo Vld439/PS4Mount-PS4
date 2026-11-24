@@ -70,9 +70,23 @@ int pkg_open(pkg_t *pkg, const char *path) {
         goto fail;
     memcpy(pkg->content_id, pkg->header + 0x40, 36);
     /* content_id lands in file names and paths (licenses, playgo dirs): only the
-     * characters a real one uses, so a damaged pkg cannot climb out of them */
+     * characters a real one uses, so a damaged pkg cannot climb out of them.
+     * Homebrew pkgs may have shorter NUL-padded IDs (at least 21 chars so title_id
+     * at +7..+15 and the label at +20 are present). */
+    int nul = 0;
     for (int i = 0; i < 36; i++) {
         char c = pkg->content_id[i];
+        if (nul) {
+            if (c != 0)
+                goto fail;
+            continue;
+        }
+        if (c == 0) {
+            if (i < 21)
+                goto fail;
+            nul = 1;
+            continue;
+        }
         if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_'))
             goto fail;
     }

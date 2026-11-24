@@ -498,6 +498,8 @@ static int fs_getattr(const char *path, struct stat *st) {
     if (!strcmp(path, CTL_PATH)) {
         memset(st, 0, sizeof(*st));
         st->st_mode = S_IFREG | 0600; /* fs_open checks the caller too */
+        st->st_uid = getuid();
+        st->st_gid = getgid();
         st->st_nlink = 1;
         st->st_size = CTL_SIZE;
         return 0;
@@ -543,8 +545,8 @@ static int fs_open(const char *path, struct fuse_file_info *fi) {
     if (!strcmp(path, CTL_PATH)) {
         /* it steers the mount (off, or connect to another server): only root and the
          * user the mount runs as may open it, whoever else can reach the directory */
-        uid_t u = fuse_get_context()->uid;
-        if (u && u != (uid_t)getuid())
+        struct fuse_context *ctx = fuse_get_context();
+        if (ctx && ctx->uid && ctx->uid != (uid_t)getuid())
             return -EACCES;
         fi->direct_io = 1; /* every read asks again */
         fi->fh = (uint64_t)(uintptr_t)&g_ctl_fh;

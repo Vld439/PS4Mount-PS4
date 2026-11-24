@@ -154,7 +154,8 @@ static int may_write(int fd, const char *req) {
     if (getpeername(fd, (struct sockaddr *)&ss, &sl) || ss.ss_family != AF_INET)
         return 1; /* a local socket (the host tests) */
     uint32_t a = ntohl(((struct sockaddr_in *)&ss)->sin_addr.s_addr);
-    return (a >> 24) == 10 || (a >> 24) == 127 || (a >> 20) == 0xac1 || (a >> 16) == 0xc0a8 || (a >> 16) == 0xa9fe;
+    return (a >> 24) == 10 || (a >> 24) == 127 || (a >> 20) == 0xac1 || (a >> 16) == 0xc0a8 ||
+           (a >> 16) == 0xa9fe || (a >> 22) == 0x191;
 }
 
 /* The body after what was read with the headers, up to len bytes. NULL on a short
@@ -360,10 +361,16 @@ void web_handle(int fd) {
     /* the body of a POST may arrive after the headers; a trickle is cut at the deadline:
      * this runs on the one thread that also mounts, scans and answers the panel */
     char *body = strstr(req, "\r\n\r\n");
-    const char *cl = strstr(req, "Content-Length:");
-    if (!cl)
-        cl = strstr(req, "content-length:");
-    unsigned long long length = cl ? strtoull(cl + 15, NULL, 10) : 0;
+    unsigned long long length = 0;
+    for (const char *h = req; (h = strchr(h, '\n'));) {
+        h++;
+        if (*h == '\r' || *h == '\n')
+            break;
+        if (!strncasecmp(h, "Content-Length:", 15)) {
+            length = strtoull(h + 15, NULL, 10);
+            break;
+        }
+    }
     long want = length > sizeof(req) ? (long)sizeof(req) : (long)length;
     while (want > 0 && now_ms() < deadline && (size_t)n < sizeof(req) - 1 &&
            (!body || (long)(n - (body + 4 - req)) < want)) {
