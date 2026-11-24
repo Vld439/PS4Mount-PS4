@@ -141,15 +141,18 @@ function tKeys(file) {
     const writes = reqs.filter(r => r.method === 'POST').length;
     c.click();
     ok(c.querySelector('.badge').textContent === 'Restart to play' && c.getAttribute('aria-pressed') === 'true' &&
-      pane.textContent.includes('Moving Out 2') && pane.textContent.includes('Restart the console once'), 'selecting a cover shows the restart warning in the inspector');
-    ok(pane.querySelector('[data-a="unmount"]') !== null, 'the selected game can be removed from the library');
+      pane.textContent.includes('Moving Out 2') && !pane.textContent.includes('Restart the console once'),
+      'a cover selects the game without repeating the restart warning');
+    ok(!pane.querySelector('[data-a]') && !pane.textContent.includes('/mnt/'), 'package maintenance and paths stay in details');
     c.focus(); await w.load();
     ok(d.activeElement === c && c.getAttribute('aria-pressed') === 'true' && reqs.filter(r => r.method === 'POST').length === writes,
       'refresh keeps the selected cover and focus without writing to the console'); }
   { const c = d.querySelector('[data-g="CUSA00069"]'), pane = d.getElementById('inspector');
     c.click();
-    ok(c.querySelector('.badge').textContent === 'Drive not connected' && pane.textContent.includes('On usb1, which is not connected'), 'a game of a drive that is away says so');
-    ok(!pane.textContent.includes(' · v ·') && !pane.querySelector('button[data-a]'), 'no empty version, nothing to do with it'); }
+    pane.querySelector('[data-details]').click();
+    ok(c.querySelector('.badge').textContent === 'Drive not connected' && d.getElementById('g-facts').textContent.includes('On usb1, which is not connected'), 'a game of a drive that is away says so');
+    ok(!d.getElementById('g-actions').querySelector('[data-a]'), 'an offline game has no maintenance actions');
+    d.getElementById('gamedlg').close(); }
   d.querySelector('.summary span[data-f="restart"]').click();
   ok(d.querySelectorAll('.card').length === 1, 'the state chips filter the cards');
   d.querySelector('.summary span[data-f=""]').click();
@@ -507,8 +510,7 @@ function tKeys(file) {
   {
     const rb = d.getElementById('restart-banner');
     ok(rb && !rb.hidden, 'restart banner is up while a game waits for the restart');
-    ok(rb.textContent.includes('1 game needs a one-time console restart to start: Moving Out 2') &&
-      rb.textContent.includes('The PS4 loads new game tasks at boot.'), 'banner says which game and why');
+    ok(rb.textContent.includes('1 game needs a one-time console restart to start: Moving Out 2'), 'banner says which game needs a restart');
     ok(d.querySelectorAll('.card').length === 6, 'the grid still shows everything');
     d.getElementById('q').value = 'a search with no results';
     d.getElementById('q').dispatchEvent(new w.Event('input'));
@@ -636,10 +638,14 @@ function tKeys(file) {
   ok(d.getElementById('q').placeholder === 'Buscar juego o CUSA', 'placeholders in Spanish');
   { const pane = d.getElementById('inspector');
     const c = d.querySelector('[data-g="CUSA34284"]'); c.click();
-    ok(c.querySelector('.badge').textContent === 'Reinicia para jugar' && pane.textContent.includes('Reinicia la consola una vez'), 'states and notes in Spanish');
-    ok(pane.querySelector('[data-a="unmount"]').textContent === 'Quitar de la biblioteca', 'buttons in Spanish');
+    ok(c.querySelector('.badge').textContent === 'Reinicia para jugar' && pane.querySelector('[data-details]').textContent === 'Detalles', 'states and details in Spanish');
+    pane.querySelector('[data-details]').click();
+    ok(d.querySelector('#g-actions [data-a="unmount"]').textContent === 'Quitar de la biblioteca', 'buttons in Spanish');
+    d.getElementById('gamedlg').close();
     d.querySelector('[data-g="CUSA00069"]').click();
-    ok(pane.textContent.includes('En usb1, que no está conectado'), 'a value inside a translated text'); }
+    pane.querySelector('[data-details]').click();
+    ok(d.getElementById('g-facts').textContent.includes('En usb1, que no está conectado'), 'a value inside a translated text');
+    d.getElementById('gamedlg').close(); }
   ok(d.getElementById('summary').textContent.includes('6 juego(s)'), 'the summary in Spanish');
   w.showGame('CUSA34284');
   ok(d.getElementById('g-facts').textContent.includes('Necesita firmware') && d.getElementById('g-facts').textContent.includes('v01.04 (juego v01.00 con su actualización)'), 'the game page in Spanish');
@@ -717,6 +723,9 @@ function tKeys(file) {
   d.querySelector('#inspector [data-details]').click();
   key('Escape', 27);
   ok(!d.getElementById('gamedlg').hasAttribute('open') && !reqs.length, 'PS4 back closes details before exiting');
+  d.querySelector('#library-filters summary').click();
+  key('Escape', 27);
+  ok(!d.getElementById('library-filters').open && !reqs.length, 'PS4 back closes search before exiting');
   key('Escape', 27);
   ok(reqs[0] && reqs[0].url === '/api/app/close' && reqs[0].method === 'POST', 'PS4 back from the shelf closes the app');
 
@@ -731,7 +740,7 @@ function tKeys(file) {
   p = page('legacy.html', {}); ({ w, d, reqs } = p);
   await tick();
   ok(d.querySelectorAll('.card').length === 6 && d.getElementById('ver').textContent === 'PS4Mount test', 'legacy lists the games');
-  ok(d.body.textContent.includes('Restart to play') && d.body.textContent.includes('Restart the console once'), 'legacy shows the restart state');
+  ok(d.body.textContent.includes('Restart to play') && d.getElementById('restart-banner').textContent.includes('one-time console restart'), 'legacy shows the restart state');
   ok(!/=>|\blet\b|\bconst\b|`|fetch\(|showModal|<dialog/.test(fs.readFileSync(W + 'legacy.html', 'utf8').split('<script>')[1]), 'legacy script is ES5 without fetch or dialog');
   d.getElementById('nav-settings').click(); await tick();
   ok(d.getElementById('v-settings').className.includes('on') && d.getElementById('s-rsize').value === '5', 'legacy settings page with group 5');
@@ -758,7 +767,11 @@ function tKeys(file) {
   d.getElementById('nav-log').click(); await tick();
   ok(d.getElementById('v-log').className.includes('on') && d.getElementById('log').textContent === 'a\nb', 'legacy log page');
   d.getElementById('l-back').click();
+  d.querySelector('[data-g="CUSA00190"]').click();
   d.querySelector('[data-g="CUSA00791"]').click();
+  ok(d.getElementById('legacy-game-details').hidden, 'legacy shelf hides package details until requested');
+  d.querySelector('#inspector [data-details]').click();
+  ok(!d.getElementById('legacy-game-details').hidden, 'legacy details reveal package actions');
   reqs.length = 0; d.querySelector('#inspector [data-a="unmount"][data-t="CUSA00791"]').click(); await tick();
   ok(reqs[0].url === '/api/unmount?title_id=CUSA00791' && reqs[0].method === 'POST', 'legacy card action posts');
   ok(d.getElementById('restart-banner').style.display === 'block' && d.getElementById('restart-banner').textContent.includes('Moving Out 2'),

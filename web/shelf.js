@@ -2,7 +2,11 @@
 function bindShelfNavigation(grid, tv, select, back) {
   var lastKey = 0;
   var directions = {37: 'Left', 38: 'Up', 39: 'Right', 40: 'Down'};
-  function activeScope() { return document.querySelector('dialog[open]') || (tv ? document : grid); }
+  function activeScope() {
+    if (!tv) return grid;
+    return document.querySelector('dialog[open]') || document.querySelector('.toolbar-more[open]') ||
+      (document.querySelector('#legacy-tools:not([hidden])') ? document.querySelector('header') : document);
+  }
   function focus(el) {
     if (!el) return;
     el.focus();

@@ -14,6 +14,8 @@ var LANGS = {
     'Stop': 'Detener',
     'Games': 'Juegos',
     'Library': 'Biblioteca',
+    'Manage': 'Gestionar',
+    'Search and filter': 'Buscar y filtrar',
     'More': 'Más',
     'Details': 'Detalles',
     'No matching games': 'Ningún juego coincide',

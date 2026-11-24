@@ -15,3 +15,12 @@ The app supports directional focus and confirm on available controls. Back close
 dialog or page before it exits the panel, including when the app uses the ES5 fallback.
 Check: test for the keyboard route and fallback (`test/web/panel.test.js`), read for gamepad input.
 Source: user request for TV and controller operation.
+
+### PANEL-3: game artwork comes first
+
+The shelf shows covers, titles, and states that need attention. The selected game shows its art
+and a single way into details. Package paths and maintenance actions are available in details.
+The modern panel keeps library filters and management in separate menus. Back closes an open menu
+before leaving the PS4 panel.
+Check: test for reaching details, filtering and Back (`test/web/panel.test.js`), read for hierarchy.
+Source: user feedback on the blue shelf.
