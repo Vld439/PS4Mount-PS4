@@ -561,6 +561,18 @@ function tKeys(file) {
     d.getElementById('notifbtn').click();
     d.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape' }));
     ok(d.getElementById('notifpop').hidden, 'Escape closes it too');
+    // GET /api/games "platform": chips to filter by it, shown only when there is more than one kind
+    ok(d.getElementById('platforms').hidden, 'one kind of title: no platform chips');
+    GAMES.push({ title_id: 'SLUS20071', platform: 'classic', name: 'Classic Test', version: '01.00', has_patch: false, size: 6e8, state: 'ready', mount: 'rw', source: '/mnt/usb0/ps4/SLUS20071', dlc: 0, update_issue: '' });
+    w.load(); await tick(); await tick();
+    { const chips = d.querySelectorAll('#platforms span'), all = d.querySelectorAll('.card').length;
+      ok(!d.getElementById('platforms').hidden && chips.length === 3, 'two kinds of title: All platforms, PS4 games and Classics chips');
+      const classic = Array.from(chips).find(c => c.getAttribute('data-p') === 'classic');
+      classic.click();
+      ok(d.querySelectorAll('.card').length === 1 && d.querySelector('.card .name').textContent === 'Classic Test' && all > 1, 'the Classics chip shows only the classic game');
+      d.querySelector('#platforms span[data-p=""]').click();
+      ok(d.querySelectorAll('.card').length === all, 'All platforms shows them all again'); }
+    GAMES.pop(); w.load(); await tick(); await tick();
     NOTICES = [];
     w.load(); await tick(); await tick();
     ok(d.getElementById('notif-count').hidden, 'no badge when there are none');

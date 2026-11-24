@@ -237,6 +237,10 @@ var LANGS = {
     'Not in library': 'Fuera de la biblioteca',
     'On console storage': 'En el almacenamiento de la consola',
     'free': 'libre',
+    'All platforms': 'Todas las plataformas',
+    'PS4 games': 'Juegos de PS4',
+    'Classics': 'Clásicos',
+    'Homebrew': 'Homebrew',
     "Light game data (skip each game's background sound and DDS images)": 'Datos ligeros de los juegos (sin el sonido de fondo ni las imágenes DDS)',
     "Saves from 3 to 10 MB of the console's drive per game. The home screen shows the same icon and background. Applies to games added or registered again from now on.":
       'Ahorra de 3 a 10 MB del disco de la consola por juego. La pantalla de inicio muestra el mismo icono y fondo. Vale para los juegos que se añadan o se registren de nuevo desde ahora.',

@@ -168,6 +168,7 @@ button.small{padding:4px 12px;font-size:13px}
   </div>
   <div class="warn" id="setupnote" hidden>First start: check the settings (which folders, games per group, add-ons) and press Save in Settings. While this page is open no game is added; closed for 2 minutes without saving, the default settings are used.</div>
   <div class="summary" id="summary"></div>
+  <div class="summary" id="platforms" hidden></div>
   <div class="storage" id="storage" hidden></div>
   <div class="grid" id="grid"></div>
   <div class="empty" id="empty" hidden>
@@ -383,7 +384,8 @@ var labels = {ready: 'Ready', restart: 'Restart to play', running: 'Running', re
 var drives = [];
 var notices = [], activity = {}, actBusy = false;
 function label(state) { return labels[state] ? t(labels[state]) : state; }
-var filter = '';
+var filter = '', pfilter = '';
+function plabel(p) { return p === 'classic' ? t('Classics') : p === 'homebrew' ? t('Homebrew') : t('PS4 games'); }
 
 function $(id) { return document.getElementById(id); }
 
@@ -433,11 +435,14 @@ function actions(g, page) {
 }
 function byName(a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0; }
 function render() {
-  var q = $('q').value.toLowerCase(), html = '', shown = 0, counts = {};
+  var q = $('q').value.toLowerCase(), html = '', shown = 0, counts = {}, pcounts = {};
   games.slice().sort(byName).forEach(function (g) {
     counts[g.state] = (counts[g.state] || 0) + 1;
+    var pl = g.platform || 'ps4';
+    pcounts[pl] = (pcounts[pl] || 0) + 1;
     if (q && (g.name + ' ' + g.title_id).toLowerCase().indexOf(q) < 0) return;
     if (filter && g.state !== filter) return;
+    if (pfilter && (g.platform || 'ps4') !== pfilter) return;
     shown++;
     var act = actions(g);
     html += '<div class="card"><div class="art" data-g="' + g.title_id + '" role="button" tabindex="0" aria-label="' + esc(g.name) + '" style="background-image:url(/icon/' + g.title_id + ')">' +
@@ -464,6 +469,16 @@ function render() {
   var s = '<span data-f="" tabindex="0" role="button"' + (filter ? '' : ' class="on"') + '>' + t('{0} game(s)', games.length) + '</span>';
   for (var k in counts) s += '<span data-f="' + k + '" tabindex="0" role="button"' + (filter === k ? ' class="on"' : '') + '>' + esc(label(k)) + ': ' + counts[k] + '</span>';
   $('summary').innerHTML = s;
+  /* the platform chips show only when the library has more than one kind of title */
+  var ps = '', pn = 0;
+  for (var pk in pcounts) pn++;
+  if (pn > 1) {
+    ps = '<span data-p="" tabindex="0" role="button"' + (pfilter ? '' : ' class="on"') + '>' + t('All platforms') + '</span>';
+    for (var pp in pcounts) ps += '<span data-p="' + pp + '" tabindex="0" role="button"' + (pfilter === pp ? ' class="on"' : '') + '>' + esc(plabel(pp)) + ': ' + pcounts[pp] + '</span>';
+  }
+  $('platforms').innerHTML = ps;
+  $('platforms').hidden = !ps;
+  if (pfilter && !pcounts[pfilter]) { pfilter = ''; render(); return; }
   if (filter && !counts[filter]) { filter = ''; render(); }
   renderRestart();
 }
@@ -489,6 +504,15 @@ function showGame(tid) {
 $('summary').addEventListener('click', function (e) {
   var c = e.target.closest('span[data-f]');
   if (c) { filter = c.getAttribute('data-f'); render(); }
+});
+$('platforms').addEventListener('click', function (e) {
+  var c = e.target.closest('span[data-p]');
+  if (c) { pfilter = c.getAttribute('data-p'); render(); }
+});
+$('platforms').addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+  var c = e.target.closest('span[data-p]');
+  if (c) { e.preventDefault(); pfilter = c.getAttribute('data-p'); render(); }
 });
 $('summary').addEventListener('keydown', function (e) {
   if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;

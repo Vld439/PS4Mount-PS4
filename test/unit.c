@@ -373,6 +373,10 @@ static void test_check(void) {
     CHECK(!homebrew_small("SLUS20071", 600ull << 20) && !homebrew_small("SCUS94163", 400ull << 20) &&
           !homebrew_small("ULUS10041", 300ull << 20) && !homebrew_small("NPUJ00001", 200ull << 20));
     CHECK(homebrew_small("PCSX20007", 50ull << 20)); /* emulator app: installable homebrew */
+    /* GET /api/games "platform" (idea 10: the panel's filter): public, the panel reads it */
+    CHECK(!strcmp(game_platform("CUSA00001"), "ps4") && !strcmp(game_platform("SLUS20071"), "classic") &&
+          !strcmp(game_platform("NPUJ00001"), "classic") && !strcmp(game_platform("SMWR00001"), "homebrew") &&
+          !strcmp(game_platform("PCSX20007"), "homebrew"));
     CHECK(pkg_cat_is_game("gd") && pkg_cat_is_game("gdO") && pkg_cat_is_game("gdo") && !pkg_cat_is_game("gdc") &&
           !pkg_cat_is_game("gp") && !pkg_cat_is_game("ac"));
     make_pkg(p, "UP9000-SLUS20071_00-SLUS200710000001", "gdO", 0x05050000, 1, 600ull << 20, 0x4000);

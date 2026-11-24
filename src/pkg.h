@@ -47,6 +47,12 @@ static inline int homebrew_small(const char *tid, uint64_t pkg_size) {
     return !is_sony_game_prefix(tid) && pkg_size < HOMEBREW_MIN_SIZE;
 }
 
+/* What kind of title an ID is, for the panel's filter: "ps4" (a CUSA game), "classic" (an ID
+ * of PS1, PS2 and PSP Classics: see is_sony_game_prefix) or "homebrew" (anything else). */
+static inline const char *game_platform(const char *tid) {
+    return !strncmp(tid, "CUSA", 4) ? "ps4" : is_sony_game_prefix(tid) ? "classic" : "homebrew";
+}
+
 #define PKG_MAX_ENTRIES 512
 #define PKG_MAX_ENTRY_SIZE (64u << 20) /* largest entry pkg_entry reads */
 

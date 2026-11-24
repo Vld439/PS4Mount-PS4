@@ -4167,7 +4167,8 @@ void app_games_json(buf_t *out) {
                 state = "pending";
             if (nlisted < MAX_TITLES)
                 snprintf(listed[nlisted++], 10, "%s", tid);
-            buf_printf(out, "%s{\"title_id\":\"%s\",\"name\":", first ? "" : ",", tid);
+            buf_printf(out, "%s{\"title_id\":\"%s\",\"platform\":\"%s\",\"name\":", first ? "" : ",", tid,
+                       game_platform(tid));
             json_str(out, t->name);
             buf_printf(out, ",\"version\":");
             json_str(out, t->ver);
@@ -4210,7 +4211,8 @@ void app_games_json(buf_t *out) {
             seen = !strcmp(listed[i], tid);
         if (seen || !offline_game(tid, dir, sizeof(dir), drive, sizeof(drive), name, sizeof(name)))
             continue;
-        buf_printf(out, "%s{\"title_id\":\"%s\",\"name\":", first ? "" : ",", tid);
+        buf_printf(out, "%s{\"title_id\":\"%s\",\"platform\":\"%s\",\"name\":", first ? "" : ",", tid,
+                   game_platform(tid));
         json_str(out, name);
         buf_printf(out, ",\"version\":\"\",\"has_patch\":false,\"size\":0,\"state\":\"offline\",\"mount\":\"\","
                         "\"source\":");

@@ -40,6 +40,14 @@ Check: test, Source: current behavior (unconfirmed). Test: `test/unit.c` › `te
 When the rules that decide what is usable change, the saved list of pkgs is discarded and rebuilt.
 Check: read. Source: version before this PR.
 
+### CLS-5: the games list says what kind of title each game is, and the panel can filter by it
+`GET /api/games` gives each game a `platform`: `ps4` for a `CUSA` ID, `classic` for the other official-style IDs
+of CLS-3, `homebrew` for the rest. The panel shows platform chips only when the library has more than one kind.
+Check: test (keep bar 6: a field the panel reads). Test: `test/unit.c` › `test_check` (the classification);
+`test/web/panel.test.js` › "platform". Source: user (2026-11-24: idea 10, the filter).
+The `/legacy` page does not have the chips. Choosing between several updates of a game (the other half of idea 10)
+was not done.
+
 ## Non-goals
 
 - Running ROMs, ISOs or disc images. PS4Mount mounts `.pkg` files only; an emulator (such as PS4SX2) is a
