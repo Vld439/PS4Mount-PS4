@@ -1,0 +1,30 @@
+Archivo: test/data/logs/problems.log  (11 líneas)
+Desde 2026-11-24 19:00:00 hasta 2026-11-24 19:04:00
+
+== Versión y consola
+  [main] start (lock 7, pid 400)
+  [main] start (lock 7, pid 411)
+  2 arranque(s) de PS4Mount en este log
+
+== Líneas por módulo
+  [klog] 3  [main] 2  [reg] 2  [-] 1  [install] 1  [clean] 1  [web] 1
+
+== Qué hay que mirar
+  [ERROR] El instalador del sistema (BGFT) rechazó la ruta del pkg. Pasa si la ruta es demasiado larga (más de 95 bytes) o pasa por /data en vez de /user/data. Mueve el pkg a una carpeta con nombre corto.
+        2 vez/veces; primera línea: [klog] invalid content_url /data/ps4mount/a/very/long/path.pkg
+  [ERROR] El sistema no tiene la tarea del juego. Reinicia la consola: la lee solo al arrancar.
+        1 vez/veces; primera línea: [klog] sceBgftServiceDownloadStartTask failed 0x80990019
+  [WARN] El sistema rechaza una actualización: se deja fuera hasta que cambie su pkg (el juego base sigue funcionando).
+        1 vez/veces; primera línea: [reg] CUSA00004: the system refuses update 01.05: left out until the pkg changes
+  [WARN] Un archivo de datos de instalación (PlayGo) del juego no sirve. Se vuelve a crear al registrar el juego otra vez.
+        1 vez/veces; primera línea: [reg] CUSA00003: playgo-chunk.dat unusable
+  [INFO] Una acción se negó porque el juego estaba en marcha: ciérralo y repite.
+        1 vez/veces; primera línea: [web] remove CUSA00001 refused: game running
+
+== Otros avisos sin explicación conocida (primeros 1)
+  [install] /data/ps4mount/install/x.pkg: could not open the installer
+
+== Archivos temporales que PS4Mount borró de la memoria interna
+  1 aviso(s) [clean], 4194304 bytes en total (4.0 MB)
+
+Resultado: 2 error(es) y 3 aviso(s) conocidos. Léelos arriba.

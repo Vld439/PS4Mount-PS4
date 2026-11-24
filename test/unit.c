@@ -16,6 +16,7 @@
 #include "pkgmake.h"
 #include "origin.h"
 #include "pkg.h"
+#include "stage.h"
 #include "pdb_template.h"
 
 static int g_failed, g_checks;
@@ -619,6 +620,44 @@ static void test_lang(void) {
     CHECK(!strcmp(lang_tag(LANG_ES), "es") && !strcmp(lang_tag(-1), "en"));
 }
 
+/* STORE-1, STORE-3, STORE-4, STORE-5 (specs/storage.md): when PS4Mount may delete its own copy of a
+ * pkg sent from the panel. A wrong row here deletes a file the system still needs, or leaves
+ * gigabytes on the console's drive. */
+static void test_stage(void) {
+    printf("storage: when a staged copy may be deleted\n");
+    static const struct {
+        const char *name;
+        long age;
+        int receiving;
+        stage_action_t want;
+    } rows[] = {
+        /* a whole pkg: left alone for 10 minutes, then deleted only if the system has the app, and
+         * deleted whatever the system says once it is 3 days old */
+        {"game.pkg", 0, 0, STAGE_KEEP},
+        {"game.pkg", 599, 0, STAGE_KEEP},
+        {"game.pkg", 600, 0, STAGE_VERIFY},
+        {"game.pkg", 3 * 86400 - 1, 0, STAGE_VERIFY},
+        {"game.pkg", 3 * 86400, 0, STAGE_DELETE_ABANDONED},
+        {"game.pkg", 3 * 86400, 1, STAGE_DELETE_ABANDONED}, /* another pkg arriving does not protect it */
+        {"game.pkg", -5, 0, STAGE_KEEP},                     /* the clock went back: never deleted */
+        /* the part being received: only when nothing is being received, and not at once */
+        {"game.pkg.part", 7199, 0, STAGE_KEEP},
+        {"game.pkg.part", 7200, 0, STAGE_DELETE_PART},
+        {"game.pkg.part", 7200, 1, STAGE_KEEP},
+        {"game.pkg.part", 100 * 86400, 1, STAGE_KEEP},
+        /* anything else in the folder is not PS4Mount's to delete */
+        {"notes.txt", 100 * 86400, 0, STAGE_KEEP},
+        {"game.pkg.bak", 100 * 86400, 0, STAGE_KEEP},
+    };
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        stage_action_t got = stage_action(rows[i].name, rows[i].age, rows[i].receiving);
+        if (got != rows[i].want)
+            printf("  \"%s\" age %ld receiving %d: %d, wanted %d\n", rows[i].name, rows[i].age, rows[i].receiving, got,
+                   rows[i].want);
+        CHECK(got == rows[i].want);
+    }
+}
+
 int main(void) {
     test_crypto();
     test_app_json();
@@ -631,6 +670,7 @@ int main(void) {
     test_sfo();
     test_origin();
     test_autorun();
+    test_stage();
     printf("%d checks, %d failed\n", g_checks, g_failed);
     return g_failed ? 1 : 0;
 }

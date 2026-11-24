@@ -62,6 +62,7 @@
 #include "origin.h"
 #include "pkg.h"
 #include "shortpath.h"
+#include "stage.h"
 #include "titlecache.h"
 #include "web.h"
 #include "icon_data.h"
@@ -3800,8 +3801,6 @@ static void clean_holds(const char *tid, char (*dtids)[10], int ndtids) {
     unlink(link);
     snprintf(link, sizeof(link), STATE_DIR "/l/%s-patch.pkg", tid);
     unlink(link);
-    snprintf(link, sizeof(link), STATE_DIR "/%s.restart", tid);
-    unlink(link);
     /* one link per add-on, <add-on TID>-ac-<label>.pkg (and -ac.pkg of the 0.7.4 test builds);
      * always include tid itself so removing an offline or not-yet-scanned game cleans its links */
     DIR *ld = opendir(STATE_DIR "/l");
@@ -3831,7 +3830,10 @@ static void clean_holds(const char *tid, char (*dtids)[10], int ndtids) {
     }
     if (!installed_internally(tid) && !db_is_registered(tid)) {
         snprintf(hold, sizeof(hold), "/system_data/playgo/%s", tid);
-        rm_tree(hold);
+        if (exists(hold)) {
+            rm_tree(hold);
+            printf("[clean] %s: its PlayGo records were left over (not installed, not registered), deleted\n", tid);
+        }
     }
 }
 
@@ -5600,9 +5602,7 @@ static void upload_done(const char *path) {
  * install", it lands in INSTALL_DIR and goes to the system's installer, like a pkg
  * installed by hand. The copy is deleted once the system has the app. */
 #define INSTALL_DIR STATE_DIR "/install"
-#define INSTALL_KEEP_SECONDS 60      /* verified complete install: drop the staging copy soon */
-#define INSTALL_ABANDON_SECONDS 86400 /* failed or cancelled BGFT installs do not stay forever */
-#define INSTALL_PART_STALE_SECONDS 7200
+/* (when its files may go: stage.h) */
 
 static pthread_mutex_t g_inst_mu = PTHREAD_MUTEX_INITIALIZER;
 static char g_inst_path[PATH_MAX]; /* received, for the main loop to install */
@@ -5648,7 +5648,12 @@ static void install_received(void) {
                            sizeof(msg));
     printf("[install] %s: %s\n", path, msg);
     if (task < 0) {
-        unlink(path); /* refused by BGFT: do not leave up to 1 GB stranded on internal storage */
+        /* refused by BGFT: the copy is PS4Mount's (the pkg stays where the user has it), and it
+         * would sit on the console's drive for days */
+        struct stat rst;
+        unsigned long long rbytes = stat(path, &rst) ? 0 : (unsigned long long)rst.st_size;
+        unlink(path);
+        printf("[clean] %s: the system's installer refused it, the copy was deleted (%llu bytes)\n", path, rbytes);
         notify_kind(NOTIFY_WARN, TR("%s could not be installed: the system's installer turned it down (see the log)",
                   "%s no se pudo instalar: el instalador del sistema lo rechazó (mira el log)"),
                title);
@@ -5657,7 +5662,9 @@ static void install_received(void) {
                title);
 }
 
-/* Copies whose app the system has installed by now, or stale/abandoned staging files, are deleted. */
+/* Copies whose app the system has installed by now, and the leftovers nobody will finish
+ * (an old unfinished transfer, a pkg the system never took), are deleted: this folder is on
+ * the console's own drive, and every one of its files is a copy PS4Mount made. */
 static void install_cleanup(void) {
     DIR *d = opendir(INSTALL_DIR);
     struct dirent *e;
@@ -5670,22 +5677,23 @@ static void install_cleanup(void) {
         snprintf(path, sizeof(path), INSTALL_DIR "/%s", e->d_name);
         if (stat(path, &st) || !S_ISREG(st.st_mode))
             continue;
-        size_t l = strlen(e->d_name);
-        if (l >= 5 && !strcmp(e->d_name + l - 5, ".part")) {
-            if (!upload_active() && now - st.st_mtime >= INSTALL_PART_STALE_SECONDS) {
-                unlink(path);
-                printf("[install] stale part deleted: %s\n", path);
-            }
+        switch (stage_action(e->d_name, (long)(now - st.st_mtime), upload_active())) {
+        case STAGE_KEEP:
             continue;
-        }
-        if (l < 5 || strcmp(e->d_name + l - 4, ".pkg"))
-            continue;
-        if (now - st.st_mtime >= INSTALL_ABANDON_SECONDS) {
+        case STAGE_DELETE_PART:
             unlink(path);
-            printf("[install] abandoned staging pkg deleted: %s\n", path);
+            printf("[clean] %s: unfinished transfer nobody is writing, deleted (%llu bytes)\n", path,
+                   (unsigned long long)st.st_size);
             continue;
+        case STAGE_DELETE_ABANDONED:
+            unlink(path);
+            printf("[clean] %s: never installed by the system, deleted after %ld days (%llu bytes)\n", path,
+                   (long)((now - st.st_mtime) / 86400), (unsigned long long)st.st_size);
+            continue;
+        case STAGE_VERIFY:
+            break;
         }
-        if (now - st.st_mtime < INSTALL_KEEP_SECONDS || pkg_id_title(path, tid, title, sizeof(title)))
+        if (pkg_id_title(path, tid, title, sizeof(title)))
             continue;
         snprintf(app, sizeof(app), "/user/app/%s/app.pkg", tid);
         if (!installed_internally(tid) || !db_is_registered(tid) || stat(app, &ast) || ast.st_size != st.st_size)
@@ -6690,12 +6698,13 @@ int main(void) {
         unmask_leftover();
     /* no Media tab shortcut: it is a PS5 web app (param.json); the panel is opened from
      * a browser */
+    /* left behind if an earlier load stopped mid-check: removed before the panel can ask for one */
+    unlink(STATE_DIR "/check.part");
     g_web = web_listen();
     drive_begin();
     links_begin();
     notify_running();
     unlink(STATE_DIR "/stop");
-    unlink(STATE_DIR "/check.part"); /* left behind if an earlier load stopped mid-check */
     for (;;) {
         if (g_stop || exists(STATE_DIR "/stop")) {
             unlink(STATE_DIR "/stop");

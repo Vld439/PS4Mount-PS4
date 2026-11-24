@@ -1,0 +1,19 @@
+File: test/data/logs/healthy.log  (10 lines)
+From 2026-11-24 18:02:11 to 2026-11-24 18:40:00
+
+== Version and console
+  [main] firmware 13.52 (0x13520001), InstallAll on, TitleDir on, UnInstall on, registration: bgft
+  [main] console language 3 (registry 3: handle 5, call 0x1)
+  [main] start (lock 7, pid 311)
+  1 start(s) of PS4Mount in this log
+
+== Lines by module
+  [main] 3  [scan] 2  [reg] 2  [clean] 2  [install] 1
+
+== What to look at
+  -
+
+== Temporary files PS4Mount deleted from internal storage
+  2 [clean] notice(s), 3145728 bytes in all (3.0 MB)
+
+Result: no known problems.

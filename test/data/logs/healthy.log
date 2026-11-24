@@ -1,0 +1,10 @@
+2026-11-24 18:02:11.120 [main] firmware 13.52 (0x13520001), InstallAll on, TitleDir on, UnInstall on, registration: bgft
+2026-11-24 18:02:11.121 [main] console language 3 (registry 3: handle 5, call 0x1)
+2026-11-24 18:02:11.250 [main] start (lock 7, pid 311)
+2026-11-24 18:02:21.900 [scan] usb0: 2 pkg(s), 2 read in 1 s
+2026-11-24 18:02:22.010 [scan] usb0: CUSA00001 to register (not registered)
+2026-11-24 18:02:23.400 [reg] CUSA00001: BGFT game task 0000f001 written
+2026-11-24 18:02:24.800 [reg] AppInstallAll=0x00000000: 1 of 1 title(s) registered
+2026-11-24 18:40:00.000 [install] CUSA00002 installed: /data/ps4mount/install/game.pkg deleted
+2026-11-24 18:40:00.001 [clean] /data/ps4mount/install/old.pkg.part: unfinished transfer nobody is writing, deleted (1048576 bytes)
+2026-11-24 18:40:00.002 [clean] /data/ps4mount/install/lost.pkg: never installed by the system, deleted after 3 days (2097152 bytes)

@@ -1,0 +1,19 @@
+Archivo: test/data/logs/healthy.log  (10 líneas)
+Desde 2026-11-24 18:02:11 hasta 2026-11-24 18:40:00
+
+== Versión y consola
+  [main] firmware 13.52 (0x13520001), InstallAll on, TitleDir on, UnInstall on, registration: bgft
+  [main] console language 3 (registry 3: handle 5, call 0x1)
+  [main] start (lock 7, pid 311)
+  1 arranque(s) de PS4Mount en este log
+
+== Líneas por módulo
+  [main] 3  [scan] 2  [reg] 2  [clean] 2  [install] 1
+
+== Qué hay que mirar
+  -
+
+== Archivos temporales que PS4Mount borró de la memoria interna
+  2 aviso(s) [clean], 3145728 bytes en total (3.0 MB)
+
+Resultado: sin problemas conocidos.

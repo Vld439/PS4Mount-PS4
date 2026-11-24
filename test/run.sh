@@ -116,6 +116,9 @@ echo "== log with times"
 $CC $FLAGS -o "$B/log_test" test/log_test.c src/logts.c -lpthread
 "$B/log_test"
 
+echo "== log analyzer (tools/logcheck.py)"
+bash test/logcheck_test.sh
+
 echo "== Google Drive backups"
 $CC $FLAGS $BRF -o "$B/drive_test" test/drive_test.c src/drive.c src/https.c src/json.c src/lang.c src/build.c src/mem.c src/crypto.c "$BR/libbearssl.a" -lpthread
 "$B/drive_test"

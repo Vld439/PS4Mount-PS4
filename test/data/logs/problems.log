@@ -1,0 +1,11 @@
+this line was written before the log got its dates
+2026-11-24 19:00:00.000 [main] start (lock 7, pid 400)
+2026-11-24 19:00:03.100 [reg] CUSA00003: playgo-chunk.dat unusable
+2026-11-24 19:00:04.200 [klog] invalid content_url /data/ps4mount/a/very/long/path.pkg
+2026-11-24 19:00:04.300 [klog] invalid content_url /data/ps4mount/a/very/long/other.pkg
+2026-11-24 19:00:09.000 [klog] sceBgftServiceDownloadStartTask failed 0x80990019
+2026-11-24 19:01:00.000 [reg] CUSA00004: the system refuses update 01.05: left out until the pkg changes
+2026-11-24 19:02:00.000 [install] /data/ps4mount/install/x.pkg: could not open the installer
+2026-11-24 19:02:00.100 [clean] /data/ps4mount/install/x.pkg: the system's installer refused it, the copy was deleted (4194304 bytes)
+2026-11-24 19:03:00.000 [web] remove CUSA00001 refused: game running
+2026-11-24 19:04:00.000 [main] start (lock 7, pid 411)

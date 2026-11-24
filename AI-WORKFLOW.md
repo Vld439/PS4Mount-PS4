@@ -17,7 +17,7 @@ A chat in a web browser cannot reach your console: the assistant must be an agen
 1. **Never write to the system databases** (`/system_data/priv/mms/*.db`). ShellCore keeps them open with its own cache and flags a database written from outside as corrupted. PS4Mount only reads them (`mode=ro&nolock=1`); what has to be in them is written by the system (`sceAppInstUtilAppInstallAll` for games, a BGFT install for add-ons). `bash test/policy.sh` enforces it.
 2. **The system's delete must never reach a pkg.** Deleting a game made the system follow the `app.pkg` link and empty the user's pkg. The game folders are unmounted while the console's delete screens are open, and PS4Mount deletes the files itself, only `<root>/ps4/<TID>` of a game the user deleted there. A read-only view of the pkgs is no answer: BGFT opens a game's pkg for writing when the game starts, records EROFS in the game task (record `0x68`) and refuses the game. **After any change to how games are mounted or linked, restart the console and start a game before calling it done.**
 3. **One change per version, and test it on the console before the next.** If something gets worse, go back to the last version that worked.
-4. **Run the checks before every commit:** `bash test/run.sh`, `bash test/policy.sh` and `cd test/web && npm test`. `SANITIZE=1 bash test/run.sh` and `bash test/fuzz/run.sh 30 pkg http` for changes to pkg reading, uploads or the panel server.
+4. **Run the checks before every commit:** `bash test/run.sh`, `bash test/policy.sh`, `bash test/sdkcheck.sh` (compiles `src/main.c` and the rest against the real SDK headers, which `test/run.sh` cannot) and `cd test/web && npm test`. `SANITIZE=1 bash test/run.sh` and `bash test/fuzz/run.sh 30 pkg http` for changes to pkg reading, uploads or the panel server.
 5. **The payload runs inside a borrowed system process.** Never call `exit()` (it ends that process). Its libc heap is about 3 MB in all: anything large (pkg entries, artwork, request bodies, lists of add-ons) comes from `mem_alloc` (mmap), never `malloc`.
 6. **Only your own console, your own network and pkgs of games you own.** Never scan or connect to other people's devices. Never ask for, share or link pkgs.
 7. **The panel has no password.** Anyone on the network can use it while PS4Mount runs. Stop it when you are done.
@@ -72,6 +72,8 @@ GoldHEN's FTP reports the size of files over 4 GB modulo 4 GiB; the console itse
 | `[drive] the access ended (invalid_grant)` | Google ended the sign-in (apps in testing): a new code goes to the screen and the job waits for it |
 | `[drive] N transfer(s) left by the last run` | The saved queue was resumed at load |
 | `[links] <name>: downloading <link> …`, `extracting …`, `<name> se descargó: …` | A download from links, the pkgs coming out of it, its end; `the server limits connections`, `the link gave a new address` are servers answering 429/503 and links that expired |
+
+`python3 tools/logcheck.py log.txt` applies this table to a copy of the log and explains what it finds in plain words (Spanish by default, `--lang en`); a file PS4Mount deleted on its own shows as a `[clean]` line.
 
 ## 5. How PS4Mount is organised
 
