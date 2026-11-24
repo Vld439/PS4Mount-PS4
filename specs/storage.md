@@ -66,6 +66,15 @@ Check: read; the analyzer (LOG-5) reports them. Source: user (2026-11-24: "good 
 when the title is not installed on the internal drive and the system's database does not list it.
 Check: read (it needs the console; `test/sdkcheck.sh` proves it compiles). Source: AI-WORKFLOW.md rule 2.
 
+### STORE-10: the settings list what PS4Mount keeps on the console's drive, and only measure it
+`GET /api/storage` gives the bytes of: pkgs waiting to be installed, the log, PS4Mount's settings and
+records, the holds, and, for the games PS4Mount serves, their PlayGo records, icons and sounds, plus the
+pkgs in the internal library and the room left. It counts links as links (a pkg on a drive is never
+counted or touched) and deletes nothing.
+Check: test for the page (`test/web/panel.test.js` › "settings list what PS4Mount keeps"); read for the
+measuring in `app_storage_json` (it needs the console; `test/sdkcheck.sh` compiles it).
+Source: user (2026-11-24: idea 3, the storage panel). The old page (`/legacy`) does not show it.
+
 ## Non-goals
 
 - Freeing the space of installed games, or choosing where a game is installed.

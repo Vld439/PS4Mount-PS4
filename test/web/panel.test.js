@@ -22,11 +22,13 @@ let LINKS = { configured: false }; // GET /api/links
 let DRIVES = [{ label: 'usb0', free: 120.5 * 1073741824, total: 500 * 1073741824 }]; // GET /api/games drives
 let NOTICES = []; // GET /api/games notices
 let ACTIVITY = { busy: false, phase: '', drive: '', title: '', title_id: '', done: 0, total: 0, group: 0, groups: 0, dlc_pending: [] };
+const STORAGE = { free: 2.5e10, total: 8e10, games: 2, items: [{ id: 'install', bytes: 3e8 }, { id: 'log', bytes: 2097152 }, { id: 'appmeta', bytes: 5e5 }] }; // GET /api/storage
 const DESTS = { dests: [{ id: 'usb0', label: 'usb0', folder: '/mnt/usb0/PS4Mount', free: 5e11, fits: true }] };
 function reply(url) {
   if (url === '/api/drive') return DRIVE;
   if (url === '/api/links') return LINKS;
   if (url === '/api/dests') return DESTS;
+  if (url === '/api/storage') return STORAGE;
   return url.indexOf('/api/log') === 0 ? { log: 'a\nb' } : url.indexOf('/api/config') === 0 ? CFG :
     url.indexOf('/api/games') === 0 ? { version: GAMES_VERSION, lang: REPLY_LANG, games: GAMES, drives: DRIVES,
       notices: NOTICES, activity: ACTIVITY, dlc_mode: CFG.dlc_mode || 'external' } : { ok: true, message: 'ok ' + url };
@@ -289,6 +291,11 @@ function tKeys(file) {
   // the settings offer the add-on modes and the console-storage options
   d.getElementById('settingsbtn').click(); await tick();
   ok(d.getElementById('s-dlc') === null, 'no legacy dlc checkbox');
+  // STORE-10: the settings say what PS4Mount keeps on the console's drive, from a read-only request
+  { const rows = d.getElementById('st-rows').textContent, free = d.getElementById('st-free').textContent;
+    ok(rows.includes('286 MB') && rows.includes('Pkgs sent to install') && rows.includes('2.0 MB') && free.includes('23 GB') && free.includes('75 GB'),
+      'settings list what PS4Mount keeps on the console drive, and the room left');
+  }
   ok(d.getElementById('s-internal') !== null && d.getElementById('s-internal').checked === true, 'internal storage is an option, on from the config');
   ok(d.getElementById('s-dlcbig') !== null && d.getElementById('s-dlcbig-row').hidden === true, 'big add-ons show only in console-storage mode');
   ok(d.getElementById('s-dlc-mode') !== null && d.getElementById('s-dlc-mode').value === 'external', 'a dlc_mode select, external by default');

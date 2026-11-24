@@ -237,6 +237,17 @@ var LANGS = {
     'Not in library': 'Fuera de la biblioteca',
     'On console storage': 'En el almacenamiento de la consola',
     'free': 'libre',
+    "What PS4Mount keeps on the console's drive": 'Lo que PS4Mount guarda en el disco de la consola',
+    'Read only: this list measures, it deletes nothing. PS4Mount cleans its own temporary files by itself and writes each one to the log.':
+      'Solo lectura: esta lista mide, no borra nada. PS4Mount limpia solo sus archivos temporales y deja cada uno en el log.',
+    'Pkgs sent to install (deleted once installed)': 'Pkgs enviados para instalar (se borran al instalarse)',
+    'PS4Mount settings and records': 'Ajustes y registros de PS4Mount',
+    "Records of the library's games": 'Registros de los juegos de la biblioteca',
+    "PlayGo records of the library's games": 'Registros PlayGo de los juegos de la biblioteca',
+    "Icons and sounds of the library's games": 'Iconos y sonidos de los juegos de la biblioteca',
+    'Pkgs in the internal library': 'Pkgs de la biblioteca interna',
+    "{0} free of {1} on the console's drive": '{0} libres de {1} en el disco de la consola',
+    'Could not read the storage': 'No se pudo leer el almacenamiento',
     'Nothing is installed: the game plays straight from its .pkg files.':
       'No está instalado: el juego se juega directamente desde sus .pkg.',
     'Where the games are': 'Dónde están los juegos',

@@ -488,6 +488,11 @@ void web_handle(int fd) {
         app_uploads_json(&b);
         reply(fd, "200 OK", "application/json; charset=utf-8", b.data, b.len);
         buf_free(&b);
+    } else if (!strcmp(path, "/api/storage")) {
+        buf_t b = {0};
+        app_storage_json(&b);
+        reply(fd, "200 OK", "application/json; charset=utf-8", b.data, b.len);
+        buf_free(&b);
     } else if (!strcmp(path, "/api/dests")) {
         buf_t b = {0};
         app_dests_json(&b);

@@ -42,6 +42,9 @@ void app_check(const void *data, size_t len, uint64_t size, buf_t *out);
 int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint64_t length, char *msg, size_t cap);
 /* /api/dests: the drives a pkg can go to, with their free space (as in /api/check). */
 void app_dests_json(buf_t *out);
+/* /api/storage: what PS4Mount keeps on the console's own drive (bytes by kind) and the room
+ * left. Read only. */
+void app_storage_json(buf_t *out);
 /* /api/uploads: the state of the upload. */
 void app_uploads_json(buf_t *out);
 

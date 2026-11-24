@@ -226,6 +226,11 @@ button.small{padding:4px 12px;font-size:13px}
         library, or restoring its files, never deletes a .pkg.</p>
     </details>
   </fieldset>
+  <fieldset id="storagebox"><legend>What PS4Mount keeps on the console's drive</legend>
+    <span class="hint" id="st-free"></span>
+    <div id="st-rows"></div>
+    <span class="hint">Read only: this list measures, it deletes nothing. PS4Mount cleans its own temporary files by itself and writes each one to the log.</span>
+  </fieldset>
   <fieldset id="nasbox"><legend>NAS (NFS or SMB)</legend>
     <span class="hint" id="nas-unsupported" hidden>Not available on this firmware: there is no FUSE patch for it.</span>
     <span class="warn" id="nas-experimental" hidden>Experimental on this firmware: its FUSE patch is itemzflow's and was not tried with PS4Mount (it was on 13.52 and 6.72). If the console freezes when the share is mounted, restart it and turn the NAS off.</span>
@@ -536,6 +541,25 @@ function renderStorage() {
   el.hidden = !html;
 }
 
+/* Settings: what PS4Mount keeps on the console's own drive (GET /api/storage, read only). */
+function sizeText(n) { return n >= 1073741824 ? gbs(n) + ' GB' : (n / 1048576).toFixed(n >= 104857600 ? 0 : 1) + ' MB'; }
+function renderStorageBox() {
+  var rows = $('st-rows'), names = {
+    install: t('Pkgs sent to install (deleted once installed)'), log: t('Log'),
+    state: t('PS4Mount settings and records'), holds: t("Records of the library's games"),
+    playgo: t("PlayGo records of the library's games"), appmeta: t("Icons and sounds of the library's games"),
+    library: t('Pkgs in the internal library')};
+  rows.textContent = '';
+  $('st-free').textContent = '';
+  api('/api/storage').then(function (j) {
+    var items = j.items || [], html = '';
+    for (var i = 0; i < items.length; i++)
+      html += '<div class="hint"><b>' + esc(sizeText(items[i].bytes)) + '</b> ' + esc(names[items[i].id] || items[i].id) + '</div>';
+    rows.innerHTML = html;
+    if (j.total > 0) $('st-free').textContent = t('{0} free of {1} on the console\'s drive', sizeText(j.free), sizeText(j.total));
+  }).catch(function () { rows.textContent = t('Could not read the storage'); });
+}
+
 /* Games that wait for the one restart a new task needs: said at the top, with the way to them. */
 function renderRestart() {
   var b = $('restart-banner'), rn = [];
@@ -699,6 +723,7 @@ $('settingsbtn').onclick = function () {
     var spans = document.querySelectorAll('.rmax');
     for (var i = 0; i < spans.length; i++) spans[i].textContent = maxRestore;
     $('setdlg').showModal();
+    renderStorageBox();
   }).catch(function (e) { toast(t('Could not read the settings: {0}', e.message)); });
 };
 $('s-batch').onchange = function () { $('s-size').disabled = !this.checked; };

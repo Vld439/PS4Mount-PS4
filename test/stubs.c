@@ -74,6 +74,7 @@ int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint6
 }
 void app_uploads_json(buf_t *out) { buf_printf(out, "{\"state\":\"idle\"}"); }
 void app_dests_json(buf_t *out) { buf_printf(out, "{\"dests\":[]}"); }
+void app_storage_json(buf_t *out) { buf_printf(out, "{\"free\":1,\"total\":2,\"games\":0,\"items\":[]}"); }
 
 void drive_status_json(buf_t *out) { buf_printf(out, "{\"configured\":true}"); }
 int drive_connect(char *msg, size_t n) { return record("drive_connect", NULL, msg, n); }

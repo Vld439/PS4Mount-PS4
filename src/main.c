@@ -5848,6 +5848,48 @@ void app_dests_json(buf_t *out) {
     buf_printf(out, "}");
 }
 
+/* /api/storage: what PS4Mount keeps on the console's own drive, in bytes, and how much the
+ * drive has left. Only reads: it measures with lstat() (a link counts as a link, so a pkg on
+ * a drive is never counted or touched) and changes nothing. The games' folders are counted
+ * for the titles PS4Mount serves, not the system's own installs. */
+void app_storage_json(buf_t *out) {
+    unsigned long long state = tree_size(STATE_DIR), install = tree_size(INSTALL_DIR), logs = 0, meta = 0, playgo = 0;
+    struct stat st;
+    if (!lstat(STATE_DIR "/log.txt", &st))
+        logs += (unsigned long long)st.st_size;
+    if (!lstat(STATE_DIR "/log.txt.old", &st))
+        logs += (unsigned long long)st.st_size;
+    int n = 0;
+    for (int i = 0; i < MAX_TITLES; i++) {
+        if (!g_managed[i].used)
+            continue;
+        char tid[10], p[64];
+        snprintf(tid, sizeof(tid), "%s", g_managed[i].tid);
+        snprintf(p, sizeof(p), "/user/appmeta/%s", tid);
+        meta += tree_size(p);
+        snprintf(p, sizeof(p), "/system_data/playgo/%s", tid);
+        playgo += tree_size(p);
+        n++;
+    }
+    struct statfs sf;
+    unsigned long long free_b = 0, total = 0;
+    if (!statfs("/data", &sf)) {
+        free_b = (unsigned long long)((uint64_t)sf.f_bavail * (uint64_t)sf.f_bsize);
+        total = (unsigned long long)((uint64_t)sf.f_blocks * (uint64_t)sf.f_bsize);
+    }
+    buf_printf(out,
+               "{\"free\":%llu,\"total\":%llu,\"games\":%d,\"items\":["
+               "{\"id\":\"install\",\"bytes\":%llu},"
+               "{\"id\":\"log\",\"bytes\":%llu},"
+               "{\"id\":\"state\",\"bytes\":%llu},"
+               "{\"id\":\"holds\",\"bytes\":%llu},"
+               "{\"id\":\"playgo\",\"bytes\":%llu},"
+               "{\"id\":\"appmeta\",\"bytes\":%llu},"
+               "{\"id\":\"library\",\"bytes\":%llu}]}",
+               free_b, total, n, install, logs, state > install + logs ? state - install - logs : 0,
+               tree_size(HOLD_DIR), playgo, meta, tree_size(INTERNAL_ROOT "/ps4"));
+}
+
 /* --- Google Drive backups --- */
 
 /* The title of the pkg at path (the update's wins, as on the console); 0 when read. */
