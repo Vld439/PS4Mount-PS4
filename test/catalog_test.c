@@ -334,10 +334,34 @@ static void test_choose(void) {
     cleanup(other);
 }
 
+/* PS1/PS2/PSP Classics fPKGs (including gdO category and < 1 GB Sony prefixes) are grouped as games. */
+static void test_classics(void) {
+    printf("catalog: PS2/PS1/PSP classics fpkgs\n");
+    char root[] = "/tmp/ps4mount-cat-XXXXXX";
+    if (!mkdtemp(root)) {
+        CHECK(0);
+        return;
+    }
+    pkg_at(root, "PS2/GOW.pkg", "UP9000-SCUS97399_00-SCUS973990000001", "gdO", 1, 0x4000, 0x4000, "01.00");
+    pkg_at(root, "PS1/MGS.pkg", "UP9000-SLUS00594_00-SLUS005940000001", "gd", 1, 0x4000, 0x4000, "01.00");
+    pkg_at(root, "HB/PS4SX2.pkg", "IV0000-PCSX20007_00-PS4SX2EMU0000001", "gd", 1, 0x4000, 0x4000, "01.00");
+    catalog_t c = {0};
+    CHECK(catalog_walk(&c, root, NULL, NULL, NULL, 0) == 3);
+    CHECK(catalog_read(&c) == 3);
+    catalog_group(&c, NULL);
+    CHECK(c.ngames == 2);
+    CHECK(catalog_game(&c, "SCUS97399") != NULL);
+    CHECK(catalog_game(&c, "SLUS00594") != NULL);
+    CHECK(catalog_game(&c, "PCSX20007") == NULL); /* small homebrew app stays installable, not mounted */
+    catalog_free(&c);
+    cleanup(root);
+}
+
 int main(void) {
     test_scan();
     test_skip_dir();
     test_choose();
+    test_classics();
     printf("%d checks, %d failed\n", g_checks, g_failed);
     return g_failed ? 1 : 0;
 }

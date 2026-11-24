@@ -6,9 +6,11 @@
 #include "logts.h"
 
 #include <fcntl.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -53,6 +55,26 @@ static int g_pipe_read = -1, g_file = -1, g_saved_stdout = -1;
 static pthread_t g_thread;
 static int g_running;
 static volatile int g_done; /* the thread saw the end of the pipe */
+static char g_log_path[PATH_MAX];
+static size_t g_log_max = LOG_MAX_BYTES;
+static size_t g_written;
+
+void log_set_max_bytes(size_t max) { g_log_max = max ? max : LOG_MAX_BYTES; }
+
+static void rotate_path(const char *path) {
+    char old[PATH_MAX];
+    if (path[0] && snprintf(old, sizeof(old), "%s.old", path) < (int)sizeof(old))
+        rename(path, old);
+}
+
+static void rotate_if_full(int at_start) {
+    if (!at_start || !g_log_path[0] || g_written < g_log_max)
+        return;
+    close(g_file);
+    rotate_path(g_log_path);
+    g_file = open(g_log_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    g_written = 0;
+}
 
 static void *copy_thread(void *arg) {
     (void)arg;
@@ -61,7 +83,21 @@ static void *copy_thread(void *arg) {
     ssize_t n;
     while ((n = read(g_pipe_read, buf, sizeof(buf))) > 0) {
         log_stamp(stamp, sizeof(stamp));
-        log_write_lines(g_file, &at_start, buf, (size_t)n, stamp);
+        size_t sl = strlen(stamp);
+        const char *p = buf;
+        size_t left = (size_t)n;
+        while (left) {
+            rotate_if_full(at_start);
+            const char *nl = memchr(p, '\n', left);
+            size_t take = nl ? (size_t)(nl - p) + 1 : left;
+            int was_start = at_start;
+            if (g_file >= 0 && !log_write_lines(g_file, &at_start, p, take, stamp))
+                g_written += take + (was_start ? sl : 0);
+            else
+                at_start = nl != NULL;
+            p += take;
+            left -= take;
+        }
     }
     g_done = 1;
     return NULL;
@@ -69,15 +105,21 @@ static void *copy_thread(void *arg) {
 
 int log_start(const char *path) {
     int fds[2];
+    struct stat st;
+    if (!stat(path, &st) && (size_t)st.st_size >= g_log_max)
+        rotate_path(path);
     g_file = open(path, O_WRONLY | O_CREAT | O_APPEND, 0666);
     if (g_file < 0)
         return -1;
+    g_written = (!fstat(g_file, &st) && st.st_size > 0) ? (size_t)st.st_size : 0;
+    snprintf(g_log_path, sizeof(g_log_path), "%s", path);
     if (pipe(fds)) {
         close(g_file);
         g_file = -1;
         return -1;
     }
     g_pipe_read = fds[0];
+    g_done = 0;
     if (pthread_create(&g_thread, NULL, copy_thread, NULL)) {
         /* no thread: the log keeps working, without times */
         close(fds[0]);

@@ -21,10 +21,30 @@ static inline int is_game_id(const char *s) { return strlen(s) == 9 && game_id_a
 
 #define HOMEBREW_MIN_SIZE (1ull << 30)
 
-/* Homebrew (not CUSA) is played from its pkg only when it is big: a port carries a game's
- * data (gigabytes), while apps weigh a few MB and are better installed the usual way. */
+/* Game categories in param.sfo: "gd" (PS4 digital games and homebrew) and "gdO"/"gdo" (PS2 Classics). */
+static inline int pkg_cat_is_game(const char *cat) {
+    return cat && (!strcmp(cat, "gd") || !strcmp(cat, "gdO") || !strcmp(cat, "gdo"));
+}
+
+/* Official Sony title ID prefixes: PS4 (CUSA) and PS1/PS2/PSP Classics fPKGs. */
+static inline int is_sony_game_prefix(const char *tid) {
+    static const char *const prefixes[] = {
+        "CUSA",
+        "SLUS", "SLES", "SCUS", "SCES", "SLPS", "SLPM", "SCPS", "SLKA", "SCKA", "SLAJ", "SCAJ",
+        "ULUS", "ULES", "UCUS", "UCES", "ULJM", "ULJS", "UCJS",
+        "NPUI", "NPUJ", "NPUG", "NPEG", "NPEF", "NPJJ", "NPJG", "NPJH", "NPJI",
+    };
+    for (size_t i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); i++)
+        if (!strncmp(tid, prefixes[i], 4))
+            return 1;
+    return 0;
+}
+
+/* Homebrew (not a Sony game prefix) is played from its pkg only when it is big: a port
+ * carries a game's data (gigabytes), while apps weigh a few MB and are better installed
+ * the usual way. */
 static inline int homebrew_small(const char *tid, uint64_t pkg_size) {
-    return strncmp(tid, "CUSA", 4) && pkg_size < HOMEBREW_MIN_SIZE;
+    return !is_sony_game_prefix(tid) && pkg_size < HOMEBREW_MIN_SIZE;
 }
 
 #define PKG_MAX_ENTRIES 512

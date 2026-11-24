@@ -60,6 +60,13 @@ static void json_esc(buf_t *b, const char *s) {
     buf_put(b, "\"", 1);
 }
 
+int upload_active(void) {
+    pthread_mutex_lock(&g_mu);
+    int active = g_state == ST_RECEIVING;
+    pthread_mutex_unlock(&g_mu);
+    return active;
+}
+
 void upload_status_json(buf_t *out) {
     static const char *names[] = {"idle", "receiving", "done", "failed"};
     pthread_mutex_lock(&g_mu);

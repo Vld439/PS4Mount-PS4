@@ -23,6 +23,8 @@ int upload_start(int fd, const char *dir, const char *name, uint64_t length, con
 
 /* {"state":"idle|receiving|done|failed",...} */
 void upload_status_json(buf_t *out);
+/* 1 while a pkg is being received from the panel. */
+int upload_active(void);
 
 /* The file name to use for a pkg sent as name: no directories, printable, ending in
  * .pkg. Returns -1 when nothing usable is left. */

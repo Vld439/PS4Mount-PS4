@@ -17,10 +17,18 @@
 #define BLK 0x10000ull
 
 void buf_put(buf_t *b, const void *data, size_t len) {
+    if (len > SIZE_MAX - b->len - 1)
+        return;
     if (b->len + len + 1 > b->cap) {
+        size_t need = b->len + len + 1;
         size_t cap = b->cap ? b->cap : 256;
-        while (cap < b->len + len + 1)
+        while (cap < need) {
+            if (cap > SIZE_MAX / 2) {
+                cap = need;
+                break;
+            }
             cap *= 2;
+        }
         uint8_t *grown = mem_realloc(b->data, cap);
         if (!grown)
             return; /* out of memory: the text stays short, the daemon stays up */
@@ -73,18 +81,26 @@ void build_app_json(buf_t *out, const pkg_t *pkg, const char *url) {
 }
 
 static void put_bitmap(buf_t *out, uint64_t nbits) {
-    size_t nbytes = (size_t)((nbits + 7) / 8);
-    uint8_t *bm = malloc(nbytes);
-    memset(bm, 0xff, nbytes);
-    if (nbits % 8)
-        bm[nbytes - 1] = (uint8_t)(0xff << (8 - nbits % 8));
-    buf_put(out, bm, nbytes);
-    free(bm);
+    uint64_t nbytes = (nbits + 7) / 8;
+    if (!nbytes)
+        return;
+    uint8_t chunk[4096];
+    memset(chunk, 0xff, sizeof(chunk));
+    uint64_t full = nbits % 8 ? nbytes - 1 : nbytes;
+    while (full) {
+        size_t take = full > sizeof(chunk) ? sizeof(chunk) : (size_t)full;
+        buf_put(out, chunk, take);
+        full -= take;
+    }
+    if (nbits % 8) {
+        uint8_t tail = (uint8_t)(0xff << (8 - nbits % 8));
+        buf_put(out, &tail, 1);
+    }
 }
 
 static void put_sha_trailer(buf_t *out) {
     uint8_t h[32];
-    sha256(out->data, out->len, h);
+    sha256(out->data ? out->data : (const uint8_t *)"", out->len, h);
     buf_put(out, h, 32);
 }
 

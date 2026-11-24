@@ -1250,13 +1250,14 @@ static int place_dlc(dlc_src_t *a) {
     snprintf(dir, sizeof(dir), HOLD_DIR "/addcont/%s/%s", pkg->title_id, label);
     mkdirs(dir, 0777);
     buf_t json = {0}, pbm = {0}, pdb = {0};
-    char url[PATH_MAX + 8], kind[24];
+    char url[PATH_MAX + 8], link[PATH_MAX], kind[24];
     snprintf(kind, sizeof(kind), "ac-%.16s", label);
     pkg_url(pkg->title_id, kind, a->path, url, sizeof(url));
+    pkg_link(pkg->title_id, kind, a->path, link, sizeof(link));
     snprintf(q, sizeof(q), "%s/ac.pkg", dir);
     unlink(q);
     int rc = 0;
-    if (symlink(url, q)) {
+    if (symlink(link, q)) {
         printf("[reg] symlink %s: %s\n", q, strerror(errno));
         rc = -1;
     }
@@ -3799,24 +3800,37 @@ static void clean_holds(const char *tid, char (*dtids)[10], int ndtids) {
     unlink(link);
     snprintf(link, sizeof(link), STATE_DIR "/l/%s-patch.pkg", tid);
     unlink(link);
-    /* one link per add-on, <add-on TID>-ac-<label>.pkg (and -ac.pkg of the 0.7.4 test builds) */
-    DIR *ld = ndtids ? opendir(STATE_DIR "/l") : NULL;
+    snprintf(link, sizeof(link), STATE_DIR "/%s.restart", tid);
+    unlink(link);
+    /* one link per add-on, <add-on TID>-ac-<label>.pkg (and -ac.pkg of the 0.7.4 test builds);
+     * always include tid itself so removing an offline or not-yet-scanned game cleans its links */
+    DIR *ld = opendir(STATE_DIR "/l");
     struct dirent *le;
-    while (ld && (le = readdir(ld)))
-        for (int i = 0; i < ndtids; i++)
-            if (!strncmp(le->d_name, dtids[i], 9) && !strncmp(le->d_name + 9, "-ac", 3)) {
-                snprintf(link, sizeof(link), STATE_DIR "/l/%s", le->d_name);
-                unlink(link);
-                break;
-            }
+    while (ld && (le = readdir(ld))) {
+        if (strlen(le->d_name) < 12)
+            continue;
+        int match = !strncmp(le->d_name, tid, 9) && !strncmp(le->d_name + 9, "-ac", 3);
+        for (int i = 0; !match && i < ndtids; i++)
+            match = !strncmp(le->d_name, dtids[i], 9) && !strncmp(le->d_name + 9, "-ac", 3);
+        if (match) {
+            snprintf(link, sizeof(link), STATE_DIR "/l/%s", le->d_name);
+            unlink(link);
+        }
+    }
     if (ld)
         closedir(ld);
     hold_path(hold, sizeof(hold), "app", tid);
     rm_tree(hold);
     hold_path(hold, sizeof(hold), "patch", tid);
     rm_tree(hold);
+    snprintf(hold, sizeof(hold), HOLD_DIR "/addcont/%s", tid);
+    rm_tree(hold);
     for (int i = 0; i < ndtids; i++) {
         snprintf(hold, sizeof(hold), HOLD_DIR "/addcont/%s", dtids[i]);
+        rm_tree(hold);
+    }
+    if (!installed_internally(tid) && !db_is_registered(tid)) {
+        snprintf(hold, sizeof(hold), "/system_data/playgo/%s", tid);
         rm_tree(hold);
     }
 }
@@ -4550,7 +4564,7 @@ static void restore_files(const char *root, const char *tid, const char *name, i
 #undef RESTORE
     rmdir(sub);
     unlink_in(game, generated); /* written next to the pkgs by versions before 0.3.2 */
-    char marker[64];
+    char marker[PATH_MAX];
     snprintf(marker, sizeof(marker), "%s/" ORIGIN_FILE, game);
     char probe[PATH_MAX];
     snprintf(probe, sizeof(probe), "%s/app.pkg", game);
@@ -5586,7 +5600,9 @@ static void upload_done(const char *path) {
  * install", it lands in INSTALL_DIR and goes to the system's installer, like a pkg
  * installed by hand. The copy is deleted once the system has the app. */
 #define INSTALL_DIR STATE_DIR "/install"
-#define INSTALL_KEEP_SECONDS 600 /* a copy is only deleted this long after it arrived */
+#define INSTALL_KEEP_SECONDS 60      /* verified complete install: drop the staging copy soon */
+#define INSTALL_ABANDON_SECONDS 86400 /* failed or cancelled BGFT installs do not stay forever */
+#define INSTALL_PART_STALE_SECONDS 7200
 
 static pthread_mutex_t g_inst_mu = PTHREAD_MUTEX_INITIALIZER;
 static char g_inst_path[PATH_MAX]; /* received, for the main loop to install */
@@ -5631,27 +5647,45 @@ static void install_received(void) {
     int task = install_pkg(pkg_url(tid[0] ? tid : "install", "up", path, url, sizeof(url)), title, user, msg,
                            sizeof(msg));
     printf("[install] %s: %s\n", path, msg);
-    if (task < 0)
+    if (task < 0) {
+        unlink(path); /* refused by BGFT: do not leave up to 1 GB stranded on internal storage */
         notify_kind(NOTIFY_WARN, TR("%s could not be installed: the system's installer turned it down (see the log)",
                   "%s no se pudo instalar: el instalador del sistema lo rechazó (mira el log)"),
                title);
-    else
+    } else
         notify(TR("Installing %s: it shows on the home screen when it is done", "Instalando %s: aparece en la pantalla de inicio cuando termine"),
                title);
 }
 
-/* Copies whose app the system has installed by now (whole, and a while ago) are deleted. */
+/* Copies whose app the system has installed by now, or stale/abandoned staging files, are deleted. */
 static void install_cleanup(void) {
     DIR *d = opendir(INSTALL_DIR);
     struct dirent *e;
+    time_t now = time(NULL);
     while (d && (e = readdir(d))) {
-        size_t l = strlen(e->d_name);
-        if (l < 5 || strcmp(e->d_name + l - 4, ".pkg"))
-            continue; /* the part being received, or anything else */
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
+            continue;
         char path[PATH_MAX], tid[10] = "", title[128], app[64];
         struct stat st, ast;
         snprintf(path, sizeof(path), INSTALL_DIR "/%s", e->d_name);
-        if (stat(path, &st) || time(NULL) - st.st_mtime < INSTALL_KEEP_SECONDS || pkg_id_title(path, tid, title, sizeof(title)))
+        if (stat(path, &st) || !S_ISREG(st.st_mode))
+            continue;
+        size_t l = strlen(e->d_name);
+        if (l >= 5 && !strcmp(e->d_name + l - 5, ".part")) {
+            if (!upload_active() && now - st.st_mtime >= INSTALL_PART_STALE_SECONDS) {
+                unlink(path);
+                printf("[install] stale part deleted: %s\n", path);
+            }
+            continue;
+        }
+        if (l < 5 || strcmp(e->d_name + l - 4, ".pkg"))
+            continue;
+        if (now - st.st_mtime >= INSTALL_ABANDON_SECONDS) {
+            unlink(path);
+            printf("[install] abandoned staging pkg deleted: %s\n", path);
+            continue;
+        }
+        if (now - st.st_mtime < INSTALL_KEEP_SECONDS || pkg_id_title(path, tid, title, sizeof(title)))
             continue;
         snprintf(app, sizeof(app), "/user/app/%s/app.pkg", tid);
         if (!installed_internally(tid) || !db_is_registered(tid) || stat(app, &ast) || ast.st_size != st.st_size)
@@ -6388,7 +6422,8 @@ static int nas_waiting(void) {
         return 0;
     ssize_t n = read(fd, buf, sizeof(buf) - 1);
     close(fd);
-    return n > 0 && atol(buf) == boot_time();
+    long boot = boot_time(), when = n > 0 ? atol(buf) : -1;
+    return boot && when > 0 && labs(when - boot) <= SAME_BOOT_SECONDS;
 }
 
 /* 1 when this process can open the fuse devices: the one started at boot cannot, and a
@@ -6660,6 +6695,7 @@ int main(void) {
     links_begin();
     notify_running();
     unlink(STATE_DIR "/stop");
+    unlink(STATE_DIR "/check.part"); /* left behind if an earlier load stopped mid-check */
     for (;;) {
         if (g_stop || exists(STATE_DIR "/stop")) {
             unlink(STATE_DIR "/stop");

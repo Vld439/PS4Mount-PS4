@@ -368,6 +368,26 @@ static void test_check(void) {
           strstr(c.problem, "SSBU00001") && c.installable); /* a few KB: an app, for the installer */
     CHECK(homebrew_small("SSBU00001", 600ull << 20) && !homebrew_small("SSBU00001", 5ull << 30) &&
           !homebrew_small("CUSA00001", 1 << 20)); /* a port is big; CUSA games are never held back */
+    /* PS1/PS2/PSP Classic fPKGs (Sony prefixes) under 1 GB are games, not small homebrew apps */
+    CHECK(!homebrew_small("SLUS20071", 600ull << 20) && !homebrew_small("SCUS94163", 400ull << 20) &&
+          !homebrew_small("ULUS10041", 300ull << 20) && !homebrew_small("NPUJ00001", 200ull << 20));
+    CHECK(homebrew_small("PCSX20007", 50ull << 20)); /* emulator app: installable homebrew */
+    CHECK(pkg_cat_is_game("gd") && pkg_cat_is_game("gdO") && pkg_cat_is_game("gdo") && !pkg_cat_is_game("gdc") &&
+          !pkg_cat_is_game("gp") && !pkg_cat_is_game("ac"));
+    make_pkg(p, "UP9000-SLUS20071_00-SLUS200710000001", "gdO", 0x05050000, 1, 600ull << 20, 0x4000);
+    CHECK(pkg_check(p, 0x13520001, &c) == 0 && c.ok && c.kind == PKG_KIND_GAME && !strcmp(c.title_id, "SLUS20071"));
+    /* multi-chunk bitmap (> 4096 bytes) in build_app_pbm */
+    {
+        pkg_t big = {0};
+        snprintf(big.title_id, sizeof(big.title_id), "CUSA00001");
+        big.pkg_size = (4ull << 30) + 0x10000ull; /* 65537 blocks -> 8193 bitmap bytes, last byte 0x80 */
+        buf_t b = {0};
+        build_app_pbm(&b, &big, "", 0);
+        CHECK(b.len == 0x100 + 8193 + 32);
+        CHECK(b.data[0x100] == 0xff && b.data[0x100 + 4096] == 0xff && b.data[0x100 + 8191] == 0xff &&
+              b.data[0x100 + 8192] == 0x80);
+        buf_free(&b);
+    }
     CHECK(is_game_id("CUSA00001") && is_game_id("SSBU00001") && is_game_id("PCSX20007"));
     CHECK(!is_game_id("NPXS00001") && !is_game_id("PPSA00001") && !is_game_id("cusa00001") && !is_game_id("CUSA0001") &&
           !is_game_id("CUSA000011") && !is_game_id("CUS100001") && !is_game_id("CUSA0000X") && !is_game_id(""));

@@ -5,9 +5,14 @@
 
 #include <stddef.h>
 
-/* Sends stdout to path (appended), each line prefixed with the date and time. 0 on
- * success; on failure stdout is left as it was. */
+/* Default cap per log file on internal storage (2 MiB; one .old backup kept). */
+#define LOG_MAX_BYTES (2u << 20)
+
+/* Sends stdout to path (appended, rotated to path.old past the cap), each line prefixed
+ * with the date and time. 0 on success; on failure stdout is left as it was. */
 int log_start(const char *path);
+/* Overrides the rotation threshold in bytes (0 restores LOG_MAX_BYTES). */
+void log_set_max_bytes(size_t max);
 /* Writes what is still pending and waits for it; safe to call more than once. */
 void log_stop(void);
 

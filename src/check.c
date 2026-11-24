@@ -55,9 +55,9 @@ int pkg_check(const char *path, uint32_t fw, pkg_check_t *out) {
     }
     char cat[8];
     str_item(sfo, "CATEGORY", cat, sizeof(cat));
-    out->kind = !strcmp(cat, "gd") ? PKG_KIND_GAME : !strcmp(cat, "gp") ? PKG_KIND_UPDATE
-                                                    : !strcmp(cat, "ac") ? PKG_KIND_ADDON
-                                                                         : PKG_KIND_OTHER;
+    out->kind = pkg_cat_is_game(cat) ? PKG_KIND_GAME : !strcmp(cat, "gp") ? PKG_KIND_UPDATE
+                                                     : !strcmp(cat, "ac") ? PKG_KIND_ADDON
+                                                                          : PKG_KIND_OTHER;
     str_item(sfo, "TITLE", out->title, sizeof(out->title));
     str_item(sfo, "APP_VER", out->app_ver, sizeof(out->app_ver));
     str_item(sfo, "VERSION", out->version, sizeof(out->version));

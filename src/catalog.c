@@ -204,9 +204,9 @@ static int read_one(cat_pkg_t *p, pkg_t *pkg, sfo_t *sfo) {
     if (!d || sfo_parse(d, len, sfo))
         goto out;
     const sfo_item_t *cat = sfo_get(sfo, "CATEGORY");
-    if (!cat || cat->is_int || (strcmp(cat->sval, "gd") && strcmp(cat->sval, "gp") && strcmp(cat->sval, "ac")))
+    if (!cat || cat->is_int || (!pkg_cat_is_game(cat->sval) && strcmp(cat->sval, "gp") && strcmp(cat->sval, "ac")))
         goto out;
-    if (!strcmp(cat->sval, "gd") && homebrew_small(pkg->title_id, pkg->pkg_size)) {
+    if (pkg_cat_is_game(cat->sval) && homebrew_small(pkg->title_id, pkg->pkg_size)) {
         printf("[scan] skip %s (homebrew app %s of %llu MB: install it the usual way)\n", p->path, pkg->title_id,
                (unsigned long long)(pkg->pkg_size >> 20));
         goto out;
@@ -273,7 +273,11 @@ static cat_game_t *game_find(catalog_t *c, const char *title_id) {
     return NULL;
 }
 
-static int is_kind(const cat_pkg_t *p, const char *kind) { return p->state == CAT_OK && !strcmp(p->category, kind); }
+static int is_kind(const cat_pkg_t *p, const char *kind) {
+    if (p->state != CAT_OK)
+        return 0;
+    return !strcmp(kind, "gd") ? pkg_cat_is_game(p->category) : !strcmp(p->category, kind);
+}
 
 /* 1 when pkg lists the add-on's content ID prefix (UP0000-CUSA00000_00) as one of its services. */
 static int serves(const cat_pkg_t *p, const cat_pkg_t *dlc) {
@@ -517,8 +521,8 @@ void catalog_link(catalog_t *all, int n, cat_choose_fn choose, int cross) {
 }
 
 /* What makes a pkg usable: the pkgs a catalog saved with other rules found unusable are
- * read again (2: homebrew title IDs of 1 GB and over). */
-#define CAT_RULES 2
+ * read again (3: PS1/PS2/PSP Classics title IDs and gdO/gdo category). */
+#define CAT_RULES 3
 
 /* "#rules N" first, then one line per read pkg, fields separated by tabs, the path last:
  * state size mtime category title_id content_id app_ver nservices services... name path

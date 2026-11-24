@@ -91,6 +91,44 @@ int main(void) {
     CHECK(first && joined);
     CHECK(last); /* nothing lost at the end */
 
+    fprintf(stderr, "log rotation\n");
+    {
+        char rpath[] = "/tmp/ps4mount_rot_XXXXXX", old[128];
+        int rfd = mkstemp(rpath);
+        CHECK(rfd >= 0);
+        close(rfd);
+        snprintf(old, sizeof(old), "%s.old", rpath);
+        unlink(old);
+        log_set_max_bytes(4096);
+        int rs = dup(STDOUT_FILENO);
+        CHECK(!log_start(rpath));
+        setvbuf(stdout, NULL, _IOLBF, 0);
+        for (int i = 0; i < 400; i++)
+            printf("[rot] entry %04d padding-to-exceed-threshold\n", i);
+        log_stop();
+        dup2(rs, STDOUT_FILENO);
+        close(rs);
+        log_set_max_bytes(0);
+        FILE *rf = fopen(rpath, "r"), *of = fopen(old, "r");
+        CHECK(rf != NULL && of != NULL);
+        int has_last = 0;
+        long rsz = 0;
+        if (rf) {
+            fseek(rf, 0, SEEK_END);
+            rsz = ftell(rf);
+            rewind(rf);
+            while (fgets(line, sizeof(line), rf))
+                has_last |= strstr(line, "[rot] entry 0399") != NULL;
+            fclose(rf);
+        }
+        if (of)
+            fclose(of);
+        CHECK(has_last);
+        CHECK(rsz > 0 && rsz < 8192);
+        unlink(rpath);
+        unlink(old);
+    }
+
     fprintf(stderr, "%d checks, %d failed\n", g_checks, g_failed);
     return g_failed != 0;
 }

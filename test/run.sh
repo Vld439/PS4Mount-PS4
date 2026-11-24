@@ -125,12 +125,16 @@ $CC $FLAGS $BRF $LAF -Itest -o "$B/links_test" test/links_test.c src/links.c src
     src/crypto.c src/check.c src/pkg.c src/la_alloc.c "$BR/libbearssl.a" "$LA/libarchive.a" -lpthread
 "$B/links_test"
 
-echo "== raw .bin loader"
-$CC -Os -fPIC -ffreestanding -fno-builtin -fno-jump-tables -fno-stack-protector -fno-asynchronous-unwind-tables \
-    -DSYS_mmap=9 -DMAP_ANON=0x20 -Wall -Wextra -c -o "$B/binboot.o" tools/binboot/binboot.c
-ld -T tools/binboot/binboot.ld -o "$B/binboot.elf" "$B/binboot.o"
-objcopy -O binary --only-section=.text "$B/binboot.elf" "$B/binboot.bin"
-$CC -O1 -fPIE -pie -nostdlib -fno-stack-protector -Wl,-e,entry -Wl,--no-dynamic-linker -o "$B/binboot_payload.elf" test/binboot_payload.c
-cat "$B/binboot.bin" "$B/binboot_payload.elf" > "$B/binboot_test.bin"
-$CC $FLAGS -o "$B/binboot_test" test/binboot_test.c
-"$B/binboot_test" "$B/binboot_test.bin"
+if [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ]; then
+    echo "== raw .bin loader"
+    $CC -Os -fPIC -ffreestanding -fno-builtin -fno-jump-tables -fno-stack-protector -fno-asynchronous-unwind-tables \
+        -DSYS_mmap=9 -DMAP_ANON=0x20 -Wall -Wextra -c -o "$B/binboot.o" tools/binboot/binboot.c
+    ld -T tools/binboot/binboot.ld -o "$B/binboot.elf" "$B/binboot.o"
+    objcopy -O binary --only-section=.text "$B/binboot.elf" "$B/binboot.bin"
+    $CC -O1 -fPIE -pie -nostdlib -fno-stack-protector -Wl,-e,entry -Wl,--no-dynamic-linker -o "$B/binboot_payload.elf" test/binboot_payload.c
+    cat "$B/binboot.bin" "$B/binboot_payload.elf" > "$B/binboot_test.bin"
+    $CC $FLAGS -o "$B/binboot_test" test/binboot_test.c
+    "$B/binboot_test" "$B/binboot_test.bin"
+else
+    echo "== raw .bin loader (skipped: Linux x86_64 only)"
+fi
