@@ -239,6 +239,9 @@ static void test_skip_dir(void) {
     pkg_at(root, "ps4/CUSA00023/app.pkg", "UP0000-CUSA00023_00-SKIP000000000000", "gd", 1, 0x4000, 0x4000, "01.00");
     /* never searched: the rest of /data, at any depth */
     pkg_at(root, "user/savedata/x.pkg", "UP0000-CUSA00024_00-SKIP000000000000", "gd", 1, 0x4000, 0x4000, "01.00");
+    /* emulators' ROMs and BIOS: never searched (a pkg there is a ROM's wrapper, not a game) */
+    pkg_at(root, "PS4Mount/emulators/PS4SX2/roms/z.pkg", "UP0000-CUSA00026_00-SKIP000000000000", "gd", 1, 0x4000,
+           0x4000, "01.00");
     pkg_at(root, "system/y.pkg", "UP0000-CUSA00025_00-SKIP000000000000", "gd", 1, 0x4000, 0x4000, "01.00");
 
     catalog_t c = {0};
@@ -250,7 +253,7 @@ static void test_skip_dir(void) {
         found_deep |= !!strstr(p, "/PS4Mount/Overcooked/deep.pkg");
         found_ps4mount |= !!strstr(p, "/PS4Mount/game.pkg");
         found_legacy |= !!strstr(p, "/ps4/CUSA00023/app.pkg");
-        CHECK(!strstr(p, "/user/") && !strstr(p, "/system/"));
+        CHECK(!strstr(p, "/user/") && !strstr(p, "/system/") && !strstr(p, "/emulators/"));
     }
     CHECK(found_ps4mount && found_deep && found_legacy);
     CHECK(catalog_read(&c) == 3);

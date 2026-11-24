@@ -52,6 +52,7 @@ Probado en una PS4 con firmware **13.52** y GoldHEN; también funciona en **14.0
 | **Ports homebrew** (juegos sin CUSA, como SMW o SSBU: `SMWR00001`, `SSBU00001`) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: se juegan desde el pkg como un juego, si pesan **1 GB o más** |
 | Apps homebrew (tiendas, emuladores…), de menos de 1 GB | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: no se juegan desde el pkg, pero **Enviar juegos** las envía y las instala en la consola |
 | **Clásicos de PS1, PS2 y PSP** empaquetados como pkg de PS4 (categoría `gdO`, o un ID como `SLUS…` de menos de 1 GB) | <img src="docs/icons/warn.svg" width="14" height="14" alt=""> Sin probar en una consola: se reconocen y se montan como un juego, pero no se sabe si arrancan. Los ISO y las ROM sueltas **no** funcionan: PS4Mount monta pkgs; un emulador (como PS4SX2) es una app aparte, que se instala con **Enviar juegos** |
+| **ROM de emuladores** (PS2 con PS4SX2, por ejemplo), sin copiarlas a la consola | <img src="docs/icons/warn.svg" width="14" height="14" alt=""> Sin probar en una consola. Sin ajustes: en la unidad pon las ROM en `PS4Mount/emulators/<App>/<Carpeta>` (por ejemplo `PS4Mount/emulators/PS4SX2/roms`) y PS4Mount la muestra como `/data/<App>/<Carpeta>`, donde el emulador las busca. Solo se monta si la app ya tiene su carpeta en `/data` (ábrela una vez) y esa carpeta está vacía; nunca tapa archivos de la consola. Si no se monta, el log dice por qué |
 
 ## Requisitos
 
@@ -445,6 +446,7 @@ Tested on a PS4 on firmware **13.52** with GoldHEN; it also works on **14.00** (
 | **Homebrew ports** (games without a CUSA ID, such as SMW or SSBU: `SMWR00001`, `SSBU00001`) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: played from the pkg like a game, when they weigh **1 GB or more** |
 | Homebrew apps (stores, emulators…) under 1 GB | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: not played from the pkg, but **Send games** sends them and installs them on the console |
 | **PS1, PS2 and PSP Classics** packed as a PS4 pkg (category `gdO`, or an ID such as `SLUS…` under 1 GB) | <img src="docs/icons/warn.svg" width="14" height="14" alt=""> Not tested on a console: they are recognized and mounted like a game, but whether they start is unknown. Loose ISOs and ROMs do **not** work: PS4Mount mounts pkgs; an emulator (such as PS4SX2) is a separate app, installed with **Send games** |
+| **Emulator ROMs** (PS2 with PS4SX2, for one), without copying them to the console | <img src="docs/icons/warn.svg" width="14" height="14" alt=""> Not tested on a console. No settings: put the ROMs on the drive in `PS4Mount/emulators/<App>/<Folder>` (for example `PS4Mount/emulators/PS4SX2/roms`) and PS4Mount shows it as `/data/<App>/<Folder>`, where the emulator looks for them. It is mounted only when the app already has its folder in `/data` (open it once) and that folder is empty; it never covers files of the console's. When it is not mounted, the log says why |
 
 ## Requirements
 

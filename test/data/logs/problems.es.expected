@@ -1,4 +1,4 @@
-Archivo: test/data/logs/problems.log  (11 líneas)
+Archivo: test/data/logs/problems.log  (12 líneas)
 Desde 2026-11-24 19:00:00 hasta 2026-11-24 19:04:00
 
 == Versión y consola
@@ -7,7 +7,7 @@ Desde 2026-11-24 19:00:00 hasta 2026-11-24 19:04:00
   2 arranque(s) de PS4Mount en este log
 
 == Líneas por módulo
-  [klog] 3  [main] 2  [reg] 2  [-] 1  [install] 1  [clean] 1  [web] 1
+  [klog] 3  [main] 2  [reg] 2  [-] 1  [install] 1  [clean] 1  [web] 1  [emu] 1
 
 == Qué hay que mirar
   [ERROR] El instalador del sistema (BGFT) rechazó la ruta del pkg. Pasa si la ruta es demasiado larga (más de 95 bytes) o pasa por /data en vez de /user/data. Mueve el pkg a una carpeta con nombre corto.
@@ -18,6 +18,8 @@ Desde 2026-11-24 19:00:00 hasta 2026-11-24 19:04:00
         1 vez/veces; primera línea: [reg] CUSA00004: the system refuses update 01.05: left out until the pkg changes
   [WARN] Un archivo de datos de instalación (PlayGo) del juego no sirve. Se vuelve a crear al registrar el juego otra vez.
         1 vez/veces; primera línea: [reg] CUSA00003: playgo-chunk.dat unusable
+  [INFO] Una carpeta de emulador de la unidad no se montó (el motivo está en la línea: la app aún no tiene carpeta en /data, o la carpeta de la consola ya tiene archivos). PS4Mount no pisa nada de la consola.
+        1 vez/veces; primera línea: [emu] /data/PS4SX2/roms not mounted: the console's folder already has files (it is left as it is)
   [INFO] Una acción se negó porque el juego estaba en marcha: ciérralo y repite.
         1 vez/veces; primera línea: [web] remove CUSA00001 refused: game running
 

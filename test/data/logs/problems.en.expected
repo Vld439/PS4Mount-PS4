@@ -1,4 +1,4 @@
-File: test/data/logs/problems.log  (11 lines)
+File: test/data/logs/problems.log  (12 lines)
 From 2026-11-24 19:00:00 to 2026-11-24 19:04:00
 
 == Version and console
@@ -7,7 +7,7 @@ From 2026-11-24 19:00:00 to 2026-11-24 19:04:00
   2 start(s) of PS4Mount in this log
 
 == Lines by module
-  [klog] 3  [main] 2  [reg] 2  [-] 1  [install] 1  [clean] 1  [web] 1
+  [klog] 3  [main] 2  [reg] 2  [-] 1  [install] 1  [clean] 1  [web] 1  [emu] 1
 
 == What to look at
   [ERROR] The system's installer (BGFT) refused the pkg's path: too long (over 95 bytes) or through /data instead of /user/data. Move the pkg to a folder with a short name.
@@ -18,6 +18,8 @@ From 2026-11-24 19:00:00 to 2026-11-24 19:04:00
         1 time(s); first line: [reg] CUSA00004: the system refuses update 01.05: left out until the pkg changes
   [WARN] A game's install data file (PlayGo) is unusable. It is made again when the game is registered again.
         1 time(s); first line: [reg] CUSA00003: playgo-chunk.dat unusable
+  [INFO] An emulator folder of the drive was not mounted (the reason is in the line: the app has no folder in /data yet, or the console's folder already has files). PS4Mount does not cover anything of the console's.
+        1 time(s); first line: [emu] /data/PS4SX2/roms not mounted: the console's folder already has files (it is left as it is)
   [INFO] An action was refused because the game was running: close it and try again.
         1 time(s); first line: [web] remove CUSA00001 refused: game running
 

@@ -8,4 +8,5 @@ this line was written before the log got its dates
 2026-11-24 19:02:00.000 [install] /data/ps4mount/install/x.pkg: could not open the installer
 2026-11-24 19:02:00.100 [clean] /data/ps4mount/install/x.pkg: the system's installer refused it, the copy was deleted (4194304 bytes)
 2026-11-24 19:03:00.000 [web] remove CUSA00001 refused: game running
+2026-11-24 19:03:30.000 [emu] /data/PS4SX2/roms not mounted: the console's folder already has files (it is left as it is)
 2026-11-24 19:04:00.000 [main] start (lock 7, pid 411)

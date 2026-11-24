@@ -17,7 +17,7 @@ without it a change to `main.c` is only compiled by CI. It does not run the payl
 
 ## Tests and specs
 
-- Each area's intent lives in `specs/<area>.md` (storage, classics, logging). Read the one for the area
+- Each area's intent lives in `specs/<area>.md` (storage, classics, emulators, logging). Read the one for the area
   before changing it. A rule has an ID (`STORE-4`), a `Check:` level and a `Source:`.
 - After a change, check every rule your diff touches. For `Check: read` rules, say in your summary that
   you re-checked them. For `Check: test` rules, find the test with `grep -rn "STORE-4" specs test` and make

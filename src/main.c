@@ -62,6 +62,7 @@
 #include "origin.h"
 #include "pkg.h"
 #include "shortpath.h"
+#include "emu.h"
 #include "stage.h"
 #include "titlecache.h"
 #include "web.h"
@@ -2901,7 +2902,7 @@ static void add_subdirs(const char *dir, char (*dirs)[PATH_MAX], int *n) {
         char p[PATH_MAX];
         struct stat st;
         snprintf(p, sizeof(p), "%s/%s", dir, e->d_name);
-        if (!skip_subdir(e->d_name) && !lstat(p, &st) && S_ISDIR(st.st_mode))
+        if (!skip_subdir(e->d_name) && !emu_is_dir(p) && !lstat(p, &st) && S_ISDIR(st.st_mode))
             snprintf(dirs[(*n)++], PATH_MAX, "%s", p);
     }
     if (d)
@@ -3508,10 +3509,142 @@ static void titles_file_save(const char *root) {
     title_cache_save(p, root_id(root, key, sizeof(key)));
 }
 
+/* --- emulators ---
+ * <drive>/PS4Mount/emulators/<App>/<Folder> is shown as /data/<App>/<Folder> (emu.h), where
+ * an emulator app looks for its ROMs and BIOS, so they stay on the drive. Nothing is
+ * configured: the folders are the setting. Nothing of the console's is replaced: only an
+ * empty folder (or one made here) is covered, and only when the app's own folder is there
+ * already, so an app that was never started is not given a folder. */
+
+static int emu_is_dir_now(const char *path) {
+    struct stat st;
+    return !lstat(path, &st) && S_ISDIR(st.st_mode);
+}
+
+static int emu_dir_empty(const char *path) {
+    DIR *d = opendir(path);
+    if (!d)
+        return 0;
+    struct dirent *e;
+    int empty = 1;
+    while (empty && (e = readdir(d)))
+        empty = !strcmp(e->d_name, ".") || !strcmp(e->d_name, "..");
+    closedir(d);
+    return empty;
+}
+
+/* A reason for not mounting is said once: the scan comes back every few seconds. */
+static void emu_said(const char *target, const char *why) {
+    static uint32_t said[64];
+    static int n;
+    char key[PATH_MAX + 64];
+    snprintf(key, sizeof(key), "%s|%s", target, why);
+    uint32_t h = str_hash(key);
+    for (int i = 0; i < n; i++)
+        if (said[i] == h)
+            return;
+    if (n < 64)
+        said[n++] = h;
+    printf("[emu] %s not mounted: %s\n", target, why);
+}
+
+static void emu_mount_one(const char *src, const char *app, const char *folder) {
+    char target[PATH_MAX], appdir[PATH_MAX];
+    if (emu_target(app, folder, target, sizeof(target))) {
+        emu_said(src, TR("the name is not one PS4Mount mounts", "el nombre no es de los que PS4Mount monta"));
+        return;
+    }
+    snprintf(appdir, sizeof(appdir), "/data/%s", app);
+    if (!emu_is_dir_now(appdir)) {
+        emu_said(target, TR("the app has no folder in /data yet: start it once", "la app aún no tiene carpeta en /data: ábrela una vez"));
+        return;
+    }
+    int top = top_layer(target, src);
+    if (top == 1)
+        return; /* already there */
+    if (top == -1) {
+        emu_said(target, TR("something else is mounted there", "ya hay otra cosa montada ahí"));
+        return;
+    }
+    struct stat st;
+    if (lstat(target, &st) == 0) {
+        if (!S_ISDIR(st.st_mode)) {
+            emu_said(target, TR("it is not a folder", "no es una carpeta"));
+            return;
+        }
+        if (!emu_dir_empty(target)) {
+            emu_said(target, TR("the console's folder already has files (it is left as it is)", "la carpeta de la consola ya tiene archivos (se deja como está)"));
+            return;
+        }
+    } else if (mkdir(target, 0777)) {
+        printf("[emu] %s: %s\n", target, strerror(errno));
+        return;
+    }
+    if (nullfs_mount(src, target) == 0)
+        printf("[emu] %s is now %s\n", src, target);
+}
+
+/* Mounts of this kind that no longer have a drive behind them are taken off, then the
+ * folders of the drives that are connected are mounted. Safe to repeat. */
+static void emu_sync(void) {
+    int n = getfsstat(NULL, 0, MNT_NOWAIT);
+    if (n > 0) {
+        struct statfs *list = mem_alloc(sizeof(*list) * (size_t)(n + 16));
+        if (list) {
+            n = getfsstat(list, (long)(sizeof(*list) * (size_t)(n + 16)), MNT_NOWAIT);
+            for (int i = 0; i < n; i++) {
+                const char *on = list[i].f_mntonname, *from = list[i].f_mntfromname;
+                if (strcmp(list[i].f_fstypename, "nullfs") || strncmp(on, "/data/", 6) || strncmp(from, "/mnt/", 5) ||
+                    !strstr(from, "/" EMU_DIR "/"))
+                    continue;
+                char t[PATH_MAX], f[PATH_MAX];
+                snprintf(t, sizeof(t), "%s", on);
+                snprintf(f, sizeof(f), "%s", from);
+                if (dead_layer(t) || !emu_is_dir_now(f)) {
+                    printf("[emu] %s: %s is gone, taken off\n", t, f);
+                    unmount_all_layers(t, 1);
+                }
+            }
+            mem_free(list);
+        }
+    }
+    int mounted = 0;
+    for (int i = 0; i < 10 && mounted < 32; i++) { /* the USB drives and the extended storage */
+        char root[PATH_MAX], base[PATH_MAX];
+        root_path(i, root, sizeof(root));
+        if (!is_mountpoint(root))
+            continue;
+        snprintf(base, sizeof(base), "%s/" EMU_DIR, root);
+        DIR *d = opendir(base);
+        struct dirent *e;
+        while (d && (e = readdir(d)) && mounted < 32) {
+            char appsrc[PATH_MAX];
+            if (e->d_name[0] == '.' || snprintf(appsrc, sizeof(appsrc), "%s/%s", base, e->d_name) >= (int)sizeof(appsrc) ||
+                !emu_is_dir_now(appsrc))
+                continue;
+            DIR *a = opendir(appsrc);
+            struct dirent *f;
+            while (a && (f = readdir(a)) && mounted < 32) {
+                char src[PATH_MAX];
+                if (f->d_name[0] == '.' || snprintf(src, sizeof(src), "%s/%s", appsrc, f->d_name) >= (int)sizeof(src) ||
+                    !emu_is_dir_now(src))
+                    continue;
+                emu_mount_one(src, e->d_name, f->d_name);
+                mounted++;
+            }
+            if (a)
+                closedir(a);
+        }
+        if (d)
+            closedir(d);
+    }
+}
+
 static void scan_all(void) {
     static int seen[NROOTS], first = 1;
     static time_t nas_scanned;
     char root[PATH_MAX];
+    emu_sync();
     if (!db_ready()) {
         /* every game would look unregistered and be added again: wait for a good read */
         printf("[scan] the system's app.db could not be read: the scan waits\n");

@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "emu.h"
 #include "la_alloc.h" /* the arrays grow past the libc heap of the payload's process */
 #include "mem.h"
 #include "pkg.h"
@@ -31,6 +32,8 @@ static int has_pkg_ext(const char *name) {
 static int skip_dir(const char *name, const char *rel) {
     if (name[0] == '.' || !strcmp(name, "System Volume Information") || !strcasecmp(name, "$RECYCLE.BIN"))
         return 1;
+    if (!strcasecmp(rel, EMU_DIR))
+        return 1; /* ROMs and BIOS of emulators (emu.h): thousands of files, no pkgs */
     if (!strncmp(rel, "ps4/", 4)) {
         const char *s = strchr(rel + 4, '/');
         if (s && !strcmp(s, "/replaced"))

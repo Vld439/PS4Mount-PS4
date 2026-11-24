@@ -12,6 +12,7 @@
 #include "build.h"
 #include "check.h"
 #include "crypto.h"
+#include "emu.h"
 #include "lang.h"
 #include "pkgmake.h"
 #include "origin.h"
@@ -662,6 +663,43 @@ static void test_stage(void) {
     }
 }
 
+static void test_emu(void) {
+    printf("emulators: which names are mounted over the console's folders\n");
+    static const struct {
+        const char *name;
+        int ok;
+    } names[] = {
+        {"PS4SX2", 1}, {"roms", 1}, {"my roms_2.0-b", 1}, {"a", 1},
+        {"", 0}, {".", 0}, {"..", 0}, {".hidden", 0},
+        {"a/b", 0}, {"../x", 0}, {"/etc", 0}, {"a\\b", 0}, {"a\nb", 0}, {"caf\xc3\xa9", 0},
+        {"123456789012345678901234567890123456789012345678", 1},  /* 48 */
+        {"1234567890123456789012345678901234567890123456789", 0}, /* 49 */
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (emu_name_ok(names[i].name) != names[i].ok)
+            printf("  name \"%s\" wanted %d\n", names[i].name, names[i].ok);
+        CHECK(emu_name_ok(names[i].name) == names[i].ok);
+    }
+    char out[128];
+    CHECK(emu_target("PS4SX2", "roms", out, sizeof(out)) == 0 && !strcmp(out, "/data/PS4SX2/roms"));
+    CHECK(emu_target("PS4SX2", "..", out, sizeof(out)) == -1);
+    CHECK(emu_target("..", "roms", out, sizeof(out)) == -1);
+    /* the folders PS4Mount and the system use, in any case */
+    const char *reserved[] = {"PS4Mount", "ps4mount", "PS4", "pkg", "GoldHEN", "goldhen", "payloads", "PAYLOADS"};
+    for (size_t i = 0; i < sizeof(reserved) / sizeof(reserved[0]); i++)
+        CHECK(emu_target(reserved[i], "roms", out, sizeof(out)) == -1);
+    CHECK(emu_target("PS4Mounts", "roms", out, sizeof(out)) == 0); /* only the exact names */
+    char tiny[16];
+    CHECK(emu_target("PS4SX2", "roms", tiny, sizeof(tiny)) == -1); /* does not fit: not cut */
+    /* the folder the games searches leave alone, and nothing else */
+    CHECK(emu_is_dir("/mnt/usb0/PS4Mount/emulators"));
+    CHECK(emu_is_dir("/mnt/usb0/ps4mount/Emulators"));
+    CHECK(!emu_is_dir("/mnt/usb0/PS4Mount/emulators2"));
+    CHECK(!emu_is_dir("/mnt/usb0/PS4Mount/Games/emulators"));
+    CHECK(!emu_is_dir("PS4Mount/emulators/PS4SX2"));
+    CHECK(!emu_is_dir(""));
+}
+
 int main(void) {
     test_crypto();
     test_app_json();
@@ -675,6 +713,7 @@ int main(void) {
     test_origin();
     test_autorun();
     test_stage();
+    test_emu();
     printf("%d checks, %d failed\n", g_checks, g_failed);
     return g_failed ? 1 : 0;
 }
