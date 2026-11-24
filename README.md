@@ -2,8 +2,8 @@
 
 # PS4Mount PS4
 
-**Juega pkgs fake de PS4 desde un USB o desde la memoria de la consola, sin instalarlos.**
-**Play PS4 fake pkgs from a USB drive or from the console's storage, without installing them.**
+**Juega pkgs fake de PS4 desde un USB o una NAS, sin instalarlos.**
+**Play PS4 fake pkgs from a USB drive or a NAS, without installing them.**
 
 **[Español](#español) · [English](#english)**
 
@@ -18,7 +18,7 @@ PS4Mount PS4 is a PS4-only port of [PS4Mount](https://github.com/gasb07/ps4mount
 <a name="español"></a>
 # Español
 
-PS4Mount es un payload para una PS4 con jailbreak. Pones los pkgs del juego (y su actualización y sus DLC) en un USB o en la memoria de la consola, y PS4Mount los añade a la pantalla de inicio para jugarlos **desde el pkg, sin instalarlos**: no hay que esperar a una instalación ni gastar espacio en una segunda copia.
+PS4Mount es un payload para una PS4 con jailbreak. Pones los pkgs del juego (y su actualización y sus DLC) en un USB o en una NAS, y PS4Mount los añade a la pantalla de inicio para jugarlos **desde el pkg, sin instalarlos**: no hay que esperar a una instalación ni gastar espacio en una segunda copia.
 
 Además tiene un **panel web** (desde el móvil o el PC) con tu biblioteca, portadas y fichas de cada juego, **envío de juegos desde el PC por la red local** (cada pkg se comprueba antes de enviarlo, para no pasar horas enviando un juego que la consola no puede usar) y **copias en tu Google Drive**: la consola sube tus juegos a tu Drive y los vuelve a bajar, sin PC. Hay una versión sencilla del panel para navegadores antiguos, sin probar todavía en el de la PS4.
 
@@ -34,12 +34,12 @@ Probado en una PS4 con firmware **13.52** y GoldHEN; también funciona en **14.0
 | | Estado |
 | --- | --- |
 | Juegos desde un **USB exFAT** (también pkgs de más de 4 GB) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
-| Juegos desde la **memoria interna** (`/data/PS4Mount`) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
+| Pkgs en la **memoria interna** (`/data/PS4Mount`) | <img src="docs/icons/no.svg" width="14" height="14" alt=""> No: PS4Mount ya no usa la memoria interna; los juegos van solo en unidades externas. Los instalados en la consola de la forma normal se detectan y no se tocan |
 | Juegos desde una **NAS** por **SMB o NFS**, solo lectura, con búsqueda en la red | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado (firmware 13.52 y 6.72; de 5.05 a 13.50, experimental) |
 | **Actualizaciones** | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
 | Juegos **donde están**, sin mover ni renombrar los pkgs (cualquier carpeta de la unidad) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado |
-| **DLC** de hasta 256 MB (casi todos: trajes, packs, licencias) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: PS4Mount los instala con el instalador del sistema en segundos, y aparecen en la información del juego |
-| DLC de más de 256 MB | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: se instalan solos con el instalador del sistema, en segundo plano (ocupan memoria interna; se puede apagar en Ajustes) |
+| **DLC** de cualquier tamaño (casi todos: trajes, packs, licencias) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: por defecto se montan desde el disco, sin copiar nada a la consola |
+| DLC **instalados** (modo compat) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Solo las licencias de hasta 16 MB se instalan con el instalador del sistema, para los juegos que los necesitan ahí; el resto se monta desde el disco |
 | **Enviar juegos desde el PC** por la red, con comprobación previa | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado (unos 16 MB/s por cable) |
 | **Borrar** un juego desde la consola | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: borra también sus pkgs y libera el espacio |
 | **Copias en Google Drive**: subir y volver a bajar juegos desde la consola | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Probado: la subida va a la velocidad de tu conexión, la bajada a unos 15 MB/s (el máximo de la PS4) |
@@ -54,7 +54,7 @@ Probado en una PS4 con firmware **13.52** y GoldHEN; también funciona en **14.0
 ## Requisitos
 
 - Una PS4 con jailbreak y **GoldHEN** (con su BinLoader activado, el puerto 9090).
-- Una forma de cargar payloads: **Payloader/Launchpad** de GoldHEN (recomendado), Payload Guest, o **Ajustes → Arrancar con la consola** en el panel, que añade la línea de PS4Mount a `/data/GoldHEN/payloads.ini` para que arranque solo (GoldHEN 2.4b18.10+).
+- Una forma de cargar payloads: **Payloader/Launchpad** de GoldHEN (recomendado), Payload Guest, o **Ajustes → Arrancar con la consola** en el panel, que añade la línea de PS4Mount a `/data/GoldHEN/payloads.ini` (conservando las demás líneas) para que arranque solo (GoldHEN 2.4b18.10+ con PayLoader).
 - Pkgs **fake** de PS4 (`CUSA…`).
 - Para jugar desde un USB: un disco formateado en **exFAT**.
 
@@ -65,7 +65,6 @@ Probado en una PS4 con firmware **13.52** y GoldHEN; también funciona en **14.0
 3. **Pon los juegos**, de una de estas formas:
    - **En un USB:** copia los pkgs **donde quieras** del disco (por ejemplo en la carpeta `PS4Mount`, o en una carpeta por juego) y conéctalo a la PS4. PS4Mount los busca en todo el disco y los agrupa por el título que llevan dentro (juego, actualización y DLC), sin moverlos ni renombrarlos; las carpetas ocultas y las del sistema no se miran.
    - **Desde el PC:** con **Enviar juegos** en el panel (ver más abajo).
-   - **En la memoria interna:** pkgs en `/data/PS4Mount` (por FTP o con Enviar juegos). `/data/pkg` sigue siendo del instalador normal: PS4Mount no lo toca.
 4. Espera las notificaciones: `usb0: 1 juego(s) de PS4 encontrado(s), 1 nuevo(s) o actualizado(s)` → `Añadiendo 1/1: <juego>` → `<juego> añadido. Reinicia la consola una vez para jugarlo`.
 5. **Reinicia la consola una vez**, vuelve a cargar PS4Mount y juega desde la pantalla de inicio.
 
@@ -85,7 +84,7 @@ Al apagarlo, los juegos que PS4Mount **ya había organizado** vuelven solos a su
 
 ### En la consola
 
-El juego aparece en la pantalla de inicio como cualquier otro, y PS4Mount te va avisando de todo con notificaciones: al cargarse, al encontrar y añadir juegos, si falta el disco de un juego, al borrar uno y con las copias en Google Drive.
+El juego aparece en la pantalla de inicio como cualquier otro, y PS4Mount te va avisando de todo con notificaciones: al cargarse, al encontrar y añadir juegos, si falta el disco de un juego, al borrar uno y con las copias en Google Drive. Cada aviso lleva el icono del sistema que le corresponde (arranque, listo, aviso, descarga o Drive).
 
 ![Rayman en la pantalla de inicio, con el aviso de PS4Mount](docs/console-home-es.jpg)
 
@@ -120,7 +119,7 @@ En la ficha del juego también está **Restaurar archivos originales**: deshace 
 
 ### Enviar juegos desde el PC
 
-En el panel, **Enviar juegos**: arrastra los pkgs y elige el destino (el USB o la memoria interna).
+En el panel, **Enviar juegos**: arrastra los pkgs y elige el destino (una unidad externa).
 
 - Cada pkg se **comprueba antes de enviarse**, en un segundo, con sus primeros 4 MB: si es un pkg de PS4 fake, si es juego, actualización o DLC, si está completo y si cabe. Solo se envían los que la consola puede usar. Un pkg hecho para un firmware más nuevo que el tuyo sí se envía, con un aviso: solo funcionará con un backport.
 - Se envían primero los juegos, luego las actualizaciones y al final los DLC.
@@ -166,7 +165,7 @@ Opcional. Tus juegos en **tu propio Google Drive**, para liberar espacio o tener
 
 - **Copia en Drive** (arriba, una vez conectado): sube toda la biblioteca, cada juego con su actualización y sus DLC. Lo que ya está en Drive se salta.
 - **Enviar a Drive**, en la ficha de un juego: sube ese juego.
-- **Google Drive** (esquina): tu cuenta, el espacio usado y los juegos que tienes en Drive, cada uno con **Descargar** (eliges la unidad: el USB o la memoria interna) y **Borrar de Drive** (va a la papelera de Drive; lo de la consola no se toca).
+- **Google Drive** (esquina): tu cuenta, el espacio usado y los juegos que tienes en Drive, cada uno con **Descargar** (eliges la unidad externa) y **Borrar de Drive** (va a la papelera de Drive; lo de la consola no se toca).
 
 ![La ventana de Google Drive](docs/panel-drive-es.png)
 
@@ -267,10 +266,8 @@ Ya está: el panel muestra tu correo y tu espacio. La conexión se guarda en la 
 | --- | --- | --- |
 | Carpetas donde buscar pkgs | `/PS4Mount` | Solo se usa con **Organizar** activado: carpetas de cada disco donde se buscan pkgs nuevos, una por línea (`/` es la raíz: todos los pkgs de juegos de la raíz se moverían a `ps4/`). Se miran hasta dos niveles de subcarpetas. `ps4` no se puede usar. Apagado (por defecto), se busca en toda la unidad, sin renombrar ni mover nada. |
 | Añadir los juegos nuevos por grupos / Juegos por grupo | Sí / 5 | Añade muchos juegos por grupos, para no saturar la consola. |
-| Instalar DLC | Sí | Instala los DLC (ver arriba). |
-| Instalar también los DLC grandes | Sí | Los DLC de más de 256 MB también se instalan, en segundo plano: un juego solo ve un DLC instalado por el sistema. Ocupan memoria interna; antes se comprueba que haya sitio. Apagado, no se usan. |
-| Organizar los pkgs en la carpeta ps4 | No | Mueve los pkgs a `ps4/<TITLE_ID>/` para tenerlos ordenados. Apagado (por defecto), los pkgs se usan donde están, con su nombre, sin mover ni renombrar nada; los que PS4Mount ya había organizado vuelven solos a su sitio original (los organizados a mano se quedan en `ps4/`). En la memoria interna se buscan solo `/data/PS4Mount` y `ps4`. |
-| Usar también los pkgs de /data/PS4Mount | Sí | Usa también los pkgs de la memoria interna. |
+| DLC (add-ons) | external | De dónde se sirven los DLC: **external** (por defecto): todos se montan desde el disco, sin copiar nada a la consola; **compat**: solo las licencias de hasta 16 MB se instalan con el instalador del sistema, para los juegos que los necesitan ahí, y el resto se monta desde el disco; **off**: no se usan. En el panel es el interruptor de DLC; `compat` se elige en `config.txt` (`dlc_mode=compat`). |
+| Organizar los pkgs en la carpeta ps4 | No | Mueve los pkgs a `ps4/<TITLE_ID>/` para tenerlos ordenados. Apagado (por defecto), los pkgs se usan donde están, con su nombre, sin mover ni renombrar nada; los que PS4Mount ya había organizado vuelven solos a su sitio original (los organizados a mano se quedan en `ps4/`). |
 | NAS (NFS o SMB) | No | Usa los pkgs de una carpeta compartida en red, **solo lectura** y sin mover ni renombrar nada (con Organizar activado no aparece). Firmware 5.05 a 13.52 (ver abajo). |
 | Idioma | El de la consola | El idioma del panel y de las notificaciones: el de la consola, inglés o español. |
 
@@ -316,7 +313,7 @@ Los campos se pueden rellenar también a mano:
 - **Si se corta la red** en plena partida (un cable desenchufado, el PC reiniciado), el juego se queda en pausa y sigue solo cuando vuelve: PS4Mount reconecta y reabre los ficheros. Espera hasta 2 minutos; pasado ese tiempo el juego recibe el error y puede fallar.
 - **Cambiar** de protocolo, servidor o carpeta no necesita reiniciar: se reconecta al momento.
 - El recurso se monta en `/mnt/usb0/ps4mount/nas-<n>`, una ruta que el instalador del sistema acepta. **No hace falta un USB conectado.**
-- **BinLoader tiene que estar encendido** en el menú de GoldHEN: si PS4Mount arranca solo con la consola (AutoRun), ese proceso no puede abrir los dispositivos FUSE (una limitación de GoldHEN), así que PS4Mount se vuelve a cargar solo por BinLoader (puerto 9090), en unos segundos y sin avisos de más. Con BinLoader apagado, los juegos de USB y de la memoria interna funcionan igual, pero la NAS no se monta.
+- **BinLoader tiene que estar encendido** en el menú de GoldHEN: si PS4Mount arranca solo con la consola (AutoRun), ese proceso no puede abrir los dispositivos FUSE (una limitación de GoldHEN), así que PS4Mount se vuelve a cargar solo por BinLoader (puerto 9090), en unos segundos y sin avisos de más. Con BinLoader apagado, los juegos de las unidades externas funcionan igual, pero la NAS no se monta.
 - **Volver a cargar PS4Mount en el mismo arranque** monta el recurso en otra carpeta (`nas-2`, `nas-3`…), y los juegos del NAS piden reiniciar una vez. Tras unas pocas cargas en el mismo arranque se acaban los dispositivos FUSE: reinicia la consola.
 - Al **borrar un juego desde la consola**, los pkgs del recurso no se borran (son tuyos): el juego sale de la biblioteca y los ficheros siguen en el NAS.
 
@@ -332,10 +329,11 @@ Con "Organizar" apagado, **borrar desde la consola no borra tus pkgs**: el juego
 ### Bueno saber
 
 - **Carga PS4Mount después de cada arranque.** Sin él, los juegos no pueden iniciarse (siguen en la pantalla de inicio).
+- **PS4Mount ya no usa la memoria interna**: los juegos, los envíos y las descargas van solo a unidades externas (USB, ext o NAS). Los juegos instalados en la consola de la forma normal se detectan y no se tocan; los pkgs que quedaran en `/data/PS4Mount` ya no se usan.
 - **Cierra los juegos de PS4Mount antes de poner la consola en reposo**: el reposo apaga el USB.
 - Si **desconectas el USB**, sus juegos se quedan en la pantalla de inicio y el panel los muestra como *Unidad no conectada*. Al reconectarlo, espera la notificación `usb0: … encontrado(s)` antes de abrirlos.
 - Si GoldHEN carga PS4Mount automáticamente y luego lo cargas tú, verás `PS4Mount … ya está en marcha`: es normal, el segundo se cierra solo.
-- El panel no tiene contraseña: cualquiera en tu red local puede abrirlo. No expongas el puerto 8770 a Internet.
+- El panel no tiene contraseña: cualquiera que llegue a él puede abrirlo, desde tu red local o una VPN como Tailscale. No expongas el puerto 8770 a Internet.
 
 ### Problemas frecuentes
 
@@ -408,7 +406,7 @@ GPL-3.0-or-later (ver [LICENSE](LICENSE)). Si publicas tu propia versión, conse
 <a name="english"></a>
 # English
 
-PS4Mount is a payload for a jailbroken PS4. Put the game pkgs (with their update and add-ons) on a USB drive or in the console's storage, and PS4Mount adds them to the home screen so they are played **from the pkg, without installing them**: no install to wait for, no space spent on a second copy.
+PS4Mount is a payload for a jailbroken PS4. Put the game pkgs (with their update and add-ons) on a USB drive or a NAS, and PS4Mount adds them to the home screen so they are played **from the pkg, without installing them**: no install to wait for, no space spent on a second copy.
 
 It also has a **web panel** (from a phone or a computer) with your library, artwork and a page per game, **sending games from a computer over the local network** (every pkg is checked before it is sent, so no one spends hours sending a game the console cannot use) and **backups in your Google Drive**: the console uploads your games to your Drive and downloads them back, no computer needed. There is a simpler panel page for older browsers, not yet tested on the PS4's own browser.
 
@@ -424,12 +422,12 @@ Tested on a PS4 on firmware **13.52** with GoldHEN; it also works on **14.00** (
 | | State |
 | --- | --- |
 | Games from an **exFAT USB drive** (pkgs over 4 GB too) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
-| Games from the **console's storage** (`/data/PS4Mount`) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
+| Pkgs in the **console's storage** (`/data/PS4Mount`) | <img src="docs/icons/no.svg" width="14" height="14" alt=""> No: PS4Mount no longer uses internal storage; games go only to external drives. Games installed the normal way are detected and left alone |
 | Games from a **NAS** over **SMB or NFS**, read only, found on the network | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested (firmware 13.52 and 6.72; 5.05 to 13.50 experimental) |
 | **Updates** | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
 | Games **where they are**, without moving or renaming their pkgs (any folder of the drive) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested |
-| **Add-ons (DLC)** up to 256 MB (almost all: costumes, packs, licenses) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: PS4Mount installs them with the system's installer in seconds, and they show in the game's information |
-| Add-ons over 256 MB | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: installed on their own with the system's installer, in the background (they take internal space; can be turned off in Settings) |
+| **Add-ons (DLC)** of any size (almost all: costumes, packs, licenses) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: by default they are mounted from the drive, with nothing copied to the console |
+| **Installed** add-ons (compat mode) | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Only licenses up to 16 MB are installed with the system's installer, for the games that need them there; the rest is mounted from the drive |
 | **Sending games from a computer** over the network, checked first | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested (about 16 MB/s over a cable) |
 | **Deleting** a game on the console | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: its pkgs are deleted too and the space is freed |
 | **Google Drive backups**: uploading games and downloading them back from the console | <img src="docs/icons/ok.svg" width="14" height="14" alt=""> Tested: uploads go at your line's speed, downloads at about 15 MB/s (the PS4's most) |
@@ -444,7 +442,7 @@ Tested on a PS4 on firmware **13.52** with GoldHEN; it also works on **14.00** (
 ## Requirements
 
 - A jailbroken PS4 with **GoldHEN** (its BinLoader on, port 9090).
-- A way to load payloads: GoldHEN's **Payloader/Launchpad** (recommended), Payload Guest, or **Settings → Start with the console** in the panel, which adds PS4Mount's line to `/data/GoldHEN/payloads.ini` so it starts on its own (GoldHEN 2.4b18.10+).
+- A way to load payloads: GoldHEN's **Payloader/Launchpad** (recommended), Payload Guest, or **Settings → Start with the console** in the panel, which adds PS4Mount's line to `/data/GoldHEN/payloads.ini` (keeping the other lines) so it starts on its own (GoldHEN 2.4b18.10+ with PayLoader).
 - PS4 **fake** pkgs (`CUSA…`).
 - To play from USB: a drive formatted as **exFAT**.
 
@@ -455,7 +453,6 @@ Tested on a PS4 on firmware **13.52** with GoldHEN; it also works on **14.00** (
 3. **Add games**, one of these ways:
    - **On a USB drive:** copy the pkgs **anywhere on the drive** (for example the `PS4Mount` folder, or one folder per game) and plug it into the PS4. PS4Mount searches the whole drive and groups them by the title they carry inside (game, update and add-ons), without moving or renaming them; hidden and system folders are skipped.
    - **From a computer:** with **Send games** in the panel (see below).
-   - **In the console's storage:** pkgs in `/data/PS4Mount` (over FTP or with Send games). `/data/pkg` stays the usual installer's: PS4Mount leaves it alone.
 4. Wait for the notifications: `usb0: 1 PS4 game(s) found, 1 new or updated` → `Adding 1/1: <game>` → `<game> added. Restart the console once to play it`.
 5. **Restart the console once**, load PS4Mount again and play from the home screen.
 
@@ -475,7 +472,7 @@ Turning it off sends the games PS4Mount **had organized** back to where they wer
 
 ### On the console
 
-The game shows on the home screen like any other, and PS4Mount tells you everything with notifications: when it loads, when it finds and adds games, when a game's drive is missing, when one is deleted, and about the Google Drive backups (this console is in Spanish; they follow the console's language).
+The game shows on the home screen like any other, and PS4Mount tells you everything with notifications: when it loads, when it finds and adds games, when a game's drive is missing, when one is deleted, and about the Google Drive backups (this console is in Spanish; they follow the console's language). Each notice carries the system icon that fits it (start, ready, warning, download or Drive).
 
 ![Rayman on the home screen, with PS4Mount's notice](docs/console-home-es.jpg)
 
@@ -510,7 +507,7 @@ A game's page also has **Restore original files**: it undoes what PS4Mount did t
 
 ### Sending games from a computer
 
-In the panel, **Send games**: drop the pkgs and pick where they go (the USB drive or the console's storage).
+In the panel, **Send games**: drop the pkgs and pick where they go (an external drive).
 
 - Every pkg is **checked before it is sent**, in a second, from its first 4 MB: whether it is a fake PS4 pkg, a game, an update or an add-on, whether it is complete and whether it fits. Only the pkgs the console can use are sent. A pkg built for a newer firmware than yours is sent too, with a warning: it only runs with a backport.
 - Games go first, then updates, then add-ons.
@@ -556,7 +553,7 @@ Optional. Your games in **your own Google Drive**, to free space or keep them sa
 
 - **Back up to Drive** (at the top, once connected): uploads the whole library, each game with its update and add-ons. What Drive already has is skipped.
 - **Send to Drive**, on a game's page: uploads that game.
-- **Google Drive** (corner): your account, the space used and the games you have in Drive, each with **Download** (pick the drive: the USB drive or the console's storage) and **Delete from Drive** (to Drive's trash; nothing on the console is touched).
+- **Google Drive** (corner): your account, the space used and the games you have in Drive, each with **Download** (pick the external drive) and **Delete from Drive** (to Drive's trash; nothing on the console is touched).
 
 ![The Google Drive window](docs/panel-drive.png)
 
@@ -657,10 +654,8 @@ That is all: the panel shows your email and your space. The connection is kept o
 | --- | --- | --- |
 | Folders to search for pkgs | `/PS4Mount` | Only used with **Organize** on: folders of each drive where new pkgs are picked up, one per line (`/` is the root: every game pkg in the root would be moved into `ps4/`). Two levels of subfolders are looked into. `ps4` cannot be used. Off (the default), the whole drive is searched, without renaming or moving anything. |
 | Add new games in groups / Games per group | On / 5 | Adds many games in groups, which keeps the console stable. |
-| Install add-ons (DLC) | On | Installs add-ons (see above). |
-| Also install big add-ons | On | Add-ons over 256 MB are installed too, in the background: a game only sees an add-on the system has installed. They take internal space; there has to be room first. Off, they are not used. |
-| Organize pkgs into the ps4 folder | Off | Moves the pkgs to `ps4/<TITLE_ID>/` to keep them in order. Off (the default), the pkgs are used where they are, with their own names, without moving or renaming anything; the ones PS4Mount had organized go back on their own to where they were (the ones you organized by hand stay in `ps4/`). On the console's storage, only `/data/PS4Mount` and `ps4` are searched. |
-| Also use pkgs in the console's /data/PS4Mount | On | Uses the pkgs in the console's storage too. |
+| Add-ons (DLC) | external | Where add-ons are served from: **external** (the default): every add-on is mounted from the drive, with nothing copied to the console; **compat**: only licenses up to 16 MB are installed with the system's installer, for the games that need them there, and the rest is mounted from the drive; **off**: none are used. In the panel it is the add-ons switch; `compat` is chosen in `config.txt` (`dlc_mode=compat`). |
+| Organize pkgs into the ps4 folder | Off | Moves the pkgs to `ps4/<TITLE_ID>/` to keep them in order. Off (the default), the pkgs are used where they are, with their own names, without moving or renaming anything; the ones PS4Mount had organized go back on their own to where they were (the ones you organized by hand stay in `ps4/`). |
 | NAS (NFS or SMB) | Off | Uses the pkgs in a shared network folder, **read only** and without moving or renaming anything (it does not show with Organize on). Firmware 5.05 to 13.52 (see below). |
 | Language | The console's | The language of the panel and the notifications: the console's, English or Spanish. |
 
@@ -706,7 +701,7 @@ The fields can be filled in by hand too:
 - **If the network drops** in the middle of a game (a cable pulled, the PC restarted), the game pauses and goes on by itself when it is back: PS4Mount reconnects and reopens the files. It waits up to 2 minutes; after that the game gets the error and may break.
 - **Changing** the protocol, server or folder needs no restart: it reconnects right away.
 - The share is mounted at `/mnt/usb0/ps4mount/nas-<n>`, a path the system's installer accepts. **No USB drive needs to be connected.**
-- **BinLoader has to be on** in GoldHEN's menu: if PS4Mount starts with the console (AutoRun), that process cannot open the FUSE devices (a GoldHEN limitation), so PS4Mount loads itself again through BinLoader (port 9090), in a few seconds and without extra notices. With BinLoader off, games on USB drives and on the console's storage keep working, but the share is not mounted.
+- **BinLoader has to be on** in GoldHEN's menu: if PS4Mount starts with the console (AutoRun), that process cannot open the FUSE devices (a GoldHEN limitation), so PS4Mount loads itself again through BinLoader (port 9090), in a few seconds and without extra notices. With BinLoader off, games on external drives keep working, but the share is not mounted.
 - **Loading PS4Mount again in the same boot** mounts the share in another folder (`nas-2`, `nas-3`…), and the NAS games ask for one restart. After a few loads in the same boot the FUSE devices run out: restart the console.
 - When a game is **deleted on the console**, the pkgs in the share are not deleted (they are yours): the game leaves the library and the files stay on the NAS.
 
@@ -722,10 +717,11 @@ With "Organize" off, **deleting on the console does not delete your pkgs**: the 
 ### Good to know
 
 - **Load PS4Mount after every boot.** Without it, games cannot start (they stay on the home screen).
+- **PS4Mount no longer uses the console's internal storage**: games, sends and downloads go only to external drives (USB, ext or NAS). Games installed on the console the normal way are detected and left alone; pkgs left in `/data/PS4Mount` are not used anymore.
 - **Close PS4Mount games before putting the console in rest mode**: rest mode powers the USB drive off.
 - If you **unplug the USB drive**, its games stay on the home screen and the panel shows them as *Drive not connected*. When you plug it back, wait for the `usb0: … found` notification before starting them.
 - If GoldHEN loads PS4Mount automatically and you load it again, you see `PS4Mount … is already running`: that is fine, the second one stops by itself.
-- The panel has no password: anyone on your local network can open it. Do not expose port 8770 to the Internet.
+- The panel has no password: anyone who reaches it can open it, from your local network or a VPN such as Tailscale. Do not expose port 8770 to the Internet.
 
 <a name="troubleshooting"></a>
 ### Troubleshooting
