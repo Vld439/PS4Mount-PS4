@@ -4461,6 +4461,7 @@ void app_games_json(buf_t *out) {
         json_str(out, nsnap[i].text);
         buf_printf(out, "}");
     }
+    buf_put(out, "]", 1);
     /* what the daemon is doing now, and the add-ons the system is still installing */
     static dlc_pending_t dpsnap[MAX_DLC_PENDING];
     activity_t act;
