@@ -136,12 +136,12 @@ static sfile_t *find_file(const char *name) {
 static int send_all(int fd, const void *p, size_t n, int slow) {
     for (size_t o = 0; o < n;) {
         size_t l = n - o < 16384 ? n - o : 16384;
+        if (slow && g_slow_us)
+            usleep((useconds_t)g_slow_us);
         ssize_t w = send(fd, (const char *)p + o, l, MSG_NOSIGNAL);
         if (w <= 0)
             return -1;
         o += (size_t)w;
-        if (slow && g_slow_us)
-            usleep((useconds_t)g_slow_us);
     }
     return 0;
 }
@@ -222,10 +222,13 @@ static int serve(int fd, const char *req) {
     char disp[256] = "";
     if (f->disp[0])
         snprintf(disp, sizeof(disp), "Content-Disposition: attachment; filename=\"%s\"\r\n", f->disp);
+    /* g_slow_us slows only the console's own connections (kept alive between blocks):
+       a helper's fetches stay fast, so it can take blocks while they are slow */
+    int kept = strstr(req, "Connection: keep-alive") != NULL;
     if (!ranged || f->no_ranges) {
         snprintf(extra, sizeof(extra), "Content-Type: application/octet-stream\r\n%s", disp);
         head(fd, 200, extra, f->size);
-        return send_all(fd, f->data, f->size, 1) ? -1 : 0;
+        return send_all(fd, f->data, f->size, kept) ? -1 : 0;
     }
     if (a >= f->size) {
         snprintf(extra, sizeof(extra), "Content-Range: bytes */%zu\r\n", f->size);
@@ -244,10 +247,10 @@ static int serve(int fd, const char *req) {
         g_cut_once = 0, g_cuts++;
     pthread_mutex_unlock(&g_smu);
     if (cut) {
-        send_all(fd, f->data + a, len / 2, 1);
+        send_all(fd, f->data + a, len / 2, kept);
         return -1;
     }
-    return send_all(fd, f->data + a, len, 1) ? -1 : 0;
+    return send_all(fd, f->data + a, len, kept) ? -1 : 0;
 }
 
 static void *conn_thread(void *arg) {
@@ -667,8 +670,10 @@ int main(int argc, char **argv) {
         CHECK(links_relay_port() > 0);
         status();
         CHECK(jv_get_int(jv_of(g_status, strlen(g_status)), "relay_port", 0) == links_relay_port());
-        /* it brings blocks alongside the console's own connection (one here, so it gets some) */
+        /* it brings blocks alongside the console's own connection (one here, so it gets some);
+           the console's fetches are slow, so the helper has time to take blocks before it */
         g_links_threads = 1;
+        g_slow_us = 100000;
         reset_scan();
         helper_run(&ht, -1, 0);
         text[0] = 0;
@@ -719,6 +724,7 @@ int main(int argc, char **argv) {
         http_resp_t r;
         CHECK(!http_request(&q, &r, err, sizeof(err)) && r.status == 403);
         http_resp_free(&r);
+        g_slow_us = 0;
         g_links_threads = 4;
     }
 

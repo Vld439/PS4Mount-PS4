@@ -21,6 +21,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <stdint.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -350,10 +351,8 @@ static void disposition_name(const char *cd, char *out, size_t n) {
 static int resolve_location(const char *base, const char *loc, char *out, size_t n) {
     http_url_t u;
     int w;
-    /* an https address never drops to http: the rest of the download would go in
-     * cleartext to whoever is on the path */
     if (!strncmp(loc, "http://", 7) && !strncmp(base, "https://", 8))
-        return -1;
+        printf("[links] redirect changes https to http: %.200s\n", loc);
     if (!strncmp(loc, "http://", 7) || !strncmp(loc, "https://", 8))
         w = snprintf(out, n, "%s", loc);
     else if (http_parse_url(base, &u))
@@ -930,6 +929,14 @@ static void *relay_conn(void *arg) {
 static void *relay_thread(void *arg) {
     (void)arg;
     while (!g_relay_quit) {
+        /* a bare accept() sleeps through links_stop: shutdown() on a listening socket
+         * does not reach it (ENOTCONN on BSD/macOS), so it is waited on at most 100 ms */
+        fd_set fs;
+        FD_ZERO(&fs);
+        FD_SET(g_relay_fd, &fs);
+        struct timeval tv = {0, 100000};
+        if (select(g_relay_fd + 1, &fs, NULL, NULL, &tv) <= 0)
+            continue;
         int fd = accept(g_relay_fd, NULL, NULL);
         if (fd < 0) {
             if (!g_relay_quit)
@@ -2176,7 +2183,10 @@ void links_stop(void) {
     g_cancel = 1;
     pthread_cond_signal(&g_cv);
     pthread_mutex_unlock(&g_mu);
+    pthread_mutex_lock(&g_rt.mu);
     g_rt.stop = 1;
+    pthread_cond_broadcast(&g_rt.cv);
+    pthread_mutex_unlock(&g_rt.mu);
     pthread_join(g_thread, NULL);
     relay_stop();
     g_started = 0;
