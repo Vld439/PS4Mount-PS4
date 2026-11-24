@@ -198,11 +198,13 @@ button.small{padding:4px 12px;font-size:13px}
     <label>Add-ons (DLC)
       <select id="s-dlc-mode">
         <option value="external">External drive (recommended, 0 internal space)</option>
-        <option value="compat">Compatibility (tiny unlock licenses up to 16 MB)</option>
+        <option value="internal">Console storage (installs add-ons, up to 256 MB)</option>
         <option value="off">Off</option>
       </select>
     </label>
-    <span class="hint">External drive mounts every add-on straight from USB with zero internal storage used.</span>
+    <label class="check" id="s-dlcbig-row" hidden><input type="checkbox" id="s-dlcbig"> Also install big add-ons (over 256 MB)</label>
+    <span class="hint">External drive mounts every add-on straight from USB with zero internal storage used; console storage
+      installs them on the console (up to 256 MB each, or any size with the big-add-ons option); off disables them.</span>
   </fieldset>
   <fieldset><legend>System and GoldHEN</legend>
     <label class="check"><input type="checkbox" id="s-klog"> Read the console's log (game start and stop)</label>
@@ -213,12 +215,15 @@ button.small{padding:4px 12px;font-size:13px}
     <label>Language
       <select id="s-lang"><option value="auto">The console's</option><option value="en">English</option><option value="es">Español</option></select>
     </label>
+    <label class="check"><input type="checkbox" id="s-internal"> Also use pkgs in the console's /data/PS4Mount</label>
+    <span class="hint">Pkgs sent to the console's storage are added from there, with no install to wait for. They still take internal space.</span>
     <details class="nashelp"><summary>Where the games are</summary>
-      <p>Nothing is installed: each game plays straight from its .pkg files on a USB drive or a NAS share. PS4Mount only
-        adds it to the home screen; the pkgs are never copied for it.</p>
-      <p>Add-ons come from the drive too: external mode uses them straight from USB, compatibility mode keeps only tiny
-        unlock licenses (up to 16 MB each) on the console. Removing a game from the library, or restoring its files, never
-        deletes a .pkg.</p>
+      <p>Nothing is installed: each game plays straight from its .pkg files on a USB drive, a NAS share, or the console's
+        /data/PS4Mount when the internal-storage option is on. PS4Mount only adds it to the home screen; the pkgs are never
+        copied for it.</p>
+      <p>Add-ons come from the drive too: external mode mounts them straight from USB, console storage installs them on the
+        console (up to 256 MB each, or any size with the big-add-ons option), off disables them. Removing a game from the
+        library, or restoring its files, never deletes a .pkg.</p>
     </details>
   </fieldset>
   <fieldset id="nasbox"><legend>NAS (NFS or SMB)</legend>
@@ -655,8 +660,11 @@ $('settingsbtn').onclick = function () {
     $('s-paths').value = c.paths.join('\n');
     $('s-batch').checked = c.batch;
     $('s-size').value = c.batch_size;
-    $('s-dlc-mode').value = c.dlc_mode || (c.dlc ? 'external' : 'off');
+    $('s-dlc-mode').value = c.dlc_mode || (c.dlc ? 'internal' : 'off');
+    $('s-dlcbig').checked = !!c.dlc_big;
+    dlcFields();
     $('s-organize').checked = c.organize;
+    $('s-internal').checked = !!c.internal;
     $('s-klog').checked = c.klog;
     $('s-autorun').checked = !!c.autorun;
     $('s-autorun').disabled = !c.autorun_ok;
@@ -694,6 +702,9 @@ $('settingsbtn').onclick = function () {
   }).catch(function (e) { toast(t('Could not read the settings: {0}', e.message)); });
 };
 $('s-batch').onchange = function () { $('s-size').disabled = !this.checked; };
+/* Big add-ons are installed only in console-storage mode: the switch shows only there. */
+function dlcFields() { $('s-dlcbig-row').hidden = $('s-dlc-mode').value !== 'internal'; }
+$('s-dlc-mode').onchange = dlcFields;
 /* The NAS fields only make sense with the box on (and SMB's account only for SMB). */
 function nasFields() {
   var on = $('s-nas').checked && !$('s-nas').disabled;
@@ -906,7 +917,8 @@ $('setform').onsubmit = function (e) {
   if (!/^[0-9]+$/.test(size) || +size < 1 || +size > 50) { toast(t('Games per group must be a number from 1 to {0}', 50)); return; }
   var dlcMode = $('s-dlc-mode').value;
   var body = 'batch=' + ($('s-batch').checked ? 1 : 0) + '&batch_size=' + encodeURIComponent($('s-size').value) +
-    '&dlc_mode=' + dlcMode + '&dlc=' + (dlcMode !== 'off' ? 1 : 0) + '&organize=' + ($('s-organize').checked ? 1 : 0) + '&klog=' + ($('s-klog').checked ? 1 : 0) + '&autorun=' + ($('s-autorun').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value) +
+    '&dlc_mode=' + dlcMode + '&dlc=' + (dlcMode !== 'off' ? 1 : 0) + '&dlc_big=' + ($('s-dlcbig').checked ? 1 : 0) +
+    '&internal=' + ($('s-internal').checked ? 1 : 0) + '&organize=' + ($('s-organize').checked ? 1 : 0) + '&klog=' + ($('s-klog').checked ? 1 : 0) + '&autorun=' + ($('s-autorun').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value) +
     '&nas=' + ($('s-nas').checked ? 1 : 0) + '&nas_proto=' + $('s-nas-proto').value +
     '&nas_port=' + encodeURIComponent($('s-nas-port').value) +
     '&nas_rescan=' + $('s-nas-rescan').value +
@@ -927,9 +939,11 @@ function destById(id) { for (var i = 0; i < dests.length; i++) if (dests[i].id =
 function fillDests(list) {
   var cur = $('dest').value;
   dests = list || [];
-  $('dest').innerHTML = dests.map(function (d) {
+  $('dest').innerHTML = (dests.map(function (d) {
     return '<option value="' + esc(d.id) + '">' + esc(d.label) + ' (' + esc(d.folder) + ', ' + esc(t('{0} free', mb(d.free))) + ')</option>';
-  }).join('') || '<option value="">' + t('No drive connected') + '</option>';
+  }).join('') || '<option value="">' + t('No drive connected') + '</option>') +
+    /* the console's storage is a place to send to only when it is used: say where to turn it on */
+    (destById('internal') ? '' : '<option value="" disabled>' + esc(t("Console storage: turn on \"Also use pkgs in the console's /data/PS4Mount\" in Settings")) + '</option>');
   if (destById(cur)) $('dest').value = cur;
 }
 /* Why it cannot be sent to the chosen place, or '' when it can. */

@@ -38,10 +38,16 @@ var LANGS = {
     'External drives and scan folders': 'Unidades externas y carpetas de búsqueda',
     'Add-ons (DLC)': 'DLC',
     'External drive (recommended, 0 internal space)': 'Unidad externa (recomendada, 0 espacio interno)',
-    'Compatibility (tiny unlock licenses up to 16 MB)': 'Compatibilidad (pequeñas licencias de desbloqueo de hasta 16 MB)',
+    'Console storage (installs add-ons, up to 256 MB)': 'Memoria de la consola (instala los DLC, hasta 256 MB)',
     'Off': 'Apagado',
-    'External drive mounts every add-on straight from USB with zero internal storage used.':
-      'La unidad externa monta cada DLC directamente desde el USB sin usar espacio interno.',
+    'Also install big add-ons (over 256 MB)': 'Instalar también los DLC grandes (más de 256 MB)',
+    "Also use pkgs in the console's /data/PS4Mount": 'Usar también los pkgs de /data/PS4Mount de la consola',
+    "Pkgs sent to the console's storage are added from there, with no install to wait for. They still take internal space.":
+      'Los pkgs enviados a la memoria de la consola se añaden desde ahí, sin esperar una instalación. Ocupan espacio interno.',
+    "Console storage: turn on \"Also use pkgs in the console's /data/PS4Mount\" in Settings":
+      'Memoria de la consola: activa "Usar también los pkgs de /data/PS4Mount de la consola" en Ajustes',
+    'External drive mounts every add-on straight from USB with zero internal storage used; console storage installs them on the console (up to 256 MB each, or any size with the big-add-ons option); off disables them.':
+      'La unidad externa monta cada DLC directamente desde el USB sin usar espacio interno; la memoria de la consola los instala en la consola (hasta 256 MB cada uno, o cualquier tamaño con la opción de DLC grandes); apagado los desactiva.',
     'System and GoldHEN': 'Sistema y GoldHEN',
     'Off (the default): the .pkg files are used where they are, anywhere on the drive, grouped by their title ID. They are not renamed or moved; the games PS4Mount organized before go back to where they were.':
       'Apagado (por defecto): los .pkg se usan donde están, en cualquier parte de la unidad, agrupados por su título. No se renombran ni se mueven; los juegos que PS4Mount organizó antes vuelven a su sitio.',
@@ -234,10 +240,10 @@ var LANGS = {
     'Nothing is installed: the game plays straight from its .pkg files.':
       'No está instalado: el juego se juega directamente desde sus .pkg.',
     'Where the games are': 'Dónde están los juegos',
-    'Nothing is installed: each game plays straight from its .pkg files on a USB drive or a NAS share. PS4Mount only adds it to the home screen; the pkgs are never copied for it.':
-      'No se instala nada: cada juego se juega directamente desde sus .pkg en un USB o un recurso de red. PS4Mount solo lo añade a la pantalla de inicio; los pkgs nunca se copian para ello.',
-    'Add-ons come from the drive too: external mode uses them straight from USB, compatibility mode keeps only tiny unlock licenses (up to 16 MB each) on the console. Removing a game from the library, or restoring its files, never deletes a .pkg.':
-      'Los DLC también vienen de la unidad: el modo externo los usa directamente desde el USB y el modo compatibilidad solo guarda en la consola pequeñas licencias de desbloqueo (de hasta 16 MB cada una). Quitar un juego de la biblioteca, o devolver sus archivos, nunca borra un .pkg.',
+    'Nothing is installed: each game plays straight from its .pkg files on a USB drive, a NAS share, or the console\'s /data/PS4Mount when the internal-storage option is on. PS4Mount only adds it to the home screen; the pkgs are never copied for it.':
+      'No se instala nada: cada juego se juega directamente desde sus .pkg en un USB, un recurso de red o el /data/PS4Mount de la consola cuando la opción de memoria interna está activada. PS4Mount solo lo añade a la pantalla de inicio; los pkgs nunca se copian para ello.',
+    'Add-ons come from the drive too: external mode mounts them straight from USB, console storage installs them on the console (up to 256 MB each, or any size with the big-add-ons option), off disables them. Removing a game from the library, or restoring its files, never deletes a .pkg.':
+      'Los DLC también vienen de la unidad: el modo externo los monta directamente desde el USB, la memoria de la consola los instala en la consola (hasta 256 MB cada uno, o cualquier tamaño con la opción de DLC grandes) y apagado los desactiva. Quitar un juego de la biblioteca, o devolver sus archivos, nunca borra un .pkg.',
     'Start with the console (GoldHEN AutoRun)': 'Arrancar con la consola (AutoRun de GoldHEN)',
     'Payload found: {0}. Enable Settings > GoldHEN > PayLoader > Enable AutoRun. Hold L1 at boot to skip AutoRun.':
       'Payload encontrado: {0}. Activa Ajustes > GoldHEN > PayLoader > Enable AutoRun. Mantén L1 al arrancar para saltar AutoRun.',

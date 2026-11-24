@@ -12,7 +12,7 @@ const GAMES = [
   { title_id: 'CUSA41712', name: 'Soulstice', version: '01.03', has_patch: false, size: 9e9, state: 'ready', mount: 'rw', source: '/mnt/usb0/PS4Mount/Soulstice', dlc: 1, update_issue: '', in_place: true },
   { title_id: 'CUSA34284', name: 'Moving Out 2', version: '01.04', game_version: '01.00', has_patch: true, size: 2.6e9, state: 'restart', mount: 'rw', source: '/mnt/usb0/ps4/CUSA34284', dlc: 0, update_issue: '', content_id: 'EP4064-CUSA34284_00-MOVINGOUT2000000', system_ver: '9.00', storage: 'usb0' },
   { title_id: 'CUSA00069', name: 'Rayman Legends', version: '', has_patch: false, size: 0, state: 'offline', mount: '', source: '/mnt/usb1/ps4/CUSA00069', dlc: 0, update_issue: '', content_id: '', game_version: '', system_ver: '', storage: 'usb1' }];
-const CFG = { batch: true, batch_size: 5, dlc: true, dlc_mode: 'external', dlc_big: false, internal: false,
+const CFG = { batch: true, batch_size: 5, dlc: true, dlc_mode: 'external', dlc_big: false, internal: true,
   autorun: false, autorun_ok: true, autorun_path: '/data/payloads/ps4mount-ps4.bin',
   restore_batch: 5, max_restore_batch: 10, paths: ['/'], organize: false };
 let REPLY_LANG; // the language the console reports (undefined: none, English)
@@ -245,8 +245,10 @@ function tKeys(file) {
   ok(items[0].textContent.includes('Ready to send') && items[0].textContent.includes('Game 1000'), 'a good pkg is ready, with its title');
   ok(items[1].textContent.includes('Cannot be used') && items[1].textContent.includes('not a fake pkg'), 'an unusable pkg is refused with the reason');
   ok(items[2].textContent.includes('not enough space in usb0'), 'a pkg that does not fit the chosen drive is refused');
-  ok(d.getElementById('dest').options.length === 2 && d.getElementById('dest').value === 'usb0', 'the places come from the check, first one chosen');
+  ok(d.getElementById('dest').options.length === 3 && d.getElementById('dest').value === 'usb0', 'the places come from the check, first one chosen');
   ok(d.getElementById('dest').options[1].textContent.includes('usb1') && d.getElementById('dest').options[1].textContent.includes('/mnt/usb1/PS4Mount'), 'a place shows its label, folder and free space');
+  ok(d.getElementById('dest').options[2].disabled && d.getElementById('dest').options[2].textContent.includes('Console storage'),
+    'internal storage off: a disabled hint says where to turn it on');
   d.getElementById('dest').value = 'usb1'; d.getElementById('dest').onchange(); await tick();
   items = d.querySelectorAll('#queue .item');
   ok(items[2].textContent.includes('Ready to send'), 'it fits the other drive');
@@ -278,10 +280,21 @@ function tKeys(file) {
   d.getElementById('send-go').click();
   for (let i = 0; i < 10; i++) await tick();
   ok(sent.length === 3 && sent[1].url.includes('name=Game2.pkg') && sent[2].url.includes('name=Upd2.pkg'), 'then the game, then its update');
-  // the settings offer the add-on modes, not the removed internal-storage or big-DLC switches
+  // internal storage on: it is a normal place to send to, no hint
+  w.fillDests([{ id: 'usb0', label: 'usb0', folder: '/mnt/usb0/pmscan', free: 1e12, fits: true },
+    { id: 'internal', label: 'internal storage', folder: '/data/PS4Mount', free: 5e10, fits: true }]);
+  let dopts = d.getElementById('dest').options;
+  ok(dopts.length === 2 && dopts[1].value === 'internal' && !dopts[1].disabled && dopts[1].textContent.includes('/data/PS4Mount'),
+    'internal storage on: a normal place to send to');
+  // the settings offer the add-on modes and the console-storage options
   d.getElementById('settingsbtn').click(); await tick();
-  ok(d.getElementById('s-internal') === null && d.getElementById('s-dlcbig') === null && d.getElementById('s-dlc') === null, 'no internal-storage or big-DLC switches');
+  ok(d.getElementById('s-dlc') === null, 'no legacy dlc checkbox');
+  ok(d.getElementById('s-internal') !== null && d.getElementById('s-internal').checked === true, 'internal storage is an option, on from the config');
+  ok(d.getElementById('s-dlcbig') !== null && d.getElementById('s-dlcbig-row').hidden === true, 'big add-ons show only in console-storage mode');
   ok(d.getElementById('s-dlc-mode') !== null && d.getElementById('s-dlc-mode').value === 'external', 'a dlc_mode select, external by default');
+  d.getElementById('s-dlc-mode').value = 'internal';
+  d.getElementById('s-dlc-mode').dispatchEvent(new w.Event('change'));
+  ok(d.getElementById('s-dlcbig-row').hidden === false, 'console-storage mode shows the big-add-ons switch');
 
   // a new PS4Mount loaded while the page is open: the page reloads itself
   {
@@ -549,20 +562,24 @@ function tKeys(file) {
   {
     d.getElementById('settingsbtn').click(); await tick(); await tick();
     ok(d.getElementById('autorun-hint').textContent.includes('/data/payloads/ps4mount-ps4.bin'), 'the AutoRun hint names the found payload');
-    CFG.dlc_mode = 'compat';
+    CFG.dlc_mode = 'internal'; CFG.dlc_big = true;
     d.getElementById('settingsbtn').click(); await tick(); await tick();
-    ok(d.getElementById('s-dlc-mode').value === 'compat', 'dlc_mode compat loads');
-    CFG.dlc_mode = 'off';
-    d.getElementById('settingsbtn').click(); await tick(); await tick();
-    ok(d.getElementById('s-dlc-mode').value === 'off', 'dlc_mode off loads');
-    CFG.dlc_mode = 'external';
+    ok(d.getElementById('s-dlc-mode').value === 'internal' && d.getElementById('s-dlcbig').checked === true &&
+      !d.getElementById('s-dlcbig-row').hidden, 'dlc_mode internal loads with big add-ons shown');
     reqs.length = 0;
-    d.getElementById('s-dlc-mode').value = 'compat';
     d.getElementById('setform').dispatchEvent(new w.Event('submit', { cancelable: true })); await tick(); await tick();
     let cfgReq = reqs.find(r => r.url === '/api/config' && r.method === 'POST');
-    ok(cfgReq && cfgReq.body.includes('dlc_mode=compat') && /&dlc=1(&|$)/.test(cfgReq.body) &&
-      !cfgReq.body.includes('internal=') && !cfgReq.body.includes('dlc_big='),
-      'saving sends dlc_mode and dlc, never internal or dlc_big: ' + (cfgReq && cfgReq.body));
+    ok(cfgReq && cfgReq.body.includes('dlc_mode=internal&dlc=1&dlc_big=1&internal=1'),
+      'saving sends dlc_mode, dlc, dlc_big and internal: ' + (cfgReq && cfgReq.body));
+    CFG.dlc_mode = 'external'; CFG.dlc_big = false;
+    d.getElementById('settingsbtn').click(); await tick(); await tick();
+    ok(d.getElementById('s-dlc-mode').value === 'external' && d.getElementById('s-dlcbig-row').hidden === true,
+      'dlc_mode external loads, big add-ons hidden again');
+    reqs.length = 0;
+    d.getElementById('setform').dispatchEvent(new w.Event('submit', { cancelable: true })); await tick(); await tick();
+    cfgReq = reqs.find(r => r.url === '/api/config' && r.method === 'POST');
+    ok(cfgReq && cfgReq.body.includes('dlc_mode=external&dlc=1&dlc_big=0&internal=1'),
+      'external still sends dlc_big and internal: ' + (cfgReq && cfgReq.body));
     d.getElementById('s-dlc-mode').value = 'off';
     reqs.length = 0;
     d.getElementById('setform').dispatchEvent(new w.Event('submit', { cancelable: true })); await tick(); await tick();
@@ -692,12 +709,17 @@ function tKeys(file) {
   w.load(); await tick(); await tick();
   ok(d.getElementById('actbar').style.display === 'none', 'legacy actbar hides when idle');
   d.getElementById('nav-settings').click(); await tick(); await tick();
-  ok(d.getElementById('s-dlc-mode') !== null && d.getElementById('s-dlc-mode').value === 'external', 'legacy dlc_mode select, external');
-  d.getElementById('s-dlc-mode').value = 'compat';
+  ok(d.getElementById('s-dlc-mode') !== null && d.getElementById('s-dlc-mode').value === 'external' &&
+    d.getElementById('s-internal') !== null && d.getElementById('s-internal').checked === true &&
+    d.getElementById('s-dlcbig-row').hidden === true, 'legacy dlc_mode select, external; internal and big-DLC controls');
+  d.getElementById('s-dlc-mode').value = 'internal';
+  d.getElementById('s-dlc-mode').dispatchEvent(new w.Event('change'));
+  ok(d.getElementById('s-dlcbig-row').hidden === false, 'legacy console-storage mode shows the big-add-ons switch');
+  d.getElementById('s-dlcbig').checked = true;
   reqs.length = 0; d.getElementById('s-save').click(); await tick(); await tick();
   const lcfg = reqs.find(r => r.url === '/api/config' && r.method === 'POST');
-  ok(lcfg && lcfg.body.includes('dlc_mode=compat') && /&dlc=1(&|$)/.test(lcfg.body) && !lcfg.body.includes('internal='),
-    'legacy saves dlc_mode without internal: ' + (lcfg && lcfg.body));
+  ok(lcfg && lcfg.body.includes('dlc_mode=internal&dlc=1&dlc_big=1&internal=1'),
+    'legacy saves dlc_mode, dlc, dlc_big and internal: ' + (lcfg && lcfg.body));
 })()
   /* jsdom keeps the windows' own timers: end the process, with the code ok() left */
   .then(() => process.exit(process.exitCode || 0), (e) => { console.error(e); process.exit(1); });

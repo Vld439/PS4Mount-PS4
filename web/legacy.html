@@ -92,7 +92,9 @@ pre{white-space:pre-wrap;font-size:12px;background:#040914;padding:12px;border-r
     </label>
     <label><input type="checkbox" id="s-batch"> Add new games in groups</label>
     <label>Games per group <input type="number" id="s-size" inputmode="numeric" pattern="[0-9]*" min="1" max="50" style="width:6em"></label>
-    <label>Add-ons (DLC) <select id="s-dlc-mode"><option value="external">External drive (recommended, 0 internal space)</option><option value="compat">Compatibility (tiny unlock licenses up to 16 MB)</option><option value="off">Off</option></select></label>
+    <label><input type="checkbox" id="s-internal"> Also use pkgs in the console's /data/PS4Mount</label>
+    <label>Add-ons (DLC) <select id="s-dlc-mode"><option value="external">External drive (recommended, 0 internal space)</option><option value="internal">Console storage (installs add-ons, up to 256 MB)</option><option value="off">Off</option></select></label>
+    <label id="s-dlcbig-row" hidden><input type="checkbox" id="s-dlcbig"> Also install big add-ons (over 256 MB)</label>
     <label>Language
       <select id="s-lang"><option value="auto">The console's</option><option value="en">English</option><option value="es">Español</option></select>
     </label>
@@ -304,7 +306,10 @@ $('nav-settings').onclick = function () {
     $('s-batch').checked = c.batch;
     $('s-size').value = c.batch_size;
     $('s-size').disabled = !c.batch;
-    $('s-dlc-mode').value = c.dlc_mode || (c.dlc ? 'external' : 'off');
+    $('s-dlc-mode').value = c.dlc_mode || (c.dlc ? 'internal' : 'off');
+    $('s-dlcbig').checked = !!c.dlc_big;
+    $('s-internal').checked = !!c.internal;
+    dlcFields();
     $('s-lang').value = c.lang || 'auto';
     maxRestore = c.max_restore_batch || 10;
     $('rmax').innerHTML = maxRestore;
@@ -313,6 +318,9 @@ $('nav-settings').onclick = function () {
   });
 };
 $('s-batch').onclick = function () { $('s-size').disabled = !this.checked; };
+/* Big add-ons are installed only in console-storage mode: the switch shows only there. */
+function dlcFields() { $('s-dlcbig-row').hidden = $('s-dlc-mode').value !== 'internal'; }
+$('s-dlc-mode').onchange = dlcFields;
 $('s-cancel').onclick = function () { show('v-games'); };
 /* Number fields: type=number opens the numeric keyboard on the PS5 (inputmode alone does
  * not), inputmode on phones; digits only, capped at max. */
@@ -346,7 +354,8 @@ $('s-save').onclick = function () {
   if (!/^[0-9]+$/.test(size) || +size < 1 || +size > 50) { say(t('Games per group must be a number from 1 to {0}', 50)); return; }
   var dlcMode = $('s-dlc-mode').value;
   var body = 'batch=' + ($('s-batch').checked ? 1 : 0) + '&batch_size=' + encodeURIComponent($('s-size').value) +
-    '&dlc_mode=' + dlcMode + '&dlc=' + (dlcMode !== 'off' ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value);
+    '&dlc_mode=' + dlcMode + '&dlc=' + (dlcMode !== 'off' ? 1 : 0) + '&dlc_big=' + ($('s-dlcbig').checked ? 1 : 0) +
+    '&internal=' + ($('s-internal').checked ? 1 : 0) + '&restore_batch=' + $('s-rsize').value + '&lang=' + $('s-lang').value + '&paths=' + encodeURIComponent($('s-paths').value);
   api('/api/config', 'POST', body, function (err, j) {
     say(err ? (j && j.error ? j.error : t('Error: {0}', err)) : j.message);
     if (!err) { show('v-games'); load(); }

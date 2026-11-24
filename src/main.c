@@ -89,19 +89,18 @@
 
 /* Where add-ons are served from. OFF: none. EXTERNAL (the default): every add-on is
  * mounted straight from the drive (place_dlc + nullfs over /user/addcont/<TID>), with
- * 0 bytes copied to internal storage. COMPAT: only the tiny license-only pkgs (0x1c, up
- * to DLC_COMPAT_MAX) are installed with BGFT, for the games that need them there; data
- * add-ons and big pkgs stay on the drive. */
-enum { DLC_OFF = 0, DLC_EXTERNAL = 1, DLC_COMPAT = 2 };
-#define DLC_COMPAT_MAX (16ull << 20)
+ * 0 bytes copied to internal storage. INTERNAL: add-ons are installed with BGFT like
+ * before, up to DLC_INSTALL_MAX or any size with dlc_big. */
+enum { DLC_OFF = 0, DLC_EXTERNAL = 1, DLC_INTERNAL = 2 };
 
 static const char *dlc_mode_name(int m) {
-    return m == DLC_COMPAT ? "compat" : m == DLC_EXTERNAL ? "external" : "off";
+    return m == DLC_INTERNAL ? "internal" : m == DLC_EXTERNAL ? "external" : "off";
 }
 
 static int dlc_mode_parse(const char *s) {
-    if (!strcmp(s, "compat"))
-        return DLC_COMPAT;
+    if (!strcmp(s, "internal") || !strcmp(s, "compat")) /* compat: name used by
+        * the interim external-only builds; internal is the same install path */
+        return DLC_INTERNAL;
     if (!strcmp(s, "external"))
         return DLC_EXTERNAL;
     return DLC_OFF;
@@ -116,11 +115,11 @@ typedef struct {
     int batch;      /* new games are added in groups */
     int batch_size; /* games per group */
     int dlc;        /* add-ons are served: kept in sync with dlc_mode (dlc_mode != DLC_OFF) */
-    int dlc_mode;   /* DLC_OFF / DLC_EXTERNAL / DLC_COMPAT: where add-ons are served from */
+    int dlc_mode;   /* DLC_OFF / DLC_EXTERNAL / DLC_INTERNAL: where add-ons are served from */
     char paths[MAX_SCAN_PATHS][128]; /* folders searched for pkgs, relative to each drive; "" is the root */
     int npaths;
     int restore_batch; /* games removed from the library per group when moving pkgs back */
-    int internal;      /* always 0: PS4Mount keeps games on external storage, never internal */
+    int internal;      /* pkgs in the console's /data/PS4Mount are used too */
     int organize;      /* pkgs are moved into <root>/ps4/<TID>/ (default); off: used where they are */
     int lang;          /* LANG_* of notifications and the panel, -1: the console's */
     int nas;           /* a network share is used too (firmwares with a fusefs patch, read only) */
@@ -131,7 +130,7 @@ typedef struct {
     char nas_sub[256];   /* folder inside it */
     char nas_user[64];   /* SMB; "" is the guest account */
     char nas_pass[64];
-    int dlc_big;       /* always 0: big add-ons are never copied inside (kept for old configs) */
+    int dlc_big;       /* add-ons over DLC_INSTALL_MAX are installed too (they take space on the console) */
     int nas_rescan;    /* minutes between looks at the share for new pkgs; 0: only when asked */
     int klog;          /* the console's kernel log is read (game start/stop); off leaves it to
                         * another payload (AnyPad needs it to identify its virtual pad) */
@@ -144,7 +143,7 @@ typedef struct {
  * moved until the user puts it there (the drive root, "", is still a choice). */
 #define DEFAULT_SCAN_PATH "PS4Mount"
 
-static config_t g_cfg = {1, 5, 1, DLC_EXTERNAL, {DEFAULT_SCAN_PATH}, 1, 5, 0, 1, -1, 0, NAS_NFS, 0, "", "", "", "", "", 0, 1, 1, 0};
+static config_t g_cfg = {1, 5, 1, DLC_EXTERNAL, {DEFAULT_SCAN_PATH}, 1, 5, 1, 1, -1, 0, NAS_NFS, 0, "", "", "", "", "", 1, 1, 1, 0};
 #define NAS_RESCAN_MAX 1440 /* minutes: once a day */
 static int g_setup; /* a first start: no game is added until the settings are saved (first_start) */
 /* A first start with nobody at the panel for this long goes on with the default settings:
@@ -702,7 +701,7 @@ static void dlc_open(title_src_t *t) {
                 continue;
             }
             a->data = a->pkg.header[0x77] == 0x1b; /* content type: 0x1b with data, 0x1c license only */
-            a->install = g_cfg.dlc_mode == DLC_COMPAT && !a->data && a->pkg.pkg_size <= DLC_COMPAT_MAX;
+            a->install = g_cfg.dlc_mode == DLC_INTERNAL && (a->pkg.pkg_size <= DLC_INSTALL_MAX || g_cfg.dlc_big);
             t->ndlc++;
             if (a->install)
                 continue; /* not mounted: no /user/addcont folder of PS4Mount's */
@@ -764,7 +763,7 @@ static void dlc_open_catalog(title_src_t *t, const catalog_t *c, const cat_game_
             continue;
         }
         a->data = a->pkg.header[0x77] == 0x1b; /* content type: 0x1b with data, 0x1c license only */
-        a->install = g_cfg.dlc_mode == DLC_COMPAT && !a->data && a->pkg.pkg_size <= DLC_COMPAT_MAX;
+        a->install = g_cfg.dlc_mode == DLC_INTERNAL && (a->pkg.pkg_size <= DLC_INSTALL_MAX || g_cfg.dlc_big);
         t->ndlc++;
         if (a->install)
             continue; /* not mounted: no /user/addcont folder of PS4Mount's */
@@ -1050,7 +1049,7 @@ static uint64_t title_files_fp(const char *root, const char *tid) {
     /* an update left out (or tried again) changes what the game is */
     char mark[96];
     h = fp_stat(h, badpatch_path(tid, mark, sizeof(mark)));
-    h = title_fp_add(h, g_cfg.dlc ? "add-ons" : "no add-ons", 0, g_cfg.dlc_mode);
+    h = title_fp_add(h, g_cfg.dlc ? "add-ons" : "no add-ons", 0, g_cfg.dlc_mode | (g_cfg.dlc_big ? 4 : 0));
     return g_cfg.dlc ? fp_addons(h, root, tid) : h;
 }
 
@@ -4095,9 +4094,8 @@ void app_games_json(buf_t *out) {
         char root[PATH_MAX];
         root_path(i, root, sizeof(root));
         struct statfs sf;
-        /* the share is read only and statfs() on it can stall while the NAS hangs;
-         * internal storage is never listed: games live on external drives only */
-        if (!root_present(root) || is_nas(root) || is_internal(root) || statfs(root, &sf))
+        /* the share is read only and statfs() on it can stall while the NAS hangs */
+        if (!root_present(root) || is_nas(root) || statfs(root, &sf))
             continue;
         buf_printf(out, "%s{\"label\":", dfirst ? "" : ",");
         dfirst = 0;
@@ -5075,9 +5073,9 @@ static int first_start(void) {
 static void config_save(void) {
     g_setup = 0; /* the settings were chosen: games are added from now on */
     buf_t b = {0};
-    buf_printf(&b, "ver=3\nbatch=%d\nbatch_size=%d\ndlc=%d\ndlc_mode=%s\ndlc_big=0\nrestore_batch=%d\ninternal=0\norganize=%d\nlang=%s\n",
-               g_cfg.batch, g_cfg.batch_size, g_cfg.dlc, dlc_mode_name(g_cfg.dlc_mode), g_cfg.restore_batch,
-               g_cfg.organize, g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto");
+    buf_printf(&b, "ver=3\nbatch=%d\nbatch_size=%d\ndlc=%d\ndlc_mode=%s\ndlc_big=%d\nrestore_batch=%d\ninternal=%d\norganize=%d\nlang=%s\n",
+               g_cfg.batch, g_cfg.batch_size, g_cfg.dlc, dlc_mode_name(g_cfg.dlc_mode), g_cfg.dlc_big, g_cfg.restore_batch,
+               g_cfg.internal, g_cfg.organize, g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto");
     buf_printf(&b, "nas=%d\nnas_proto=%d\nnas_port=%d\nnas_server=%s\nnas_share=%s\nnas_sub=%s\nnas_user=%s\nnas_pass=%s\n",
                g_cfg.nas, g_cfg.nas_proto, g_cfg.nas_port, g_cfg.nas_server, g_cfg.nas_share,
                g_cfg.nas_sub, g_cfg.nas_user, g_cfg.nas_pass);
@@ -5167,14 +5165,11 @@ static void config_load(void) {
      * from the next save on. */
     if (ver < 2)
         c.organize = 1;
-    /* ver 3 adds dlc_mode: a file from before only has dlc=, where on meant "small
-     * add-ons installed inside". Now on means served from the drive (external); off
-     * stays off. */
+    /* ver 3 adds dlc_mode: a file from before only has dlc=, where on meant "add-ons
+     * installed inside". Now on maps to internal installs; off stays off. */
     if (ver < 3 && !dlc_mode_seen)
-        c.dlc_mode = c.dlc ? DLC_EXTERNAL : DLC_OFF;
+        c.dlc_mode = c.dlc ? DLC_INTERNAL : DLC_OFF;
     c.dlc = c.dlc_mode != DLC_OFF;
-    c.dlc_big = 0;
-    c.internal = 0; /* external storage only: internal=1 in an old file is ignored */
     g_cfg = c;
     printf("[config] batch=%d batch_size=%d dlc=%d dlc_mode=%s restore_batch=%d organize=%d folders=%d\n",
            g_cfg.batch, g_cfg.batch_size, g_cfg.dlc, dlc_mode_name(g_cfg.dlc_mode), g_cfg.restore_batch,
@@ -5187,11 +5182,12 @@ static int autorun_apply(int on);
 void app_config_json(buf_t *out) {
     const char *pf = payload_file();
     buf_printf(out,
-               "{\"batch\":%s,\"batch_size\":%d,\"dlc\":%s,\"dlc_mode\":\"%s\",\"dlc_big\":false,\"internal\":false,\"organize\":%s,"
+               "{\"batch\":%s,\"batch_size\":%d,\"dlc\":%s,\"dlc_mode\":\"%s\",\"dlc_big\":%s,\"internal\":%s,\"organize\":%s,"
                "\"restore_batch\":%d,\"max_restore_batch\":%d,"
                "\"lang\":\"%s\",\"ui_lang\":\"%s\",\"klog\":%s,\"autorun\":%s,\"autorun_ok\":%s,\"autorun_path\":",
                g_cfg.batch ? "true" : "false", g_cfg.batch_size, g_cfg.dlc ? "true" : "false",
-               dlc_mode_name(g_cfg.dlc_mode), g_cfg.organize ? "true" : "false", g_cfg.restore_batch, MAX_RESTORE_BATCH,
+               dlc_mode_name(g_cfg.dlc_mode), g_cfg.dlc_big ? "true" : "false", g_cfg.internal ? "true" : "false",
+               g_cfg.organize ? "true" : "false", g_cfg.restore_batch, MAX_RESTORE_BATCH,
                g_cfg.lang >= 0 ? lang_tag(g_cfg.lang) : "auto", lang_tag(g_lang), g_cfg.klog ? "true" : "false",
                g_cfg.autorun ? "true" : "false", pf ? "true" : "false");
     json_str(out, pf ? pf : "");
@@ -5379,16 +5375,14 @@ int app_config_set(const char *body, char *msg, size_t cap) {
         }
         p = amp ? amp + 1 : NULL;
     }
-    /* dlc_mode wins over the legacy dlc flag; dlc alone maps to off/external. */
+    /* dlc_mode wins over the legacy dlc flag; dlc alone maps to off/internal. */
     if (!dlc_mode_seen && dlc_seen >= 0) {
         if (!dlc_seen)
             c.dlc_mode = DLC_OFF;
         else if (c.dlc_mode == DLC_OFF)
-            c.dlc_mode = DLC_EXTERNAL;
+            c.dlc_mode = DLC_INTERNAL;
     }
     c.dlc = c.dlc_mode != DLC_OFF;
-    c.dlc_big = 0;
-    c.internal = 0; /* external storage only: internal=1 is ignored */
     if (c.batch_size < 1 || c.batch_size > 50) {
         snprintf(msg, cap, "%s", TR("Not saved: games per group must be between 1 and 50", "No se guardó: los juegos por grupo deben estar entre 1 y 50"));
         return -1;
@@ -5471,14 +5465,13 @@ static uint64_t free_bytes(const char *dir) {
     return (uint64_t)sf.f_bavail * (uint64_t)sf.f_bsize;
 }
 
-/* The folder a pkg sent to dest ("usb0".."usb7", "ext0", "ext1") goes to: the first scan
- * folder of the drive. -1 when dest is not usable now: the share is read only and
- * internal storage is never a destination (external drives only). */
+/* The folder a pkg sent to dest ("usb0".."usb7", "ext0", "ext1", "internal") goes to: the
+ * first scan folder of the drive, or /data/PS4Mount. -1 when dest is not usable now. */
 static int upload_dir(const char *dest, char *dir, size_t n) {
     char root[PATH_MAX], id[64];
     for (int i = 0; i < NROOTS; i++) {
         root_path(i, root, sizeof(root));
-        if (is_nas(root) || is_internal(root)) /* read only / never: nothing is sent there */
+        if (is_nas(root)) /* read only: nothing is sent there */
             continue;
         if (!strcmp(dest, root_id(root, id, sizeof(id))) && root_present(root)) {
             scan_dir(dir, n, root, 0);
@@ -5495,7 +5488,7 @@ static void dests_json(buf_t *out, uint64_t need) {
     for (int i = 0; i < NROOTS; i++) {
         char id[64];
         root_path(i, root, sizeof(root));
-        if (!root_present(root) || is_nas(root) || is_internal(root)) /* read only / never: nothing is sent there */
+        if (!root_present(root) || is_nas(root)) /* read only: nothing is sent there */
             continue;
         scan_dir(dir, sizeof(dir), root, 0);
         uint64_t fb = free_bytes(dir);
@@ -5556,7 +5549,8 @@ void app_check(const void *data, size_t len, uint64_t size, buf_t *out) {
                  c.title_id, root_label(where));
     ver_text(c.system_ver, sv, sizeof(sv));
     ver_text(g_fw, fw, sizeof(fw));
-    buf_printf(out, "{\"ok\":%s,\"install\":false,\"problem\":", problem[0] ? "false" : "true");
+    buf_printf(out, "{\"ok\":%s,\"install\":%s,\"problem\":", problem[0] ? "false" : "true",
+               c.installable && !installed_internally(c.title_id) ? "true" : "false");
     json_str(out, problem);
     buf_printf(out, ",\"kind\":\"%s\",\"title\":", pkg_kind_name(c.kind));
     json_str(out, c.title);
@@ -5779,13 +5773,6 @@ int app_upload(int fd, const char *query, const void *pre, size_t pre_len, uint6
         p = amp ? amp + 1 : p + l;
     }
     int install = !strcmp(inst, "1");
-    if (install || !strcmp(dest, "internal")) {
-        /* PS4Mount keeps games on external storage, never internal */
-        snprintf(msg, cap, "%s",
-                 TR("External drive required: PS4Mount keeps games on external storage, never internal",
-                    "Se requiere una unidad externa: PS4Mount mantiene los juegos en almacenamiento externo, nunca interno"));
-        return -1;
-    }
     if (upload_clean_name(raw, name, sizeof(name))) {
         snprintf(msg, cap, "%s", TR("no file name", "falta el nombre del archivo"));
         return -1;
